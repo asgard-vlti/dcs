@@ -218,6 +218,7 @@ void ForwardFt::loop() {
             sem_post(&sem_new_frame);
 
             // Now we need to boxcar average the dark frames. 
+            //!!! This will not even work as UI16 should be SI32
             int ix = cnt % N_DARK_BOXCAR;
             for (unsigned int ii=0; ii<subim_sz; ii++) {
                 for (unsigned int jj=0; jj<subim_sz; jj++) {

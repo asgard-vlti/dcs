@@ -1,0 +1,22 @@
+name = "Default Configuration"
+beam = 1
+
+#Wavelength in microns
+wave = 1.65
+
+#Pixels to aim for
+px = 15
+py = 15
+
+#Width with respect to the central pixel. Must be odd!
+width = 15
+focus_amp = 0.05
+
+#Tip/tilt Gaussian weight 1/e^2 half width
+gauss_hwidth = 3
+
+#All units are in radians and microns
+[geometry] 
+beam_diameter   = 3e-2
+pix = 24.0
+
