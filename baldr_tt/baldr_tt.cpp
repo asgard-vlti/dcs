@@ -1,5 +1,5 @@
 #define TOML_IMPLEMENTATION
-#include "heimdallr.h"
+#include "baldr_tt.h"
 #include <commander/commander.h>
 #include <math.h>
 #include <unistd.h>
@@ -21,6 +21,8 @@ ControlU control_u;
 ControlA control_a;
 IMAGE DM;
 IMAGE master_DM;
+IMAGE subarray;
+double *im_av, *im_plus, *im_minus;
 
 // Utility functions
 
@@ -121,7 +123,7 @@ void set_pxy(int px_new, int py_new){
 
 Status get_status() {
     Status status;
-    status.cnt = ft_cnt % 10000; 
+    status.cnt = cnt % 10000; 
     return status;
 }
 
@@ -167,13 +169,12 @@ COMMANDER_REGISTER(m)
     m.def("ttg", set_ttg, "Set the tip/tilt gain for the servo loop", "gain"_arg=0.0);
     m.def("hog", set_hog, "Set the high-order gain for the servo loop", "gain"_arg=0.0);
     m.def("hol", set_hol, "Set the high-order leak term", "gain"_arg=0.01);
-    m.def("pxy", set_pxy, "Set the origin pixels for tip/tilt", "px"_arg=15, "py"_arg=15)
+    m.def("pxy", set_pxy, "Set the origin pixels for tip/tilt", "px"_arg=15, "py"_arg=15);
     m.def("flux_threshold", set_flux_threshold, "Set flux threshold", "value"_arg=100.0);
     m.def("zero_tt", zero_tt, "Zero tip/tilt based on current image position");
  }
 
 int main(int argc, char* argv[]) {
-    IMAGE subarr;
     //Set the nice value.
     if (nice(-10)==-1) std::cout << "Re-niceing process likely didn't work. New nice value -1." << std::endl;
     // Read in the configuration file
@@ -195,9 +196,9 @@ int main(int argc, char* argv[]) {
     ImageStreamIO_openIm(&master_DM, ("dm" + std::to_string(beam)).c_str());
 
     // Initialise the two forward Fourier transform objects
-    ImageStreamIO_openIm(&subarr, ("baldr" + std::to_string(beam)).c_str());
+    ImageStreamIO_openIm(&subarray, ("baldr" + std::to_string(beam)).c_str());
 #else
-    ImageStreamIO_openIm(&subarr, "sbaldr1");
+    ImageStreamIO_openIm(&subarray, "sbaldr1");
     std::cout << "Simulation mode!" << std::endl;
    
 #endif

@@ -32,6 +32,7 @@
 #define SERVO_OFF 0
 #define SERVO_TT 1
 #define SERVO_HO 2
+#define SERVO_STOP -1
 
 //----- Structures and typedefs------
 typedef std::complex<double> dcomp;
@@ -67,7 +68,8 @@ struct Status
 };
 
 // Settings struct for commander
-struct Settings {
+struct Settings
+{
     double ttg, hog, hol, focus_amp, flux_threshold;
     double gauss_hwidth;
     int px, py;
@@ -89,7 +91,7 @@ extern IMAGE subarray;
 extern toml::table config;
 
 // Parameters that really don't change after startup.
-extern int beam, width;
+extern int beam, width, sz;
 
 // Servo parameters. These are the parameters that will be adjusted by the commander
 extern int servo_mode;
@@ -104,6 +106,5 @@ extern double *im_av, *im_plus, *im_minus;
 // Main thread function for fringe tracking.
 void servo_loop();
 
-//The forward Fourier transforms
-extern ForwardFt *ft;
+
 

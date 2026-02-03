@@ -19,30 +19,22 @@ void set_dm_tilt_foc(int tx, int ty, int focus){
 #ifdef SIMULATE
     return;
 #endif
-    // Make sure that we only move the DM for for the active beams.
-    control_u.dm_piston = beams_active.asDiagonal() * control_u.dm_piston;       	
-    // This function sets the DM piston to the given value.
-    for(int i = 0; i < N_TEL; i++) {
-        if (control_u.search(i) != 0.0) {
-            control_u.dm_piston(i) = 0.0; // Reset DM piston if in search mode
-            continue; // Do not set if in search mode
-        }
-        for (int j=0; j<144; j++){
-            DM.array.D[12*j+i] = dm_piston(i);
-        }
-        ImageStreamIO_sempost(&master_DMs[i], 1);
-    }
+    // Set DM tip/tilt and focus terms.
+    for (int j=0; j<12; j++)
+        for (int i=0; i<12; i++)
+                DM.array.D[12*j+i] = 0.0;
+    ImageStreamIO_sempost(&master_DM, 1);
 }
 
 // Initialise variables and arrays on startup
 void initialise_servo(){
     cnt_since_init = 0;
     // Check the subarray.
-    if (subarray->md->naxis != 2) {
+    if (subarray.md->naxis != 2) {
         throw std::runtime_error("Subarray is not 2D");
     }
-    sz = subarray->md->size[0];
-    if (subarray->md->size[1] != sz) {
+    sz = subarray.md->size[0];
+    if (subarray.md->size[1] != sz) {
         throw std::runtime_error("Subarray is not square");
     }
     // Now we know the image size, allocate memory!
@@ -82,25 +74,25 @@ void servo_loop(){
     timespec now_all, then_all;
 #endif
     initialise_servo();
-    cnt = subarray->md->cnt0;
-    catch_up_with_sem(subarray, 2);
+    cnt = subarray.md->cnt0;
+    catch_up_with_sem(&subarray, 2);
     while(servo_mode != SERVO_STOP){
         cnt_since_init++; //This should "never" wrap around, as a long int is big.
         // See if there was a semaphore signalled for the next frame to be ready in K1 and K2
-        ImageStreamIO_semwait(subarray, 2);
+        ImageStreamIO_semwait(&subarray, 2);
         // If we are here, then a new frame is available in both K1 and K2. 
         // Check that there has not been a counting error.
-        if(subarray->md->cnt0 == cnt){
+        if(subarray.md->cnt0 == cnt){
             std::cout << "FT: Semaphore signalled but no new frame" << std::endl;
             nerrors++;
             continue;
         }
         // Check for missed frames
-        if (subarray->md->cnt0 > cnt+2){
-            std::cout << "Missed frames! Image: " << subarray->md->cnt0 << " Servo: " << cnt << std::endl;
+        if (subarray.md->cnt0 > cnt+2){
+            std::cout << "Missed frames! Image: " << subarray.md->cnt0 << " Servo: " << cnt << std::endl;
             // Catch up!
-            catch_up_with_sem(subarray, 2);
-            cnt = subarray->md->cnt0 - 1;
+            catch_up_with_sem(&subarray, 2);
+            cnt = subarray.md->cnt0 - 1;
             nerrors++;
         }
         cnt++;
@@ -113,7 +105,7 @@ void servo_loop(){
         int ix = cnt % N_BOXCAR;
         for (int i=0;i<sz*sz;i++) {
             im_av[i] -= (double)im_boxcar[ix][i];
-            im_boxcar[ix][i] = subarray->array.SI32[ii*subim_sz + jj] - DARK_OFFSET;
+            im_boxcar[ix][i] = subarray.array.SI32[i] - DARK_OFFSET;
             im_av[i] += im_boxcar[ix][i];
         }
     }
