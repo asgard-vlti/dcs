@@ -65,6 +65,8 @@ typedef struct {
   int ndmr_mode;          // non destructive readout mode flag
   char readmode[16];      // readout mode code -- "GCDS" or "NDMR"
   int valid_dark = 0;     // flag to track whether a valid dark is loaded
+  char utdate[16];        // store the UT date to inform FITS header
+  unsigned int offset = 1000; // unsigned int data needs offset
 } CREDSTRUCT;
 
 /* =========================================================================
@@ -307,6 +309,7 @@ int init_cam_configuration() {
   sprintf(camconf->readmode, "GCDS");
 
   // -----
+  camconf->offset = 1000;
   camconf->bf_size = 200;
   camconf->nbreads = 200;
   camconf->nbr_hlf = 100;
@@ -477,9 +480,11 @@ void* save_cube_to_fits(void *dcube, long naxes[3],
   if (kw > 0) {
     // fits_update_key(fptr, TLONG, "EXPOSURE", &tint, "Exposure time", &status);
     fits_update_key(fptr, TLONG, "CINDEX", &savecube_index, "Cube index", &status);
+    fits_update_key(fptr, TSTRING, "UTDATE", &camconf->utdate, "UT Date this file was written", &status);
     fits_update_key(fptr, TFLOAT, "FPS", &camconf->fps, "Frame rate (Hz)", &status);
     fits_update_key(fptr, TINT, "GAIN", &camconf->gain, "Camera gain", &status);
     fits_update_key(fptr, TSTRING, "RO_MODE", &camconf->readmode, "Camera readout mode", &status);
+    fits_update_key(fptr, TINT, "OFFSET", &camconf->offset, "DC offset to subtract when processing", &status);
   }
   fits_close_file(fptr, &status);
   return NULL;
@@ -490,7 +495,7 @@ void* save_cube_to_fits(void *dcube, long naxes[3],
  * ========================================================================= */
 void* save_roi_cubes(void *arg) {
   struct timespec tnow;  // time since epoch
-  struct tm *caltime;     // calendar time
+  struct tm *uttime;     // calendar time
   struct stat st;
   long naxes[3];
   char fname[300];
@@ -505,18 +510,21 @@ void* save_roi_cubes(void *arg) {
     sem_wait(&sync_save); // blocking call, waiting for sem_post
     // get the time - to give the file a unique name
     clock_gettime(CLOCK_REALTIME, &tnow);  // elapsed time since epoch
-    caltime = localtime(&tnow.tv_sec);      // translate into calendar time
+    uttime = gmtime(&tnow.tv_sec);        // translate into calendar time
+
+    sprintf(camconf->utdate, "%04d-%02d-%02d",
+	    1900 + uttime->tm_year, 1 + uttime->tm_mon, uttime->tm_mday);
 
     // figure out where to write to disk - and create the directory
     sprintf(savedir, "/data/%04d%02d%02d/",
-	    1900 + caltime->tm_year, 1 + caltime->tm_mon, caltime->tm_mday); 
+	    1900 + uttime->tm_year, 1 + uttime->tm_mon, uttime->tm_mday); 
 
     if (stat(savedir, &st) == -1)
       mkdir(savedir, 0700);
 
     // common time-stamp for all files saved this turn
     sprintf(tstamp, "T%02d:%02d:%02d.%03ld",
-	    caltime->tm_hour, caltime->tm_min, caltime->tm_sec, tnow.tv_nsec/1000000);
+	    uttime->tm_hour, uttime->tm_min, uttime->tm_sec, tnow.tv_nsec/1000000);
 
     for (int ri = roi0; ri < nroi; ri++) {
       naxes[0] = ROI[ri].xsz;
@@ -538,7 +546,7 @@ void* save_dark(void *arg) {
   char fname[300];  // path + name of the fits file to write
 
   struct timespec tnow;  // time since epoch
-  struct tm *caltime;     // calendar time
+  struct tm *uttime;     // calendar time
   struct stat st;
 
   char CROP[5] = "FULL";  // or "CROP"
@@ -552,10 +560,13 @@ void* save_dark(void *arg) {
   
   // get the time - to give the file a unique name
   clock_gettime(CLOCK_REALTIME, &tnow);  // elapsed time since epoch
-  caltime = localtime(&tnow.tv_sec);         // translate into calendar time
+  uttime = gmtime(&tnow.tv_sec);        // translate into calendar time
+
+  sprintf(camconf->utdate, "%04d-%02d-%02d",
+	  1900 + uttime->tm_year, 1 + uttime->tm_mon, uttime->tm_mday);
 
   sprintf(savedir, "/data/darks/%04d%02d%02d/",
-	  1900 + caltime->tm_year, 1 + caltime->tm_mon, caltime->tm_mday); 
+	  1900 + uttime->tm_year, 1 + uttime->tm_mon, uttime->tm_mday); 
 
   if (stat(savedir, &st) == -1)
     mkdir(savedir, 0700);
@@ -583,7 +594,7 @@ void update_dark() {
   unsigned short *new_dark = NULL; // holder for the dark
 
   struct timespec tnow;  // time since epoch
-  struct tm *caltime;     // calendar time
+  struct tm *uttime;     // calendar time
 
   char CROP[5] = "FULL"; // or "CROP"
   if (camconf->cropmode == 1)
@@ -596,13 +607,16 @@ void update_dark() {
 
   // get the time - to give the file a unique name
   clock_gettime(CLOCK_REALTIME, &tnow);  // elapsed time since epoch
-  caltime = localtime(&tnow.tv_sec);     // translate into calendar time
+  uttime = gmtime(&tnow.tv_sec);        // translate into calendar time
   
   new_dark = (unsigned short *) malloc(camconf->nbpix_cub * 2 *
 				       sizeof(unsigned short));
 
+  sprintf(camconf->utdate, "%04d-%02d-%02d",
+	  1900 + uttime->tm_year, 1 + uttime->tm_mon, uttime->tm_mday);
+
   sprintf(savedir, "/data/darks/%04d%02d%02d/",
-	  1900 + caltime->tm_year, 1 + caltime->tm_mon, caltime->tm_mday); 
+	  1900 + uttime->tm_year, 1 + uttime->tm_mon, uttime->tm_mday); 
 
   sprintf(fname, "%sdark_cred1_%s_%s_%s_fps_%04.0f_gain_%03d.fits",
 	  savedir, CROP, camconf->readmode, NBFR,
@@ -665,7 +679,7 @@ void* fetch_imgs(void *arg) {
   // int prev_liveindex = 0;     // frame index of previous image
 
   int cam_xsz, roi_xsz, x0, y0;
-  unsigned int offset = 1000;
+  // unsigned int offset = 1000;  // kept here in case of bug with change (now in camconf)
   
   // ----- image fetching loop starts here -----
   cam_xsz = shm_img->md->size[0];  // camera frame size along the x-axis
@@ -748,7 +762,7 @@ void* fetch_imgs(void *arg) {
 	  livedrk_ptr = shm_img_dark->array.UI16 + matching_dark_index * nbpix_frm;
 	}
 	for (ii = 0; ii < nbpix_frm; ii++) // subtracting dark here
-	  liveimg_ptr[ii] -= livedrk_ptr[ii] - offset;
+	  liveimg_ptr[ii] -= livedrk_ptr[ii] - camconf->offset;
       }
 
       // =============================
@@ -799,7 +813,7 @@ void* fetch_imgs(void *arg) {
             else {*/
               for (jj = 0; jj < ROI[ri].ysz; jj++) {
                 for (ii = 0; ii < ROI[ri].xsz; ii++) {
-                  liveroi_ptr[jj*roi_xsz+ii] = offset;
+                  liveroi_ptr[jj*roi_xsz+ii] = camconf->offset;
                   for (int kk = 0; kk < ROI[ri].nrs; kk++) {
                     seq_img_ptr = shm_img->array.UI16 + seq_indices[kk] * nbpix_frm;  // live pointer
                     liveroi_ptr[jj*roi_xsz+ii] += tsig[kk] * (int)seq_img_ptr[(jj+y0) * cam_xsz + ii+x0];
