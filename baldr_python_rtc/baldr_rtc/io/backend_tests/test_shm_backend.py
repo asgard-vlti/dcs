@@ -4,10 +4,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import numpy as np
-#import pytest
-
-
-
 from baldr_python_rtc.baldr_rtc.io import shm_backend
 
 
@@ -23,7 +19,7 @@ assert hasattr(fr, "frame_id")
 
 
 
-
+# look on camera 
 test_cmd  = np.zeros(140)
 dm.set_data( test_cmd  )
 input('set zero on channel 2 dm, press anything to put another shape on ')
