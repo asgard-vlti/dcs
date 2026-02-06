@@ -7,7 +7,7 @@
 #define DM_MAX_R 5.0
 
 // Thresholds for fringe tracking (now variables)
-double flux_threshold = 100.0;
+double flux_threshold = 1000.0;
 
 using namespace std::complex_literals;
 
@@ -32,8 +32,8 @@ void set_dm_tilt_foc(double tx_in, double ty_in, double focus){
         {
             r2 = (i-5.5)*(i-5.5)+(j-5.5)*(j-5.5);
             if (r2 > DM_MAX_R*DM_MAX_R) r2 = DM_MAX_R*DM_MAX_R;
-            DM.array.D[12*j+i] = tx * (i - 5.5) / DM_MAX_R + 
-                ty * (j - 5.5) / DM_MAX_R + focus * (1.0 - 2*r2/DM_MAX_R/DM_MAX_R);
+            DM_low.array.D[12*j+i] = ty * (i - 5.5) / DM_MAX_R + 
+                tx * (5.5 - j) / DM_MAX_R + focus * (1.0 - 2*r2/DM_MAX_R/DM_MAX_R);
         }
     ImageStreamIO_sempost(&master_DM, 1);
 }
@@ -99,6 +99,7 @@ static inline void catch_up_with_sem(IMAGE* img, int semid) {
 
 // The main AO servo loop
 void servo_loop(){
+    double add_tx, add_ty;
     timespec now;
 #ifdef DEBUG_ALL
     timespec now_all, then_all;
@@ -131,31 +132,39 @@ void servo_loop(){
         clock_gettime(CLOCK_REALTIME, &then);
 #endif
         // Compute the weighted flux within +/- width/2 of the current (px, py) position.
-        double flux = 0.0, tx=0.0, ty=0.0;
+        rt_status.mutex.lock();
+        rt_status.s.flux=0;
+        rt_status.s.tx = 0;
+        rt_status.s.ty = 0;
         for (int ii=0; ii<width; ii++) {
             for (int jj=0; jj<width; jj++) {
-                int x = settings.s.px - width/2 + ii;
-                int y = settings.s.py - width/2 + jj;
-                flux += window[ii*width + jj] * (double)subarray.array.SI32[y*sz + x];
-                tx += window[ii*width + jj] * (double)subarray.array.SI32[y*sz + x] * (x - settings.s.px);
-                ty += window[ii*width + jj] * (double)subarray.array.SI32[y*sz + x] * (y - settings.s.py);
+                int y = settings.s.py - width/2 + ii;
+                int x = settings.s.px - width/2 + jj;
+                rt_status.s.flux += window[ii*width + jj] * (double)(subarray.array.SI32[y*sz + x]-DARK_OFFSET);
+                rt_status.s.tx += window[ii*width + jj] * (double)(subarray.array.SI32[y*sz + x]-DARK_OFFSET) * (x - settings.s.px);
+                rt_status.s.ty += window[ii*width + jj] * (double)(subarray.array.SI32[y*sz + x]-DARK_OFFSET) * (y - settings.s.py);
             }
         }
+        rt_status.s.tx /= rt_status.s.flux;
+        rt_status.s.ty /= rt_status.s.flux;
         // If the flux is above the threshold, compute the new DM settings and update the DM image. 
         // Otherwise, skip the DM update and just wait for the next frame.
-        if (flux > settings.s.flux_threshold) {
+        if (rt_status.s.flux > settings.s.flux_threshold) {
             // Compute the new DM settings. For now, just a simple proportional controller on the tip/tilt, and a focus term that is proportional to the flux (this is just to test that the focus term is working).
-            double add_tx = settings.s.ttg * tx / flux;
-            double add_ty = settings.s.ttg * ty / flux;
+            add_tx = settings.s.ttg * rt_status.s.tx;
+            add_ty = settings.s.ttg * rt_status.s.ty;
         } else {
             add_tx = 0.0;
             add_ty = 0.0;
         }
+        rt_status.mutex.unlock();
         control_u.tx = (1-settings.s.ttl) * control_u.tx + add_tx;
         control_u.ty = (1-settings.s.ttl) * control_u.ty + add_ty;
         // Set the DM if we are in the appropriate mode.
-        if ((servo_mode == SERVO_MODULATION) || (servo_mode == SERVO_TT)) 
+        if ((servo_mode == SERVO_HO) || (servo_mode == SERVO_TT)) 
             set_dm_tilt_foc(control_u.tx, control_u.ty, settings.s.focus_amp * control_u.ho_sign);
+        else
+            set_dm_tilt_foc(settings.s.ttxo, settings.s.ttyo, 0);
 
         // Based on where we are in the modulation, set the high-order modes to be 
         // either positive or negative. 

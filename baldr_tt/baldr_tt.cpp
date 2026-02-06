@@ -20,7 +20,8 @@ PIDSettings settings;
 RTStatus rt_status;
 ControlU control_u;
 ControlA control_a;
-IMAGE DM;
+IMAGE DM_low;
+IMAGE DM_high;
 IMAGE master_DM;
 IMAGE subarray;
 double *im_av, *im_plus, *im_minus;
@@ -144,10 +145,20 @@ void set_pxy(int px_new, int py_new){
     std::cout << "px and py updated to " << px_new << " " << py_new << std::endl;
 }
 
+void set_tto(double x, double y){
+    settings.mutex.lock();
+    settings.s.ttxo = x;
+    settings.s.ttyo = y;
+    settings.mutex.unlock();
+}
+
 Status get_status() {
     rt_status.mutex.lock();
     Status s = rt_status.s;
     rt_status.mutex.unlock();
+    s.tx = std::round(s.tx*1000)/1000.0;
+    s.ty = std::round(s.ty*1000)/1000.0;
+    s.flux = std::round(s.flux*10)/10.0;
     s.cnt = cnt % 10000; 
     return s;
 }
@@ -198,6 +209,7 @@ COMMANDER_REGISTER(m)
     m.def("hol", set_hol, "Set the high-order leak term", "gain"_arg=0.01);
     m.def("focamp", set_focus_amp, "Set the amplitude of the focus term", "focus"_arg=0.0);
     m.def("pxy", set_pxy, "Set the origin pixels for tip/tilt", "px"_arg=15, "py"_arg=15);
+    m.def("tto", set_tto, "Set tip/tilt offsets", "tx"_arg=0, "ty"_arg=0);
     m.def("flux_threshold", set_flux_threshold, "Set flux threshold", "value"_arg=100.0);
     m.def("zero_tt", zero_tt, "Zero tip/tilt based on current image position");
  }
@@ -229,10 +241,12 @@ int main(int argc, char* argv[]) {
     double cos_angle = std::cos(angle * M_PI / 180.0);
     double sin_angle = std::sin(angle * M_PI / 180.0);
     control_u.R << cos_angle, -sin_angle, sin_angle, cos_angle;
+    std::cout << "R matrix: " << control_u.R(0,0) << control_u.R(0,1) << control_u.R(1,0) << control_u.R(1,1) << std::endl;
 
 #ifndef SIMULATE
     // Initialise the DM
-    ImageStreamIO_openIm(&DM, ("dm" + std::to_string(beam) + "disp05").c_str()); //!!! Want 2 DMs...
+    ImageStreamIO_openIm(&DM_low, ("dm" + std::to_string(beam) + "disp01").c_str()); 
+    ImageStreamIO_openIm(&DM_high, ("dm" + std::to_string(beam) + "disp02").c_str()); 
     ImageStreamIO_openIm(&master_DM, ("dm" + std::to_string(beam)).c_str());
 
     // Initialise the two forward Fourier transform objects

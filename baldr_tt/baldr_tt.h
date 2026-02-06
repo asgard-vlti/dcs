@@ -1,3 +1,6 @@
+//
+// /home/asg/.conda/envs/asgard/lib/python3.10/site-packages/asgard_lab_DM_tools/asgard_lab_MDM_controller.py 
+// 
 #include <complex> 
 #include <fftw3.h>
 #include <ImageStreamIO.h>
@@ -73,6 +76,7 @@ struct Settings
 {
     double ttg, ttl, hog, hol, focus_amp, flux_threshold;
     double gauss_hwidth;
+    double ttxo, ttyo;
     int px, py;
 };
 
@@ -91,7 +95,8 @@ struct RTStatus{
 };
 
 // -------- Extern global definitions ------------
-extern IMAGE DM;
+extern IMAGE DM_low;
+extern IMAGE DM_high;
 extern IMAGE master_DM;
 extern IMAGE subarray;
 // The statit initial input parameters
