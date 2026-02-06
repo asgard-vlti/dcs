@@ -43,6 +43,7 @@ struct ControlU{
     int ho_sign;
     int ho_ix;
     Eigen::Matrix<double, N_MODES, 1> DM;
+    Eigen::Matrix<double, 2,2> R; //Rotation matrix.
 };
 
 // This is our knowledge of the DM modes
@@ -70,7 +71,7 @@ struct Status
 // Settings struct for commander
 struct Settings
 {
-    double ttg, hog, hol, focus_amp, flux_threshold;
+    double ttg, ttl, hog, hol, focus_amp, flux_threshold;
     double gauss_hwidth;
     int px, py;
 };
@@ -81,6 +82,12 @@ struct Settings
 struct PIDSettings{
     std::mutex mutex;
     Settings s;
+};
+
+// Status including a mutex.
+struct RTStatus{
+    std::mutex mutex;
+    Status s;
 };
 
 // -------- Extern global definitions ------------
@@ -96,6 +103,7 @@ extern int beam, width, sz;
 // Servo parameters. These are the parameters that will be adjusted by the commander
 extern int servo_mode;
 extern PIDSettings settings;
+extern RTStatus rt_status;
 extern ControlU control_u;
 extern ControlA control_a;
 extern long unsigned int cnt;

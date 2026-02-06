@@ -4,6 +4,7 @@
 //#define DEBUG
 //#define DEBUG_FILTER6
 #define DARK_OFFSET 1000
+#define DM_MAX_R 5.0
 
 // Thresholds for fringe tracking (now variables)
 double flux_threshold = 100.0;
@@ -14,15 +15,26 @@ long unsigned int cnt=0, cnt_since_init=0;
 long unsigned int nerrors=0;
 int sz=0;
 int *im_boxcar[N_BOXCAR];
+double *window;
 
-void set_dm_tilt_foc(int tx, int ty, int focus){
+void set_dm_tilt_foc(double tx_in, double ty_in, double focus){
 #ifdef SIMULATE
     return;
 #endif
+    double r2=0.0;
+    // Rotate the input tip/tilt by the current rotation matrix. 
+    // This allows us to correct for any rotation between the DM and the image.
+    double tx = control_u.R(0,0)*tx_in + control_u.R(0,1)*ty_in;
+    double ty = control_u.R(1,0)*tx_in + control_u.R(1,1)*ty_in;
     // Set DM tip/tilt and focus terms.
     for (int j=0; j<12; j++)
         for (int i=0; i<12; i++)
-                DM.array.D[12*j+i] = 0.0;
+        {
+            r2 = (i-5.5)*(i-5.5)+(j-5.5)*(j-5.5);
+            if (r2 > DM_MAX_R*DM_MAX_R) r2 = DM_MAX_R*DM_MAX_R;
+            DM.array.D[12*j+i] = tx * (i - 5.5) / DM_MAX_R + 
+                ty * (j - 5.5) / DM_MAX_R + focus * (1.0 - 2*r2/DM_MAX_R/DM_MAX_R);
+        }
     ImageStreamIO_sempost(&master_DM, 1);
 }
 
@@ -41,6 +53,17 @@ void initialise_servo(){
     im_av = (double*) malloc(sizeof(double) * sz * sz);
     im_plus = (double*) malloc(sizeof(double) * width * width);
     im_minus = (double*) malloc(sizeof(double) * width * width);
+    window = (double*) malloc(sizeof(double) * width * width);
+     // Initialise the window to a super-Gaussian with a 1/e^2 width equal to the image size.
+    int ssz = (int)width;
+    for (int ii=0; ii<ssz; ii++) {
+        for (int jj=0; jj<ssz; jj++) {
+            double temp = ((double)(ii - ssz / 2) * (double)(ii - ssz / 2) +
+            (double)(jj - ssz / 2) * (double)(jj - ssz / 2)) /
+            (double)(ssz / 2) / (double)(ssz / 2);
+            window[ii*width + jj] = std::exp(-temp*temp);
+        }
+    }
 
     // Set these images to zero.
     for (int j=0;j<sz*sz;j++) im_av[j]=0;
@@ -56,6 +79,13 @@ void initialise_servo(){
             im_boxcar[i][j]=0;
         }
     }
+
+    // Initialise the control_u and control_a structures to zero.
+    control_u.tx = 0.0;
+    control_u.ty = 0.0;
+    control_u.ho_ix = 0;
+    control_u.ho_sign = 1;
+    control_u.DM.setZero();
 }
 
 //------------------------------------------------------------------------------
@@ -100,6 +130,39 @@ void servo_loop(){
         timespec then;
         clock_gettime(CLOCK_REALTIME, &then);
 #endif
+        // Compute the weighted flux within +/- width/2 of the current (px, py) position.
+        double flux = 0.0, tx=0.0, ty=0.0;
+        for (int ii=0; ii<width; ii++) {
+            for (int jj=0; jj<width; jj++) {
+                int x = settings.s.px - width/2 + ii;
+                int y = settings.s.py - width/2 + jj;
+                flux += window[ii*width + jj] * (double)subarray.array.SI32[y*sz + x];
+                tx += window[ii*width + jj] * (double)subarray.array.SI32[y*sz + x] * (x - settings.s.px);
+                ty += window[ii*width + jj] * (double)subarray.array.SI32[y*sz + x] * (y - settings.s.py);
+            }
+        }
+        // If the flux is above the threshold, compute the new DM settings and update the DM image. 
+        // Otherwise, skip the DM update and just wait for the next frame.
+        if (flux > settings.s.flux_threshold) {
+            // Compute the new DM settings. For now, just a simple proportional controller on the tip/tilt, and a focus term that is proportional to the flux (this is just to test that the focus term is working).
+            double add_tx = settings.s.ttg * tx / flux;
+            double add_ty = settings.s.ttg * ty / flux;
+        } else {
+            add_tx = 0.0;
+            add_ty = 0.0;
+        }
+        control_u.tx = (1-settings.s.ttl) * control_u.tx + add_tx;
+        control_u.ty = (1-settings.s.ttl) * control_u.ty + add_ty;
+        // Set the DM if we are in the appropriate mode.
+        if ((servo_mode == SERVO_MODULATION) || (servo_mode == SERVO_TT)) 
+            set_dm_tilt_foc(control_u.tx, control_u.ty, settings.s.focus_amp * control_u.ho_sign);
+
+        // Based on where we are in the modulation, set the high-order modes to be 
+        // either positive or negative. 
+        control_u.ho_ix = (control_u.ho_ix + 1) % HO_CYCLE;
+        if (control_u.ho_ix == 0) {
+            control_u.ho_sign *= -1;
+        }
 
         // Done with critical parts. Update the boxcar average
         int ix = cnt % N_BOXCAR;

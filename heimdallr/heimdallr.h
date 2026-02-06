@@ -51,8 +51,6 @@
 #define MAX_N_PS_BOXCAR 64   // Maximum number of frames to average for power spectrum
 #define MAX_N_PD_BOXCAR 256  // Maximum number of frames to keep for phase delay history (phasor and phase)
 
-#define N_DARK_BOXCAR 256 // Number of frames for the running average of the dark.
-
 #define N_TEL 4 // Number of telescopes
 #define N_BL 6  // Number of baselines
 #define N_CP 4  // Number of closure phases
@@ -264,9 +262,6 @@ public:
     std::mutex mutex;
     // POSIX semaphore for new frame notification
     sem_t sem_new_frame;
-
-    // Save dark frames as an atomic variable. !!! Remove as not needed.
-    std::atomic<bool> save_dark_frames;
     
     // Count of the frame number that has been processed
     long unsigned int cnt=0;
@@ -286,8 +281,7 @@ public:
     /// The power spectrum of the image, and the array to boxcar average.
     double *power_spectra[MAX_N_PS_BOXCAR];
     double *power_spectrum;
-    double *subim, *subim_av, *dark;
-    double *subim_boxcar[N_DARK_BOXCAR];
+    double *subim;
     double power_spectrum_bias;
     double power_spectrum_inst_bias;
     int ps_index = MAX_N_PS_BOXCAR-1;

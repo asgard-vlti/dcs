@@ -15,8 +15,9 @@ toml::table config;
 
 // Servo parameters. These are the parameters that will be adjusted by the commander
 int servo_mode=SERVO_OFF;
-int beam=1, width=15;
+int beam=1, width=21;
 PIDSettings settings;
+RTStatus rt_status;
 ControlU control_u;
 ControlA control_a;
 IMAGE DM;
@@ -106,6 +107,20 @@ void set_hol(double leak) {
     settings.mutex.unlock();
 }
 
+// Set the tip/tilt leaky integrator term
+void set_ttl(double leak) {
+    settings.mutex.lock();
+    settings.s.ttl = leak;
+    settings.mutex.unlock();
+}
+
+// Set the amplitude of the focus term
+void set_focus_amp(double focus) {
+    settings.mutex.lock();
+    settings.s.focus_amp = focus;
+    settings.mutex.unlock();
+}
+
 // Setter functions for thresholds. 
 void set_flux_threshold(double val) { 
     settings.mutex.lock();
@@ -114,17 +129,27 @@ void set_flux_threshold(double val) {
 }
 
 void set_pxy(int px_new, int py_new){
+    // Check that the new px and py are more than width/2 from the edge, 
+    // otherwise we might have problems with the Gaussian window.
+    if (px_new < width/2 || px_new > sz - width/2 || py_new < width/2 || py_new > sz - width/2) {
+        std::cout << "px and py must be between " << width/2 << " and " << sz - width/2 << std::endl;
+        return;
+    }
     // Set px and py!
     settings.mutex.lock();
     settings.s.px = px_new;
     settings.s.py = py_new;
     settings.mutex.unlock();
+    // For debugging, print the new px and py.
+    std::cout << "px and py updated to " << px_new << " " << py_new << std::endl;
 }
 
 Status get_status() {
-    Status status;
-    status.cnt = cnt % 10000; 
-    return status;
+    rt_status.mutex.lock();
+    Status s = rt_status.s;
+    rt_status.mutex.unlock();
+    s.cnt = cnt % 10000; 
+    return s;
 }
 
 Settings get_settings() {
@@ -155,6 +180,7 @@ void zero_tt(){
             }
         }
     }
+    // Set the new px and py. Error checking is done in set_pxy.
     set_pxy(px_new, py_new);
 }
 
@@ -167,8 +193,10 @@ COMMANDER_REGISTER(m)
     m.def("status", get_status, "Get the status of the system");
     m.def("settings", get_settings, "Get current system settings");
     m.def("ttg", set_ttg, "Set the tip/tilt gain for the servo loop", "gain"_arg=0.0);
+    m.def("ttl", set_ttl, "Set the tip/tilt leak term", "gain"_arg=0.01);
     m.def("hog", set_hog, "Set the high-order gain for the servo loop", "gain"_arg=0.0);
     m.def("hol", set_hol, "Set the high-order leak term", "gain"_arg=0.01);
+    m.def("focamp", set_focus_amp, "Set the amplitude of the focus term", "focus"_arg=0.0);
     m.def("pxy", set_pxy, "Set the origin pixels for tip/tilt", "px"_arg=15, "py"_arg=15);
     m.def("flux_threshold", set_flux_threshold, "Set flux threshold", "value"_arg=100.0);
     m.def("zero_tt", zero_tt, "Zero tip/tilt based on current image position");
@@ -190,6 +218,18 @@ int main(int argc, char* argv[]) {
     settings.s.py = config["px"].value_or(15);
     width = config["width"].value_or(15);
     settings.s.gauss_hwidth = config["gauss_hwidth"].value_or(3.0);
+    settings.s.ttg = config["ttg"].value_or(0.01);
+    settings.s.ttl = config["ttl"].value_or(0.01);
+    settings.s.hog = config["hog"].value_or(0.2); 
+    settings.s.hol = config["hol"].value_or(0.01);
+    settings.s.focus_amp = config["focus_amp"].value_or(0.02);
+
+    // Compute the rotation matrix R based on the rotation angle in the config file. 
+    double angle = config["rotation_angle"].value_or(0.0);
+    double cos_angle = std::cos(angle * M_PI / 180.0);
+    double sin_angle = std::sin(angle * M_PI / 180.0);
+    control_u.R << cos_angle, -sin_angle, sin_angle, cos_angle;
+
 #ifndef SIMULATE
     // Initialise the DM
     ImageStreamIO_openIm(&DM, ("dm" + std::to_string(beam) + "disp05").c_str()); //!!! Want 2 DMs...

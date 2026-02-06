@@ -12,7 +12,6 @@ static inline void catch_up_with_sem(IMAGE* img, int semid) {
 }
 
 ForwardFt::ForwardFt(IMAGE * subarray_in) {
-    save_dark_frames=false;
     subarray = subarray_in;
     // Sanity check that we actually have a 2D , square image
     if (subarray->md->naxis != 2) {
@@ -25,30 +24,6 @@ ForwardFt::ForwardFt(IMAGE * subarray_in) {
     // Allocate memory for the Fourier transform and plan it.
     ft = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * subim_sz * (subim_sz / 2 + 1));
     subim = (double*) fftw_malloc(sizeof(double) * subim_sz * subim_sz);
-    
-    // Also allocate memory for the subimage average and the boxcar frames.
-    dark = (double*) fftw_malloc(sizeof(double) * subim_sz * subim_sz);
-    subim_av = (double*) fftw_malloc(sizeof(double) * subim_sz * subim_sz);
-    for (int ii=0; ii<N_DARK_BOXCAR; ii++) {
-        subim_boxcar[ii] = (double*) fftw_malloc(sizeof(double) * subim_sz * subim_sz);
-    }
-    // Initialise the subimage average and saved dark to zero
-    // !!! Once we're really set up, the dark should be set to a previously
-    // saved dark calibration frame for our mode !!!
-    for (unsigned int ii=0; ii<subim_sz; ii++) {
-        for (unsigned int jj=0; jj<subim_sz; jj++) {
-            subim_av[ii*subim_sz + jj] = 0.0;
-            dark[ii*subim_sz + jj] = 0.0;
-        }
-    }
-    // Initialise the boxcar frames to zero
-    for (unsigned int ii=0; ii<subim_sz; ii++) {
-        for (unsigned int jj=0; jj<subim_sz; jj++) {
-            for (int kk=0; kk<N_DARK_BOXCAR; kk++) {
-                subim_boxcar[kk][ii*subim_sz + jj] = 0.0;
-            }
-        }
-    }
 
     // Create the plan
     plan = fftw_plan_dft_r2c_2d(subim_sz, subim_sz, subim, ft, FFTW_MEASURE);
@@ -56,11 +31,9 @@ ForwardFt::ForwardFt(IMAGE * subarray_in) {
     // Allocate memory for the subimage
     window = (double*) fftw_malloc(sizeof(double) * subim_sz * subim_sz);
     power_spectrum = (double*) fftw_malloc(sizeof(double) * subim_sz * (subim_sz / 2 + 1));
-    //power_spectra[0] = (double*) fftw_malloc(sizeof(double) * subim_sz * (subim_sz / 2 + 1) * MAX_N_PS_BOXCAR);
     for (int ii=0; ii<MAX_N_PS_BOXCAR; ii++) {
         power_spectra[ii] = (double*) fftw_malloc(sizeof(double) * subim_sz * (subim_sz / 2 + 1));
-        //power_spectra[ii-1] + subim_sz * (subim_sz / 2 + 1);
-    }
+   }
     // Initialise the window to a super-Gaussian with a 1/e^2 width equal to the image size.
     // !!! Probably the window should be centered on a half pixel.
     int ssz = (int)subim_sz;
@@ -216,28 +189,6 @@ void ForwardFt::loop() {
 
             // Signal that a new frame is available.
             sem_post(&sem_new_frame);
-
-            // Now we need to boxcar average the dark frames. 
-            //!!! This will not even work as UI16 should be SI32
-            int ix = cnt % N_DARK_BOXCAR;
-            for (unsigned int ii=0; ii<subim_sz; ii++) {
-                for (unsigned int jj=0; jj<subim_sz; jj++) {
-                    subim_av[ii*subim_sz + jj] -= 
-                        subim_boxcar[ix][ii*subim_sz + jj];
-                    subim_boxcar[ix][ii*subim_sz + jj] = 
-                        (double)(subarray->array.UI16[ii*subim_sz + jj])/N_DARK_BOXCAR;
-                    subim_av[ii*subim_sz + jj] +=
-                        subim_boxcar[ix][ii*subim_sz + jj];
-                }
-            }
-            if (save_dark_frames) {
-                for (unsigned int ii=0; ii<subim_sz; ii++) {
-                    for (unsigned int jj=0; jj<subim_sz; jj++) {
-                        dark[ii*subim_sz + jj] = subim_av[ii*subim_sz + jj];
-                    }
-                }
-                save_dark_frames = false;
-            }
 
             //std::cout << subarray->name << ": " << cnt << std::endl;
         } else {

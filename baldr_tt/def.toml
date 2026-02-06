@@ -1,5 +1,10 @@
 name = "Default Configuration"
-beam = 1
+
+# Beam. This should be over-written as an input.
+beam = 2
+
+# DM Rotations in radians
+dm_rotations = [0,0,0,0]
 
 #Wavelength in microns
 wave = 1.65
@@ -9,11 +14,18 @@ px = 15
 py = 15
 
 #Width with respect to the central pixel. Must be odd!
-width = 15
+width = 21
 focus_amp = 0.05
 
 #Tip/tilt Gaussian weight 1/e^2 half width
 gauss_hwidth = 3
+
+# Tip/tilt gain in units of DM stroke per pixel.
+ttg = 0.01
+ttl = 0.01
+# High-order gain - normalised to unity 
+hog = 0.2
+hol = 0.01
 
 #All units are in radians and microns
 [geometry] 
