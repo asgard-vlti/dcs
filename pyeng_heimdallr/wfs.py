@@ -12,27 +12,12 @@ import zmq
 import datetime
 import os
 
+import asgard_alignment.controllino as co
+
 # from scipy.interpolate import griddata
 
 # ----------------------------------------
 # pupil geometry design
-hcoords = np.array([[ 0.  ,  0.  ],  # Beam 3
-                    [-1.04,  2.46],  # Beam 2
-                    [ 2.77,  0.01],  # Beam 4
-                    [-1.20, -1.94]]) # Beam 1
-
-hcoords = np.array([[ 0.  ,  0.  ],    # Beam 3
-                    [-1.025,  2.460],  # Beam 2
-                    [ 2.785,  0.035],  # Beam 4
-                    [-1.145, -1.965]]) # Beam 1
-
-# reordered so that bench & xara order are same?
-
-hcoords = np.array([[-1.025,  2.460],  # Bench Beam 1
-                    [-1.145, -1.965],  # Bench Beam 2
-                    [ 0.000  ,0.000],  # Bench Beam 3
-                    [ 2.785,  0.035]]) # Bench Beam 4
-
 hcoords = np.loadtxt("N1_hole_coordinates.txt")
 
 # ----------------------------------------
@@ -70,8 +55,13 @@ class Heimdallr():
         self.dd = dist(self.xsz, self.xsz, between_pix=True)
         self.apod = np.exp(-(self.dd/8)**4)
 
-        self.gd_offset = np.zeros(6)
-        # pf.writeto("apodizer.fits", self.apod, overwrite=True)
+        self.nbl = 6  # number of baselines
+        self.ncp = 3  # number of closure-phases
+
+        self.K1_norm = 100000.0  # used to fix the K1 photometry
+        self.K2_norm = 100000.0  # used to fix the K2 photometry
+
+        self.gd_offset = np.zeros(self.nbl)
         
         self.pscale = 35 * 1.85
         self.Ks_wl = 2.05e-6  # True Heimdallr Ks wavelength (in meters)
@@ -83,6 +73,12 @@ class Heimdallr():
 
         self.hdlr1 = IWFS(array=hcoords)
         self.hdlr2 = IWFS(array=hcoords)
+
+        # hard-coded closure-phase matrix
+        self.CPM = np.array([[ 0,  0,  0,  1, -1, -1],
+                             [ 1, -1,  0,  0,  0, -1],
+                             [ 1,  0, -1, -1,  0,  0],
+                             [-1,  1,  0,  0,  0,  1]])
 
         # phase and group delay to be measured relative to beam 3
         # so a custom PINV is requested here
@@ -115,21 +111,29 @@ class Heimdallr():
         self.socket.setsockopt(zmq.RCVTIMEO, 10000)
         self.socket.connect("tcp://192.168.100.2:5555")
 
-        self.hfo_pos = np.zeros(4)
+        # connecting to HFOs
+        # ===================
+        self.hfo_pos = np.zeros(self.ndm)
         print("---")
         for ii in range(self.ndm):
             self.hfo_pos[ii] = self.get_dl_pos(ii+1)
-            print(f"HFO{ii+1} = {self.hfo_pos[ii]:.2f} um")
+            print(f"HFO{ii+1} = {self.hfo_pos[ii]:8.2f} um")
         print("---")
 
+        # connecting to HPOLs
+        # ===================
+        self.cc = co.Controllino("192.168.100.12", init_motors=False)
+        self.hpol_IDs = [4,5,6,7]  # check first w/ Mike
+        self.hpol_pos = np.zeros(self.ndm, dtype=int)
+        for ii in range(self.ndm):
+            self.hpol_pos[ii] = self.get_hpol_pos(ii+1)
+            print(f"HPOL{ii+1} = {self.hpol_pos[ii]:+6d} (steps)")
+        print("---")
+
+        # ===================
         self.keepgoing = True
         self.log_len = 2000  # length of the sensor log
-        self.opds = [[], [], []]  # the log of the measured OPDs
-        self.gdlays = [[], [], [], [], [], []]  # the log of group delays
-        self.vis_k1 = [[], [], [], [], [], []]  # log of K1 visibility
-        self.vis_k2 = [[], [], [], [], [], []]  # log of K2 visibility
-        self.phi_k1 = [[], [], [], [], [], []]  # log of K1 phase
-        self.phi_k2 = [[], [], [], [], [], []]  # log of K2 phase
+        self.init_logs()
 
         self.calibrated = False
         self.calibrating = False
@@ -139,23 +143,35 @@ class Heimdallr():
         self.gain = 0.2
 
     # =========================================================================
+    def init_logs(self):
+        self.opds = [[], [], []]  # the log of the measured OPDs
+        self.gdlays = [[], [], [], [], [], []]  # the log of group delays
+        self.vis_k1 = [[], [], [], [], [], []]  # log of K1 visibility
+        self.vis_k2 = [[], [], [], [], [], []]  # log of K2 visibility
+        self.phi_k1 = [[], [], [], [], [], []]  # log of K1 phase
+        self.phi_k2 = [[], [], [], [], [], []]  # log of K2 phase
+        self.cp_k1 = [[], [], [], []]           # log of K1 closure-phase
+        self.cp_k2 = [[], [], [], []]           # log of K2 closure-phase
+        self.first_time = True
+
+    # =========================================================================
     def calc_wfs_data(self):
         k1d = self.Ks.get_latest_data(self.semid).astype(float) - im_offset
         k2d = self.Kl.get_latest_data(self.semid).astype(float) - im_offset
         k1d *= self.apod
         k2d *= self.apod
         # img = recenter(data, verbose=False)
-        norm1 = k1d.sum()
-        norm2 = k2d.sum()
-        if norm1 != 0:
-            k1d /= norm1
-        if norm2 != 0:
-            k2d /= norm2
+        self.norm1 = k1d.sum()
+        self.norm2 = k2d.sum()
 
-        if norm1 != 0:
+        if self.norm1 != 0:
             self.hdlr1.extract_data(k1d)
-        if norm2 != 0:
+        if self.norm2 != 0:
             self.hdlr2.extract_data(k2d)
+
+        # visibility scaling to photometry
+        self.hdlr1.cvis[0] *= self.norm1 / self.K1_norm
+        self.hdlr2.cvis[0] *= self.norm2 / self.K2_norm
 
         # memorizing previous state
         try:
@@ -165,15 +181,17 @@ class Heimdallr():
             self.first_time = False
         except:
             self.first_time = True
-            print("First time")
-            pass
+            # print("First time")
+            self.K1_norm = self.norm1
+            self.K2_norm = self.norm2            
+            # pass
 
         self._pd_k1 = np.angle(self.hdlr1.cvis[0])
         self._pd_k2 = np.angle(self.hdlr2.cvis[0])
         self._gd_rad = np.angle(self.hdlr1.cvis[0] * self.hdlr2.cvis[0].conj())
 
-        if not self.first_time:
-            for ii in range(6):
+        if not self.first_time:  # real-time unwrapping of phase
+            for ii in range(self.nbl):
                 self._gd_rad[ii] = unwrap(self._gd_rad[ii],
                                           self._prev_gd_rad[ii])
                 self._pd_k1[ii] = unwrap(self._pd_k1[ii],
@@ -181,14 +199,24 @@ class Heimdallr():
                 self._pd_k2[ii] = unwrap(self._pd_k2[ii],
                                           self._pd_prev_k2[ii])
 
+        self._cp_now_k1 = self.CPM.dot(self._pd_k1)
+        self._cp_now_k2 = self.CPM.dot(self._pd_k2)
+
+        for ii in range(self.ncp):
+            self._cp_now_k1[ii] = (self._cp_now_k1[ii] + 1) % (2*np.pi) - 1
+            self._cp_now_k2[ii] = (self._cp_now_k2[ii] + 1) % (2*np.pi) - 1
+
         self.gdlay = self._gd_rad * self.gd_factor - self.gd_offset
         self.opd_now_k1 = self.PINV.dot(self._pd_k1 * self.pd1_factor)
         self.opd_now_k2 = self.PINV.dot(self._pd_k2 * self.pd2_factor)
 
-        if self.tracking_mode == "group":
-            self.dms_cmds = self.PINV.dot(self.gdlay)
-        else:
+        if self.tracking_mode == "phase1":
             self.dms_cmds = self.opd_now_k1
+        elif self.tracking_mode == "phase2":
+            self.dms_cmds = self.opd_now_k2
+        else:  # self.tracking_mode == "group":
+            self.dms_cmds = self.PINV.dot(self.gdlay)
+            
         # self.dms_cmds = self.opd_now_k1  # (or k2) - as a test?
         # self.dms_cmds = np.insert(self.dms_cmds, 0, 0)
         # self.dms_cmds -= self.dms_cmds[2] # everything relative to Beam 3
@@ -196,7 +224,7 @@ class Heimdallr():
 
     # =========================================================================
     def log_opds(self):
-        for ii in range(6):
+        for ii in range(self.nbl):
             self.gdlays[ii].append(self.gdlay[ii])
 
         for ii in range(self.ndm-1):
@@ -207,23 +235,31 @@ class Heimdallr():
             for ii in range(self.ndm-1):
                 self.opds[ii].pop(0)
 
-            for ii in range(6):
+            for ii in range(self.nbl):
                 self.gdlays[ii].pop(0)
 
     # =========================================================================
     def log_vis(self):
-        for ii in range(6):
+        for ii in range(self.nbl):
             self.vis_k1[ii].append(np.abs(self.hdlr1.cvis[0][ii]))
             self.vis_k2[ii].append(np.abs(self.hdlr2.cvis[0][ii]))
             self.phi_k1[ii].append(self._pd_k1[ii])
             self.phi_k2[ii].append(self._pd_k2[ii])
 
+        for ii in range(self.ncp):
+            self.cp_k1[ii].append(self._cp_now_k1[ii])
+            self.cp_k2[ii].append(self._cp_now_k2[ii])
+
         if len(self.vis_k1[0]) > self.log_len:
-            for ii in range(6):
+            for ii in range(self.nbl):
                 self.vis_k1[ii].pop(0)
                 self.vis_k2[ii].pop(0)
                 self.phi_k1[ii].pop(0)
                 self.phi_k2[ii].pop(0)
+
+            for ii in range(self.ncp):
+                self.cp_k1[ii].pop(0)
+                self.cp_k2[ii].pop(0)
 
     # =========================================================================
     def dispatch_opds(self):
@@ -242,19 +278,26 @@ class Heimdallr():
                 self.sems[ii].post_sems(1)
 
     # =========================================================================
+    def get_hpol_pos(self, beamid=1):
+        """ Get the HPOL stepper motor position for the requested beam ID # """
+        return self.cc.where(self.hpol_IDs[beamid-1])
+
+    # =========================================================================
+    def move_hpol(self, pos, beamid=1):
+        """ Move the HPOL stepper motor to *pos*  the requested beam ID # """
+        self.cc.amove(self.hpol_IDs[beamid-1], pos)
+
+    # =========================================================================
     def get_dl_pos(self, beamid=1):
+        """ Get delay line position (HFO) for the requested beam ID # """
         self.socket.send_string(f"read HFO{beamid}")
         return float(self.socket.recv_string().strip()) * 1e3
 
     # =========================================================================
     def move_dl(self, pos, beamid=1):
-        # print(f"moveabs HFO{beamid} {pos:.5f}")
+        """ Move delay line (HFO) to *pos* for the requested beam ID # """
         self.socket.send_string(f"moveabs HFO{beamid} {1e-3 * pos:.5f}")
         self.socket.recv_string()  # acknowledgement
-        # cur_pos = self.get_dl_pos(beamid)
-        # while not np.isclose(pos, cur_pos, atol=1.0):
-        #     time.sleep(0.5)
-        #     cur_pos = self.get_dl_pos(beamid)
 
     # =========================================================================
     def fringe_search(self, beamid=1, srange=100.0, step=5.0, band="K1"):
@@ -332,12 +375,49 @@ class Heimdallr():
         print(f"Done! Best pos is {best_pos:.2f} um for v = {best_vis:.2f}\n")
         print(f"The scan went from {steps[0]:.2f} um to {steps[-1]:.2f}\n")
         self.move_dl(best_pos, beamid)
+        return best_pos, best_vis
+
+    # =========================================================================
+    def hpol_pos_scan(self, beamid, pmin, pmax, srange=100.0, step=5.0, band="K1"):
+        ''' -------------------------------------------------------------------
+        HPOL optimal position procedure
+
+        The idea is as follows: doing a ramp of HPOL commands
+        At each step, scan HFO to optimize fringe visibilities
+
+        ------------------------------------------------------------------- '''
+        # pos_all = np.round(np.linspace(pmin, pmax, nstep)).astype(int)
+        ssize = 25  # step size for HPOL
+        pos_all = np.arange(pmin, pmax, ssize)
+        best_hpo_pos = 0
+        best_best_dl_pos = 0
+        best_best_vis = 0
+        for pos in pos_all:
+            print(f"pos = {pos}")
+            self.move_hpol(pos, beamid)
+
+            if self.abort is True:
+                print("Aborting HPOL SCAN")
+                time.sleep(0.5)
+                self.abort = False
+                break
+
+            best_dl_pos, best_vis = self.fringe_search(
+                beamid=beamid, srange=srange, step=step, band=band)
+            if best_vis > best_best_vis:
+                best_best_vis = best_vis
+                best_best_dl_pos = best_dl_pos
+                best_hpo_pos = pos
+            print(f"HPOL #{beamid} pos = {pos} - best {band} fringes at {best_dl_pos}")
+        print(f"FINAL: HPOL #{beamid} pos = {best_hpo_pos} - best {band} fringes at {best_best_dl_pos}")
+        self.move_hpol(best_hpo_pos, beamid)
+        self.move_dl(best_best_dl_pos)
 
     # =========================================================================
     def dm_modulation_response(self):
-        ''' -------------------------------------------------- 
-        Sinusoidal DM modulation
-        -------------------------------------------------- '''
+        ''' -------------------------------------------------------------------
+        Sinusoidal DM modulation sequence to characterize PD/GD behavior
+        ------------------------------------------------------------------- '''
         nmod = 100
         nc = [1, 2, 3, 4]
         a0 = 10.0 # 0.5
@@ -401,6 +481,13 @@ class Heimdallr():
         self.keepgoing = False
         self.cloop_on = False
         time.sleep(0.1)
+        self.init_logs()
+        try:
+            del self._pd_k1
+            del self._pd_k2
+            del self._gd_rad
+        except:
+            pass
         print("\n")
 
     # =========================================================================

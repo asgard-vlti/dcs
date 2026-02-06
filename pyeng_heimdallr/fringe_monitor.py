@@ -15,7 +15,7 @@ import threading
 
 import time
 import sys
-import zmq
+# import zmq
 
 # =====================================================================
 #                   global variables and tools
@@ -55,7 +55,7 @@ class App(QtWidgets.QMainWindow):
         super().__init__()
         self.title = 'Asgard Lab Fringe Monitor'
         self.left, self.top = 0, 0
-        self.width, self.height = 750, 810
+        self.width, self.height = 800, 810
         self.band = "K1"  # default band for fringe search
         self.delay2display = "Grp Delay"
         self.setWindowTitle(self.title) 
@@ -126,14 +126,17 @@ class MyMainWidget(QWidget):
         self.pB_reset_dms = QtWidgets.QPushButton(self)
         self.pB_reset_dms.setText("RESET DMs")
 
+        self.pB_set_phot = QtWidgets.QPushButton(self)
+        self.pB_set_phot.setText("SET PHOT")
+
         self.pB_gd_set_offset = QtWidgets.QPushButton(self)
-        self.pB_gd_set_offset.setText("GD offset")
+        self.pB_gd_set_offset.setText("Offset GD")
 
         self.pB_gd_fgt_offset = QtWidgets.QPushButton(self)
         self.pB_gd_fgt_offset.setText("Reset GD")
         
-        self.pB_test = QtWidgets.QPushButton(self)
-        self.pB_test.setText("TEST")
+        self.pB_dm_modul = QtWidgets.QPushButton(self)
+        self.pB_dm_modul.setText("MOD-SEQ")
 
         # ----- scanning for fringes ----
         self.cmB_select_filter = QtWidgets.QComboBox(self)
@@ -168,11 +171,40 @@ class MyMainWidget(QWidget):
             self.pB_jump_pos[ii].setText("JUMP+")
             self.pB_jump_neg[ii].setText("JUMP-")
 
-        # ----- scanning for fringes ----
+        # ----- HPOL control widgets -----
+        self.pBs_scan_hpol = []
+        self.hpol_val_lbl = []
+        self.dspB_hpol_p0 = []  # scan start point
+        self.dspB_hpol_p1 = []  # scan end point
+        self.pB_hpol_jump_pos = []
+        self.pB_hpol_jump_neg = []
+        self.hpol_step = 25     # gives resolution ~ 0.5 degree
+
+        for ii in range(4):
+            self.pBs_scan_hpol.append(QtWidgets.QPushButton(self))
+            self.pBs_scan_hpol[ii].setText(f"HPOL{ii+1}")
+            self.dspB_hpol_p0.append(QtWidgets.QSpinBox(self))
+            self.dspB_hpol_p1.append(QtWidgets.QSpinBox(self))
+            # self.dspB_hpol_p0[ii].setDecimals(0)
+            # self.dspB_hpol_p1[ii].setDecimals(0)
+            self.dspB_hpol_p0[ii].setMinimum(-10000)
+            self.dspB_hpol_p1[ii].setMinimum(-10000)
+            self.dspB_hpol_p0[ii].setMaximum(10000)
+            self.dspB_hpol_p1[ii].setMaximum(10000)
+            # self.hpol_val_lbl.append(QLabel(self))
+
+            self.pB_hpol_jump_pos.append(QtWidgets.QPushButton(self))
+            self.pB_hpol_jump_neg.append(QtWidgets.QPushButton(self))
+            self.pB_hpol_jump_pos[ii].setText("JUMP+")
+            self.pB_hpol_jump_neg[ii].setText("JUMP-")
+
+        # ----- phase/group delay display ----
         self.cmB_select_delay = QtWidgets.QComboBox(self)
         self.cmB_select_delay.addItem("Grp Delay")
         self.cmB_select_delay.addItem("Ph Delay1")
         self.cmB_select_delay.addItem("Ph Delay2")
+        self.cmB_select_delay.addItem("Cl-phs K1")
+        self.cmB_select_delay.addItem("Cl-phs K2")
 
         self.pB_abort = QtWidgets.QPushButton(self)
         self.pB_abort.setText("ABORT")
@@ -231,6 +263,11 @@ class MyMainWidget(QWidget):
         self.wfs = Heimdallr()
         self.wfs.tracking_mode = "group"
 
+        # feeding the current hpol positions into the GUI
+        for ii in range(4):
+            self.dspB_hpol_p0[ii].setValue(self.wfs.hpol_pos[ii] - 100)
+            self.dspB_hpol_p1[ii].setValue(self.wfs.hpol_pos[ii] + 100)
+
     # =========================================================================
     def apply_layout(self):
         clh = 28   # control line height
@@ -244,7 +281,9 @@ class MyMainWidget(QWidget):
         self.pB_oloop.setGeometry(QRect(btx, 90, 100, clh))
         self.pB_stop.setGeometry(QRect(btx, 120, 100, clh))
 
-        self.pB_reset_dms.setGeometry(QRect(btx, 180, 100, clh))
+        self.pB_set_phot.setGeometry(QRect(btx + 140, 30, 100, clh))
+
+        self.pB_reset_dms.setGeometry(QRect(btx + 140, 90, 100, clh))
 
         self.cmB_select_filter.setGeometry(QRect(btx, 230, 50, clh))
         self.dspB_scan_range.setGeometry(QRect(btx, 260, 60, clh))
@@ -262,13 +301,27 @@ class MyMainWidget(QWidget):
             self.pB_jump_neg[ii].setGeometry(
                 QRect(btx2 + 50, 290 + 30 * ii, 50, clh))
 
-        self.pB_gd_set_offset.setGeometry(QRect(btx, 470, 100, clh))
-        self.pB_gd_fgt_offset.setGeometry(QRect(btx, 500, 100, clh))
+        for ii in range(4):
+            self.pBs_scan_hpol[ii].setGeometry(
+                QRect(btx, 500+30*ii, 50, clh))
+            self.dspB_hpol_p0[ii].setGeometry(
+                QRect(btx + 50, 500+30*ii, 60, clh))
+            self.dspB_hpol_p1[ii].setGeometry(
+                QRect(btx + 110, 500+30*ii, 60, clh))
+            self.pB_hpol_jump_pos[ii].setGeometry(
+                QRect(btx + 170, 500+30*ii, 50, clh))
+            self.pB_hpol_jump_neg[ii].setGeometry(
+                QRect(btx + 220, 500+30*ii, 50, clh))
 
-        # the TEST button
-        self.pB_test.setGeometry(QRect(btx, 600, 100, clh))
+        # self.hpol_val_lbl = []
 
-        self.cmB_select_delay.setGeometry(QRect(btx, 650, 100, clh))
+
+        self.pB_dm_modul.setGeometry(QRect(btx + 120, 750, 100, clh))
+
+        self.cmB_select_delay.setGeometry(QRect(btx, 690, 100, clh))
+        # apply/forget delay offsets
+        self.pB_gd_set_offset.setGeometry(QRect(btx, 720, 100, clh))
+        self.pB_gd_fgt_offset.setGeometry(QRect(btx, 750, 100, clh))
         
         # -------------------
         #  the live displays
@@ -303,12 +356,12 @@ class MyMainWidget(QWidget):
         palette6 = [(38, 70, 83), (42,157,143), (138,177,125),
                     (233,196,106), (244,162,97), (231,111,81)]
 
-        for ii in range(6):
+        for ii in range(self.wfs.nbl):
             self.logplot_vis_k1.append(self.gView_plot_vis_k1.plot(
                 [0, self.wfs.log_len], [ii, ii],
                 pen=pg.mkPen(palette6[ii], width=2), name=f"v2 #{ii+1}"))
 
-        for ii in range(6):
+        for ii in range(self.wfs.nbl):
             self.logplot_vis_k2.append(self.gView_plot_vis_k2.plot(
                 [0, self.wfs.log_len], [ii, ii],
                 pen=pg.mkPen(palette6[ii], width=2), name=f"v2 #{ii+1}"))
@@ -318,7 +371,7 @@ class MyMainWidget(QWidget):
         #         [0, self.wfs.log_len], [ii, ii],
         #         pen=pg.mkPen(palette6[ii], width=2), name=f"OPD #{ii+1}"))
 
-        for ii in range(6):
+        for ii in range(self.wfs.nbl):
             self.logplot_gdlay.append(self.gView_plot_gdlay.plot(
                 [0, self.wfs.log_len], [ii, ii],
                 pen=pg.mkPen(palette6[ii], width=2), name=f"GD #{ii+1}"))
@@ -328,6 +381,7 @@ class MyMainWidget(QWidget):
         self.pB_cloop.clicked.connect(self.wfc_start)
         self.pB_oloop.clicked.connect(self.wfc_stop)
 
+        self.pB_set_phot.clicked.connect(self.set_photometry)
         self.pB_reset_dms.clicked.connect(self.reset_dms)
 
         self.cmB_select_filter.activated[str].connect(self.select_filter)
@@ -351,8 +405,51 @@ class MyMainWidget(QWidget):
         self.pB_gd_set_offset.clicked.connect(self.set_gd_offset)
         self.pB_gd_fgt_offset.clicked.connect(self.fgt_gd_offset)
 
-        self.pB_test.clicked.connect(self.trigger_test)
+
+        for ii in range(4):
+            self.pBs_scan_hpol[ii].clicked.connect(self.scan_hpol(ii))
+            self.pB_hpol_jump_pos[ii].clicked.connect(self.jump_HPOL_pos(ii))
+            self.pB_hpol_jump_neg[ii].clicked.connect(self.jump_HPOL_neg(ii))
+
+        self.pB_dm_modul.clicked.connect(self.trigger_modulation)
         # self.pB_dec_pscale.clicked.connect(self.dec_pscale)
+
+    # =========================================================================
+    def set_photometry(self):
+        print("click!")
+        self.wfs.K1_norm = self.wfs.norm1
+        self.wfs.K2_norm = self.wfs.norm2
+        print(f"Photometry: K1={self.wfs.K1_norm:.0f}, K2={self.wfs.K2_norm:.0f}")
+        pass
+
+    # =========================================================================
+    def scan_hpol(self, ii):
+        def scan():
+            self.hpol_scan_thread = GenericThread(
+                self.wfs.hpol_pos_scan,
+                beamid=ii+1, pmin=self.dspB_hpol_p0[ii].value(),
+                pmax=self.dspB_hpol_p1[ii].value(),
+                srange=self.srange_val, step=self.scan_step, band=self.band)
+            self.hpol_scan_thread.start()
+        return scan
+
+    # =========================================================================
+    def jump_HPOL_pos(self, ii):
+        def jump():
+            pos = self.wfs.get_hpol_pos(ii + 1)
+            new_pos = pos + self.hpol_step
+            print(f"HPOL{ii+1} = {pos} - jump to {new_pos}")
+            self.wfs.move_hpol(new_pos, ii+1)
+        return jump
+
+    # =========================================================================
+    def jump_HPOL_neg(self, ii):
+        def jump():
+            pos = self.wfs.get_hpol_pos(ii + 1)
+            new_pos = pos - self.hpol_step
+            print(f"HPOL{ii+1} = {pos} - jump to {new_pos}")
+            self.wfs.move_hpol(new_pos, ii+1)
+        return jump
 
     # =========================================================================
     def jump_HFO_pos(self, ii):
@@ -375,10 +472,16 @@ class MyMainWidget(QWidget):
     # =========================================================================
     def select_delay(self):
         self.delay2display = str(self.cmB_select_delay.currentText())
-        if self.delay2display == "Grp Delay":
-            self.wfs.tracking_mode = "group"
+        if self.delay2display == "Ph Delay1":
+            self.wfs.tracking_mode = "phase1"
+        elif self.delay2display == "Ph Delay2":
+            self.wfs.tracking_mode = "phase2"
         else:
-            self.wfs.tracking_mode = "phase"
+            self.wfs.tracking_mode = "group"
+        
+        if "Cl-phs" in self.delay2display:
+            for ii in range(self.wfs.ncp, self.wfs.nbl):
+                self.logplot_gdlay[ii].setData(np.zeros(self.wfs.log_len))
 
         # print("Switch to ", self.delay2display)
 
@@ -389,7 +492,7 @@ class MyMainWidget(QWidget):
 
     # =========================================================================
     def fgt_gd_offset(self):
-        self.wfs.gd_offset = np.zeros(6)
+        self.wfs.gd_offset = np.zeros(self.wfs.nbl)
         print("Forgot set point!")
 
     # =========================================================================
@@ -413,8 +516,8 @@ class MyMainWidget(QWidget):
         # print(f"step size updated to {self.scan_step} um")
 
     # =========================================================================
-    def trigger_test(self):
-        print("start")
+    def trigger_modulation(self):
+        print("Modulation experiment start")
         self.modulation_thread = GenericThread(
             self.wfs.dm_modulation_response)
         self.modulation_thread.start()
@@ -454,19 +557,28 @@ class MyMainWidget(QWidget):
     # =========================================================================
     def refresh_plot(self):
         if self.delay2display == "Ph Delay1":
-            for ii in range(6):
+            for ii in range(self.wfs.nbl):
                 self.logplot_gdlay[ii].setData(self.wfs.phi_k1[ii])
 
         elif self.delay2display == "Ph Delay2":
-            for ii in range(6):
+            for ii in range(self.wfs.nbl):
                 self.logplot_gdlay[ii].setData(self.wfs.phi_k2[ii])
+
+        elif self.delay2display == "Cl-phs K1":
+            for ii in range(self.wfs.ncp):
+                self.logplot_gdlay[ii].setData(self.wfs.cp_k1[ii])
+
+        elif self.delay2display == "Cl-phs K2":
+            for ii in range(self.wfs.ncp):
+                self.logplot_gdlay[ii].setData(self.wfs.cp_k2[ii])
+
         else:
-            for ii in range(6):
+            for ii in range(self.wfs.nbl):
                 self.logplot_gdlay[ii].setData(self.wfs.gdlays[ii])
             
         # for ii in range(3):
         #     self.logplot_gdlay[ii].setData(self.wfs.opds[ii])
-        for ii in range(6):
+        for ii in range(self.wfs.nbl):
             self.logplot_vis_k1[ii].setData(self.wfs.vis_k1[ii])
             self.logplot_vis_k2[ii].setData(self.wfs.vis_k2[ii])
 
