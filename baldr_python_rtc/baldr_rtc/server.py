@@ -293,7 +293,7 @@ def main(
         # dm space: raw pixels still come from camera
         # assume camera frame is flattened before push
         # safest: infer from camera backend
-        n_pix = g.camera_io.shape[0] * g.camera_io.shape[1]
+        n_pix = 32*32 #g.camera_io.shape[0] * g.camera_io.shape[1]
 
     ring = TelemetryRingBuffer(
         capacity=telem_capacity,

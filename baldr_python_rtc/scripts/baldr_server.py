@@ -4,9 +4,14 @@ from __future__ import annotations
 import argparse
 from baldr_python_rtc.baldr_rtc.server import main as server_main
 
-
-def _default_socket_for_beam(beam: int, host: str = "127.0.0.1", base_port: int = 3000) -> str:
-    return f"tcp://{host}:{base_port + beam}"
+beam2port = {
+    1:"6662",
+    2:"6663",
+    3:"6664",
+    4:"6665",
+}
+def _default_socket_for_beam(beam: int, host: str = "*", base_port: int = 3000) -> str:
+    return f"tcp://{host}:{beam2port[beam]}"
 
 
 def main() -> int:
@@ -40,3 +45,9 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+#copied real beam3 tioml from /usr/local/etc/baldr/rtc_config/ 
+#/home/asg/Downloads/baldr3_rtc_test.toml
+#baldr_python_rtc/scripts/baldr_server.py
+#python baldr_python_rtc/scripts/baldr_server.py --beam 3 --phasemask H4 --config /home/asg/Downloads/baldr3_rtc_test.toml

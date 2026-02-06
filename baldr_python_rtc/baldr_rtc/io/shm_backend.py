@@ -53,19 +53,24 @@ class ShmCameraIO(CameraIO):
     """
 
     def __init__(self, 
-                 path: str, 
+                 
+                 beam: int, 
                  *, 
-                 nosem: bool = True, 
+                 path: Optional[str] = None,
+                 nosem: bool = False, 
                  semid: Optional[int] = None,
                  cam_client: Optional[CamClient] = None,
                  cam_cmd_pad_to: Optional[int] = None):
         if shm is None:
             raise ImportError("xaosim.shmlib.shm could not be imported (xaosim not installed?)")
 
-        self.path = path
+        if path is None:
+           self.path = f"/dev/shm/baldr{beam}.im.shm"
+        else:
+           self.path = path
         self.nosem = bool(nosem)
         self.semid = semid
-        self._shm = shm(path, nosem=self.nosem)
+        self._shm = shm(self.path, nosem=self.nosem)
         self._cam_client = cam_client
         self._cam_cmd_pad_to = cam_cmd_pad_to
 
@@ -85,7 +90,7 @@ class ShmCameraIO(CameraIO):
     def get_frame(self, *, timeout_s: Optional[float] = None) -> Frame:
         # NOTE: xaosim/shmlib doesn't expose a timeout in this API.
         # If semid is configured, the SHM call is already "blocking for next frame" behavior.
-        data = np.asarray(self._shm.get_latest_data_slice(semid=self.semid))
+        data = np.asarray(self._shm.get_data())
         frame_id = int(self._shm.get_counter())
         return Frame(data=data, t_s=time.time(), frame_id=frame_id)
     

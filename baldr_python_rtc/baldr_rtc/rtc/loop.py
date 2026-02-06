@@ -136,8 +136,9 @@ class RTCThread(threading.Thread):
 
             # --- IO: write DM command (placeholder) ---
             if self.g.dm_io is not None:
+                pass
                 # replace with real computed command vector
-                self.g.dm_io.write(np.zeros(140, dtype=np.float32))
+                #self.g.dm_io.write(np.zeros(144, dtype=np.float32))
 
             # self.telem_ring.push(
             #     frame_id=self._frame_id,

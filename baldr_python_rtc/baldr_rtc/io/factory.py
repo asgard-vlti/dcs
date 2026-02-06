@@ -29,8 +29,8 @@ def make_io(cfg, beam: int) -> IOHandles:
         from .shm_backend import ShmCameraIO, ShmDMIO
         from .cam_client import CamClient
 
-        cam_path_tmpl = str(getattr(cfg, "io_cam_path", "/dev/shm/baldr{beam}.im.shm"))
-        cam_path = cam_path_tmpl.format(beam=int(beam))
+        #cam_path_tmpl = str(getattr(cfg, "io_cam_path", "/dev/shm/baldr{beam}.im.shm"))
+        #cam_path = cam_path_tmpl.format(beam=int(beam))
 
         nosem = bool(getattr(cfg, "io_shm_nosem", True))
         semid_raw = getattr(cfg, "io_shm_semid", None)
@@ -40,8 +40,9 @@ def make_io(cfg, beam: int) -> IOHandles:
         use_cam_client = bool(getattr(cfg, "io_cam_use_client", False))
         cam_client = CamClient() if use_cam_client else None
 
+        #path=cam_path,
         cam = ShmCameraIO(
-            path=cam_path,
+            beam = beam,
             nosem=nosem,
             semid=semid,
             cam_client=cam_client,
