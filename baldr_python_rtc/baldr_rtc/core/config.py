@@ -112,6 +112,8 @@ def readBDRConfig_legacy(config_path: str, *, beam: int, phasemask: str) -> BDRC
     cfg.pixels.exterior_pixels = ctrl_tbl["exterior_pixels"]
     cfg.pixels.validate()
 
+
+
     # ---- filters ----
     cfg.filters.bad_pixel_mask = ctrl_tbl["bad_pixel_mask"]
     cfg.filters.pupil = ctrl_tbl["pupil"]
@@ -138,6 +140,9 @@ def readBDRConfig_legacy(config_path: str, *, beam: int, phasemask: str) -> BDRC
     cfg.reference_pupils.N0 = ctrl_tbl["N0"]
     cfg.reference_pupils.norm_pupil = ctrl_tbl["norm_pupil"]
     cfg.reference_pupils.intrn_flx_I0 = float(ctrl_tbl.get("intrn_flx_I0", 1.0) or 1.0)
+
+    # ---- reduction ----
+    cfg.reference_pupils.dark = ctrl_tbl["dark"]
 
     # projections (skip reduction, per your instruction)
     cfg.reference_pupils.project_to_dm(cfg.matrices.I2A)

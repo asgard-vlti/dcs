@@ -91,7 +91,7 @@ class RTCThread(threading.Thread):
                 i_raw = np.zeros((1, 1), dtype=np.float32)
             else:
                 fr = self.g.camera_io.get_frame( ) #reform=True)
-                i_raw = fr.data
+                i_raw = fr.data - self.g.model.dark
                 #print(i_raw)
             
         
@@ -136,9 +136,10 @@ class RTCThread(threading.Thread):
 
             # --- IO: write DM command (placeholder) ---
             if self.g.dm_io is not None:
-                pass
+                #cmd = np.zeros(140)
+                #cmd[65] = 0.2
                 # replace with real computed command vector
-                #self.g.dm_io.write(np.zeros(144, dtype=np.float32))
+                self.g.dm_io.write(dcmd)
 
             # self.telem_ring.push(
             #     frame_id=self._frame_id,

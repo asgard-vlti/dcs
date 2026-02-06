@@ -132,9 +132,10 @@ class ShmCameraIO(CameraIO):
     
 
     def close(self) -> None:
+        print('dodnt close shm')
         # keep erase_file False for safety
-        self._shm.close(erase_file=False)
-
+        #self._shm.close(erase_file=False)
+        #something seems to be deleting /dev/shm/files 
 
 ############## DM 
 @dataclass(frozen=True)
@@ -326,9 +327,10 @@ class ShmDMIO(DMIO):
         self._post()
 
     def close(self) -> None:
-        for ss in self.shms:
-            ss.close(erase_file=False)
-        self.shms.clear()
-        if getattr(self, "shm0", None) is not None:
-            self.shm0.close(erase_file=False)
-            self.shm0 = None
+        print('dodnt close shm')
+        # for ss in self.shms:
+        #     ss.close(erase_file=False)
+        # self.shms.clear()
+        # if getattr(self, "shm0", None) is not None:
+        #     self.shm0.close(erase_file=False)
+        #     self.shm0 = None

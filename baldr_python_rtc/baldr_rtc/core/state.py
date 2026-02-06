@@ -256,6 +256,7 @@ class RTCModel:
     N0_runtime: np.ndarray         # (n_sig,)
     i_setpoint_runtime: np.ndarray # (n_sig,)  # e.g. I_ref = I0/N0
     inner_pupil_filt: np.ndarray # (n_sig,) - used to filter N0 pupil for agregating in i_setpoint_runtime normalization (see build_rtc_model() in baldr_rtc_python/baldr_rtc/server.py)
+    dark: np.ndarray # n_pix
     # controllers (must expose .process(vec)->vec)
     ctrl_LO: Controller
     ctrl_HO: Controller

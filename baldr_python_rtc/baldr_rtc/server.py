@@ -167,9 +167,12 @@ def build_rtc_model(cfg) -> RTCModel:
     # filters 
     inner_pupil_filt = np.asarray( cfg.filters.inner_pupil_filt, dtype=bool).reshape(-1) 
 
+    # reduction 
+    #dark = np.asarray(cfg.matrices.M2C_HO, dtype=float)
     # references from legacy toml
     I0 = np.asarray(cfg.reference_pupils.I0, dtype=float).reshape(-1)
     N0 = np.asarray(cfg.reference_pupils.N0, dtype=float).reshape(-1)
+    dark = np.asarray(cfg.reference_pupils.dark, dtype=float).reshape(-1)
     if space == "dm":
         # NOTE: assumes I0/N0 are already in the SAME reduced pixel vector space as I2A expects
         I0 = I2A @ I0
@@ -207,6 +210,7 @@ def build_rtc_model(cfg) -> RTCModel:
         M2C_LO=M2C_LO,
         M2C_HO=M2C_HO,
         N0_runtime=N0_runtime,
+        dark=dark.reshape(32,32),
         inner_pupil_filt=inner_pupil_filt,
         i_setpoint_runtime=i_setpoint_runtime,
         ctrl_LO=ctrl_LO,   # or g.ctrl_LO if you store controllers in globals
