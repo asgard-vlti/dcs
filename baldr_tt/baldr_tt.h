@@ -56,6 +56,7 @@ struct ControlA{
 };
 
 struct TTMet_save{
+    std::mutex mutex;
     double tx[N_TTMET], ty[N_TTMET], mx[N_TTMET], my[N_TTMET];
     unsigned int cnt;
 };

@@ -212,11 +212,12 @@ TTMet get_ttmet(unsigned int last_cnt){
     // Fill the returned vectors with the most recent num_ttmet values.
     for (int i=0; i<num_ttmet; i++){
         int ix = (ttmet_save.cnt - num_ttmet + i) % N_TTMET;
-        ttmet_vec.tx[i] = ttmet_save.tx[ix];
-        ttmet_vec.ty[i] = ttmet_save.ty[ix];
-        ttmet_vec.mx[i] = ttmet_save.mx[ix];
-        ttmet_vec.my[i] = ttmet_save.my[ix];
+        ttmet_vec.tx[i] = std::round(ttmet_save.tx[ix]*1000)/1000.0;
+        ttmet_vec.ty[i] = std::round(ttmet_save.ty[ix]*1000)/1000.0;
+        ttmet_vec.mx[i] = std::round(ttmet_save.mx[ix]*1000)/1000.0;
+        ttmet_vec.my[i] = std::round(ttmet_save.my[ix]*1000)/1000.0;
     }
+    ttmet_vec.cnt = ttmet_save.cnt;
     return ttmet_vec;
 }
 

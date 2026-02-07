@@ -202,16 +202,16 @@ void servo_loop(){
         // ho_ix = (HO_CYCLE-1) : last frame valid. Just sent changed focus.
 
         im_mutex.lock();
-        if (ho_ix > 0) {
+        if (control_u.ho_ix > 0) {
             if (control_u.ho_sign > 0) {
                 // Clear the plus image at the start of the plus phase.
-                if (ho_ix==1) for (int j=0;j<width*width;j++) im_plus[j]=0; 
+                if (control_u.ho_ix==1) for (int j=0;j<width*width;j++) im_plus[j]=0; 
                 for (int j=0;j<width*width;j++) {
                     im_plus[j] += subim[j];
                 }
             } else {
                 // Clear the minus image at the start of the minus phase.
-                if (ho_ix==1) for (int j=0;j<width*width;j++) im_minus[j]=0; 
+                if (control_u.ho_ix==1) for (int j=0;j<width*width;j++) im_minus[j]=0; 
                 for (int j=0;j<width*width;j++) {
                     im_minus[j] += subim[j];
                 }
@@ -228,7 +228,7 @@ void servo_loop(){
 
         // Are we ready for the high order loop? If so, subtract
         // the inverted im_minus from im_plus.
-        if (ho_ix == (HO_CYCLE-1)){
+        if (control_u.ho_ix == (HO_CYCLE-1)){
             im_mutex.lock();
             double sum_both=0;
             for (int j=0;j<width*width;j++) sum_both += im_plus_sum[j] + im_minus_sum[j];
