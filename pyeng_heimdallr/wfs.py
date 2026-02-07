@@ -53,7 +53,7 @@ class Heimdallr():
         self.chn = 4  # channel number dedicated to Heimdallr
         self.xsz = 32
         self.dd = dist(self.xsz, self.xsz, between_pix=True)
-        self.apod = np.exp(-(self.dd/8)**4)
+        self.apod = np.exp(-(self.dd/10)**4)
 
         self.nbl = 6  # number of baselines
         self.ncp = 3  # number of closure-phases

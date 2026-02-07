@@ -3,7 +3,14 @@ from __future__ import annotations
 
 import argparse
 import datetime 
+import os
 from baldr_python_rtc.baldr_rtc.server import main as server_main
+
+## run in bash before starting otherwise many threads spawn from numpy 
+#export OPENBLAS_NUM_THREADS=1
+#export OMP_NUM_THREADS=1
+## THIS HAS BEEN SETUP IN MIMIR IN ~/.bashrc file so dont have to manually run now
+
 
 beam2port = {
     1:"6662",
