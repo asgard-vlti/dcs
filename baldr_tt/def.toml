@@ -27,6 +27,8 @@ ttl = 0.01
 hog = 0.2
 hol = 0.01
 
+modefile = "modes.fits"
+
 #All units are in radians and microns
 [geometry] 
 beam_diameter   = 3e-2

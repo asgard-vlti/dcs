@@ -56,6 +56,7 @@ def build_commander_module(
         return {"ok": True, "take_telemetry": False}
 
 
+
     ##################
     # TELEMETRY POLLING (GUI)
     def _ring():
@@ -222,6 +223,20 @@ def build_commander_module(
         command_queue.put(make_cmd("STOP"))
         return {"ok": True, "servo_mode": int(MainState.SERVO_STOP)}
 
+
+    ##################
+    # GAIN
+    def set_LO_gain(args):
+        gains = [float(aa) for aa in args]
+        command_queue.put(make_cmd("SET_LO_GAIN", gain=gains))
+        return {"ok": True, "LO_gain": gains}
+
+    def set_HO_gain(args):
+        gains = [float(aa) for aa in args]
+        command_queue.put(make_cmd("SET_HO_GAIN", gain=gains))
+        return {"ok": True, "HO_gain": gains}
+
+    
     ###################
     # CONTROLLER STATE
     def close_all(args):
@@ -286,6 +301,11 @@ def build_commander_module(
 
     def zero_gains_cmd(args):
         command_queue.put(make_cmd("ZERO_GAINS"))
+        return {"ok": True}
+    ##################
+    # UPDATE REFERENCE INTENSITIES 
+    def update_N0_runtime(args):
+        command_queue.put(make_cmd("UPDATE_N0_RUNTIME"))
         return {"ok": True}
     ##################
     # STATUS
@@ -371,6 +391,16 @@ def build_commander_module(
     ##################
     # STATUS
     m.def_command("status", status, description="Get Baldr status snapshot.", return_type="object")
+    
+    ##################
+    # UPDATE REFERENCE INTENSITIES
+    m.def_command("update_N0_runtime", update_N0_runtime, description="Update clear pupil normalization in runtime", return_type="object") 
+
+    ##################
+    # GAIN
+
+    m.def_command("set_LO_gain", set_LO_gain, description="Update LO gains", return_type="object") 
+    m.def_command("set_HO_gain", set_HO_gain, description="Update HO gains", return_type="object") 
 
     ##################
     # TELEMETRY POLL
