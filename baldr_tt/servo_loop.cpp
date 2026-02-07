@@ -189,8 +189,15 @@ void servo_loop(){
         }
         
         // Set the DM if we are in the appropriate mode.
-        if ((servo_mode == SERVO_HO) || (servo_mode == SERVO_TT)) 
+        if ((servo_mode == SERVO_HO) || (servo_mode == SERVO_TT)) {
             set_dm_tilt_foc(control_u.tx, control_u.ty, settings.s.focus_offset + settings.s.focus_amp * control_u.ho_sign);
+            // Update the saved tip/tilt metrology.
+            ttmet_save.mx[ttmet_save.cnt % N_TTMET] = control_u.tx;
+            ttmet_save.my[ttmet_save.cnt % N_TTMET] = control_u.ty;
+            ttmet_save.ty[ttmet_save.cnt % N_TTMET] = rt_status.s.ty;
+            ttmet_save.tx[ttmet_save.cnt % N_TTMET] = rt_status.s.tx;
+            ttmet_save.cnt++;
+        }
         else
             set_dm_tilt_foc(settings.s.ttxo, settings.s.ttyo, settings.s.focus_offset);
 
