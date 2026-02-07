@@ -26,6 +26,7 @@
 #define N_MODES 10
 #define N_ACTUATORS 140
 #define N_BOXCAR 16
+#define N_TTMET 1000
 #define HO_CYCLE 3 // A high-order cycle. 
 
 #define FT_STARTING 0
@@ -54,6 +55,11 @@ struct ControlA{
     Eigen::Matrix<double, N_MODES, 1> modes;
 };
 
+struct TTMet_save{
+    double tx[N_TTMET], ty[N_TTMET], mx[N_TTMET], my[N_TTMET];
+    unsigned int cnt;
+};
+
 //-------Commander structs-------------
 // An encoded 2D image in row-major form.
 struct EncodedImage
@@ -76,8 +82,14 @@ struct Settings
 {
     double ttg, ttl, hog, hol, focus_amp, flux_threshold;
     double gauss_hwidth;
-    double ttxo, ttyo;
+    double ttxo, ttyo, focus_offset;
     int px, py;
+};
+
+struct TTMet
+{
+    std::vector<double> tx, ty, mx, my;
+    unsigned int cnt;
 };
 
 //-------End of Commander structs------
@@ -115,6 +127,9 @@ extern long unsigned int cnt;
 
 // Images - plus, minus and average
 extern double *im_av, *im_plus, *im_minus;
+extern double *im_plus_sum, *im_minus_sum;
+extern std::mutex im_mutex;
+extern TTMet_save ttmet_save;
 
 // Main thread function for fringe tracking.
 void servo_loop();

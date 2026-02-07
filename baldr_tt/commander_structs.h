@@ -36,24 +36,50 @@ template <> struct adl_serializer<Settings> {
     static void to_json(json& j, const Settings& p) {
         j = json::object();
         j["ttg"] = p.ttg;
+        j["ttl"] = p.ttl;
         j["hog"] = p.hog;
         j["hol"] = p.hol;
         j["focus_amp"] = p.focus_amp;
         j["flux_threshold"] = p.flux_threshold;
         j["gauss_hwidth"] = p.gauss_hwidth;
+        j["ttxo"] = p.ttxo;
+        j["ttyo"] = p.ttyo;
+        j["focus_offset"] = p.focus_offset;
         j["px"] = p.px;
         j["py"] = p.py;
     }
     static void from_json(const json& j, Settings& p) {
         p = Settings();
         j.at("ttg").get_to(p.ttg);
+        j.at("ttl").get_to(p.ttl);
         j.at("hog").get_to(p.hog);
         j.at("hol").get_to(p.hol);
         j.at("focus_amp").get_to(p.focus_amp);
         j.at("flux_threshold").get_to(p.flux_threshold);
         j.at("gauss_hwidth").get_to(p.gauss_hwidth);
+        j.at("ttxo").get_to(p.ttxo);
+        j.at("ttyo").get_to(p.ttyo);
+        j.at("focus_offset").get_to(p.focus_offset);
         j.at("px").get_to(p.px);
         j.at("py").get_to(p.py);
+    }
+   };
+template <> struct adl_serializer<TTMet> {
+    static void to_json(json& j, const TTMet& p) {
+        j = json::object();
+        j["tx"] = p.tx;
+        j["ty"] = p.ty;
+        j["mx"] = p.mx;
+        j["my"] = p.my;
+        j["cnt"] = p.cnt;
+    }
+    static void from_json(const json& j, TTMet& p) {
+        p = TTMet();
+        j.at("tx").get_to(p.tx);
+        j.at("ty").get_to(p.ty);
+        j.at("mx").get_to(p.mx);
+        j.at("my").get_to(p.my);
+        j.at("cnt").get_to(p.cnt);
     }
    };
 }

@@ -24,7 +24,6 @@ IMAGE DM_low;
 IMAGE DM_high;
 IMAGE master_DM;
 IMAGE subarray;
-double *im_av, *im_plus, *im_minus;
 
 // Utility functions
 
@@ -152,6 +151,12 @@ void set_tto(double x, double y){
     settings.mutex.unlock();
 }
 
+void set_focus_offset(double offset){
+    settings.mutex.lock();
+    settings.s.focus_offset = offset;
+    settings.mutex.unlock();
+}
+
 Status get_status() {
     rt_status.mutex.lock();
     Status s = rt_status.s;
@@ -195,6 +200,26 @@ void zero_tt(){
     set_pxy(px_new, py_new);
 }
 
+TTMet get_ttmet(unsigned int last_cnt){
+    TTMet ttmet_vec;
+    // Number of new ttmet values since last_cnt. Max is N_TTMET.
+    int num_ttmet = (ttmet_save.cnt - last_cnt + N_TTMET) % N_TTMET; 
+    // Fix the size of the returned vectors with ttmet_vec to num_ttmet.
+    ttmet_vec.tx.resize(num_ttmet);
+    ttmet_vec.ty.resize(num_ttmet);
+    ttmet_vec.mx.resize(num_ttmet);
+    ttmet_vec.my.resize(num_ttmet);
+    // Fill the returned vectors with the most recent num_ttmet values.
+    for (int i=0; i<num_ttmet; i++){
+        int ix = (ttmet_save.cnt - num_ttmet + i) % N_TTMET;
+        ttmet_vec.tx[i] = ttmet_save.tx[ix];
+        ttmet_vec.ty[i] = ttmet_save.ty[ix];
+        ttmet_vec.mx[i] = ttmet_save.mx[ix];
+        ttmet_vec.my[i] = ttmet_save.my[ix];
+    }
+    return ttmet_vec;
+}
+
 COMMANDER_REGISTER(m)
 {
     using namespace commander::literals;
@@ -208,10 +233,12 @@ COMMANDER_REGISTER(m)
     m.def("hog", set_hog, "Set the high-order gain for the servo loop", "gain"_arg=0.0);
     m.def("hol", set_hol, "Set the high-order leak term", "gain"_arg=0.01);
     m.def("focamp", set_focus_amp, "Set the amplitude of the focus term", "focus"_arg=0.0);
+    m.def("focoff", set_focus_offset, "Set the focus offset", "offset"_arg=0.0);
     m.def("pxy", set_pxy, "Set the origin pixels for tip/tilt", "px"_arg=15, "py"_arg=15);
     m.def("tto", set_tto, "Set tip/tilt offsets", "tx"_arg=0, "ty"_arg=0);
     m.def("flux_threshold", set_flux_threshold, "Set flux threshold", "value"_arg=100.0);
     m.def("zero_tt", zero_tt, "Zero tip/tilt based on current image position");
+    m.def("ttmet", get_ttmet, "Get the saved tip/tilt metrology", "last_cnt"_arg=0);
  }
 
 int main(int argc, char* argv[]) {
@@ -227,7 +254,7 @@ int main(int argc, char* argv[]) {
     }
     beam = config["beam"].value_or(2.05);
     settings.s.px = config["px"].value_or(15);
-    settings.s.py = config["px"].value_or(15);
+    settings.s.py = config["py"].value_or(15);
     width = config["width"].value_or(15);
     settings.s.gauss_hwidth = config["gauss_hwidth"].value_or(3.0);
     settings.s.ttg = config["ttg"].value_or(0.01);
@@ -235,6 +262,8 @@ int main(int argc, char* argv[]) {
     settings.s.hog = config["hog"].value_or(0.2); 
     settings.s.hol = config["hol"].value_or(0.01);
     settings.s.focus_amp = config["focus_amp"].value_or(0.02);
+    settings.s.focus_offset = config["focus_offset"].value_or(0.0);
+    settings.s.flux_threshold = config["flux_threshold"].value_or(100.0);
 
     // Compute the rotation matrix R based on the rotation angle in the config file. 
     double angle = config["rotation_angle"].value_or(0.0);
