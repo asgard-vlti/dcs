@@ -5,6 +5,9 @@ from typing import Any, List, Tuple, Union
 
 Json = Union[None, bool, int, float, str, List["Json"], dict]
 
+SET_LO_GAIN = "SET_LO_GAIN"
+SET_HO_GAIN = "SET_HO_GAIN"
+ZERO_GAINS  = "ZERO_GAINS"
 
 def parse_message_to_command_and_args(message: str) -> Tuple[str, List[Json]]:
     message = message.strip()
@@ -34,3 +37,5 @@ def parse_message_to_command_and_args(message: str) -> Tuple[str, List[Json]]:
     if not isinstance(arr, list):
         raise ValueError("Arguments must parse to a JSON array.")
     return name, arr
+
+

@@ -28,6 +28,29 @@ x_knee = 1.5324802815558276
 # make sure consistent with baldr_python_rtc/baldr_rtc/server.build_rtc_model
 
 
+# help to apply "gain" editing commands 
+def _apply_gain(ctrl, param: str, idx, value: float):
+    if not hasattr(ctrl, param):
+        print(f"controller has no '{param}'")
+        return
+    
+    arr = getattr(ctrl, param)
+    if arr is None:
+        print(f"controller '{param}' is None")
+        return
+
+    if idx == "all":
+        arr[:] = value
+    else:
+        # bounds check
+        idx = list(idx)
+        n = int(arr.size)
+        if any((i < 0 or i >= n) for i in idx):
+            print(f"index out of range for '{param}': n={n}, idx={idx[-1]}")
+            return
+        arr[idx] = value
+
+
 
 class RTCThread(threading.Thread):
     def __init__(
@@ -100,15 +123,20 @@ class RTCThread(threading.Thread):
 
 
         elif t == "SET_LO_GAIN":
-            lo_gain = cmd.get("gain")
-            self.g.rand = lo_gain[0]
-            print( cmd, lo_gain[0] )
+            _apply_gain(self.g.model.ctrl_LO, cmd["param"], cmd["idx"], float(cmd["value"]))
+
+        elif t == "SET_HO_GAIN":
+            _apply_gain(self.g.model.ctrl_HO, cmd["param"], cmd["idx"], float(cmd["value"]))
+
+        elif t == "ZERO_GAINS":
+            for ctrl in (self.g.model.ctrl_LO, self.g.model.ctrl_HO):
+                for p in ("kp", "ki", "kd"):
+                    if hasattr(ctrl, p):
+                        arr = getattr(ctrl, p)
+                        if arr is not None:
+                            arr[:] = 0.0
 
 
-        # elif t == "CLOSE_LO":
-        #     close_LO = 1
-        # elif t == "OPEN_LO":
-        #     close_LO = 0
 
 
     def _drain_commands(self) -> None:
@@ -152,14 +180,14 @@ class RTCThread(threading.Thread):
             self._frame_id += 1
             t_now = time.time()
 
-            # --- IO: read camera frame ---
-            if self.g.camera_io is None:
-                # fallback: dummy frame (keeps thread alive)
-                i_raw0 = np.zeros((1, 1), dtype=np.float32)
-            else:
-                fr = self.g.camera_io.get_frame( ) #reform=True)
-                i_raw0 = fr.data - self.g.model.dark
-                #print(i_raw)
+            # # --- IO: read camera frame ---
+            # if self.g.camera_io is None:
+            #     # fallback: dummy frame (keeps thread alive)
+            #     i_raw0 = np.zeros((1, 1), dtype=np.float32)
+            # else:
+            #     fr = self.g.camera_io.get_frame( ) #reform=True)
+            #     i_raw0 = fr.data - self.g.model.dark
+            #     #print(i_raw)
             
             ## Trying slow 
             no_2_avg = 100
@@ -167,6 +195,15 @@ class RTCThread(threading.Thread):
             run_iteration = 0
             img_list = []
             while avg_cnt < no_2_avg :
+                # --- IO: read camera frame ---
+                if self.g.camera_io is None:
+                    # fallback: dummy frame (keeps thread alive)
+                    i_raw0 = np.zeros((1, 1), dtype=np.float32)
+                else:
+                    fr = self.g.camera_io.get_frame( ) #reform=True)
+                    i_raw0 = fr.data - self.g.model.dark
+                    #print(i_raw)
+                    
                 img_list.append( i_raw0 )
                 avg_cnt += 1
                 # manual timing
@@ -211,16 +248,16 @@ class RTCThread(threading.Thread):
                 try:
                     #if close_LO :
                     if self.g.servo_mode_LO:
-                        u_LO = 0.95 * u_LO - lo_gain * e_LO #self.g.model.ctrl_LO.process( e_LO )
+                        u_LO = 0.95 * u_LO - self.g.model.ctrl_LO.ki * e_LO #lo_gain * e_LO #self.g.model.ctrl_LO.process( e_LO )
                         
                     else:
-                        u_LO = 0.0 * u_LO - 0.0*e_LO
+                        u_LO[:] = 0.0
 
                     if self.g.servo_mode_HO:
                         # implement close_HO later 
                         u_HO = 0.90 * u_HO - 0.05*e_HO #self.g.model.ctrl_HO.process( e_HO )
                     else:
-                        u_HO = 0.0 * u_HO - 0.0*e_HO
+                        u_HO[:] = 0.0
                 except:
                     print('here')
                     u_LO = np.zeros_like(e_LO)
