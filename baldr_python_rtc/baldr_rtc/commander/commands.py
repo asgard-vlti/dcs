@@ -8,6 +8,22 @@ from baldr_python_rtc.baldr_rtc.core.config import readBDRConfig
 from baldr_python_rtc.baldr_rtc.core.commands import make_cmd
 from baldr_python_rtc.baldr_rtc.core.state import RuntimeGlobals, ServoState, MainState
 
+# parse indicies in commander helper
+def _parse_indices(spec: str):
+    s = str(spec).strip().lower()
+    if s == "all":
+        return "all"
+    out = set()
+    for part in s.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            a, b = part.split("-", 1)
+            out.update(range(int(a), int(b) + 1))
+        else:
+            out.add(int(part))
+    return sorted(out)
 
 # python scripts/commander_client.py --socket tcp://127.0.0.1:3001 'poll_telem {"n":2,"fields":["t_s","frame_id","opd_metric","snr_metric","cmd"]}'
 def build_commander_module(
@@ -247,6 +263,45 @@ def build_commander_module(
         command_queue.put(make_cmd("SET_HO", value=int(ServoState.SERVO_OPEN)))
         return {"ok": True}
 
+
+    # setting gains 
+    def set_lo_gain_cmd(args):
+        # set_lo_gain <param> <indices|all> <value>
+        if len(args) < 3:
+            return {"ok": False, "error": "usage: set_lo_gain <param> <indices|all> <value>"}
+
+        param = str(args[0]).strip().lower()
+        idx_spec = args[1]
+        value = float(args[2])
+
+        if param not in ("kp", "ki", "kd", "rho"):
+            return {"ok": False, "error": f"invalid param '{param}', expected kp|ki|kd|rho"}
+
+        idx = _parse_indices(idx_spec)
+
+        command_queue.put(make_cmd("SET_LO_GAIN", param=param, idx=idx, value=value))
+        return {"ok": True, "param": param, "idx": idx, "value": value}
+
+    def set_ho_gain_cmd(args):
+        # set_ho_gain <param> <indices|all> <value>
+        if len(args) < 3:
+            return {"ok": False, "error": "usage: set_ho_gain <param> <indices|all> <value>"}
+
+        param = str(args[0]).strip().lower()
+        idx_spec = args[1]
+        value = float(args[2])
+
+        if param not in ("kp", "ki", "kd", "rho"):
+            return {"ok": False, "error": f"invalid param '{param}', expected kp|ki|kd|rho"}
+
+        idx = _parse_indices(idx_spec)
+
+        command_queue.put(make_cmd("SET_HO_GAIN", param=param, idx=idx, value=value))
+        return {"ok": True, "param": param, "idx": idx, "value": value}
+
+    def zero_gains_cmd(args):
+        command_queue.put(make_cmd("ZERO_GAINS"))
+        return {"ok": True}
     ##################
     # UPDATE REFERENCE INTENSITIES 
     def update_N0_runtime(args):
@@ -300,6 +355,39 @@ def build_commander_module(
     m.def_command("open_baldr_LO", open_lo, description="Open LO loop.", return_type="object")
     m.def_command("close_baldr_HO", close_ho, description="Close HO loop.", return_type="object")
     m.def_command("open_baldr_HO", open_ho, description="Open HO loop.", return_type="object")
+    
+    
+    m.def_command(
+        "set_lo_gain",
+        set_lo_gain_cmd,
+        description="Set LO gain: set_lo_gain <kp|ki|kd|rho> <all|idxspec> <value>",
+        arguments=[
+            ArgumentSpec("param", "string"),
+            ArgumentSpec("indices", "string"),
+            ArgumentSpec("value", "string"),
+        ],
+        return_type="object",
+    )
+
+    m.def_command(
+        "set_ho_gain",
+        set_ho_gain_cmd,
+        description="Set HO gain: set_ho_gain <kp|ki|kd|rho> <all|idxspec> <value>",
+        arguments=[
+            ArgumentSpec("param", "string"),
+            ArgumentSpec("indices", "string"),
+            ArgumentSpec("value", "string"),
+        ],
+        return_type="object",
+    )
+
+    m.def_command(
+        "zero_gains",
+        zero_gains_cmd,
+        description="Zero all controller gains (kp/ki/kd) for LO and HO.",
+        return_type="object",
+    )
+    
     ##################
     # STATUS
     m.def_command("status", status, description="Get Baldr status snapshot.", return_type="object")

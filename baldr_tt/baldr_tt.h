@@ -24,7 +24,7 @@
 //----------Defines-----------
 //#define SIMULATE
 
-#define N_MODES 10
+#define N_MODES 11
 #define N_ACTUATORS 144 // Including corners.
 #define N_BOXCAR 16
 #define N_TTMET 1000
@@ -47,7 +47,7 @@ struct ControlU{
     double tx, ty;
     int ho_sign;
     int ho_ix;
-    Eigen::Matrix<double, N_MODES, 1> DM;
+    Eigen::Matrix<double, N_ACTUATORS, 1> DM;
     Eigen::Matrix<double, 2,2> R; //Rotation matrix.
 };
 
@@ -137,7 +137,7 @@ extern long unsigned int cnt;
 
 // Images - plus, minus and average
 extern double *im_av, *im_plus, *im_minus;
-extern double *im_plus_sum, *im_minus_sum;
+extern float *im_plus_sum, *im_minus_sum;
 extern std::mutex im_mutex;
 extern TTMet_save ttmet_save;
 
