@@ -248,7 +248,7 @@ void servo_loop(){
             //!!! needs a reconstrutor.
 
             // Multiply the high-order modes by the influence functions to get the DM shape.
-            control_u.DM = control_a.influence_functions * control_u.modes;
+            control_u.DM = control_a.influence_functions * control_a.modes;
              // Update the DM image with the new high-order shape. 
             DM_high.array.D = control_u.DM.data();
             ImageStreamIO_sempost(&master_DM, 1);

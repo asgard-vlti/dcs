@@ -81,7 +81,7 @@ bool read_modes(std::string filename, Eigen::Matrix<double, N_ACTUATORS, N_MODES
         std::cerr << "Error opening file: " << filename << std::endl;
         return false;
     }
-    if (fits_read_keys_dbl(fptr, "NAXIS", 1, 2, naxes, &nfound, &anynul, &status)) {
+    if (fits_read_keys_lng(fptr, "NAXIS", 1, 2, naxes, &nfound, &status)) {
         std::cerr << "Error reading NAXIS from file: " << filename << std::endl;
         return false;
     }
@@ -274,9 +274,13 @@ TTMet get_ttmet(unsigned int last_cnt){
 }
 
 ImAvgs poke_mode(int mode_ix, double amplitude){
+	ImAvgs im_avgs;
+	im_avgs.width=0;
+	im_avgs.im_plus_sum_encoded = "";
+	im_avgs.im_minus_sum_encoded = "";
     if (mode_ix < 0 || mode_ix >= N_MODES) {
         std::cout << "Invalid mode index. Must be between 0 and " << N_MODES-1 << std::endl;
-        return;
+        return im_avgs;
     }
     // Encode the current im_plus_sum and im_minus_sum as base64 strings.
     im_mutex.lock();
@@ -284,7 +288,6 @@ ImAvgs poke_mode(int mode_ix, double amplitude){
     std::string im_minus_sum_encoded = encode((char*)im_minus_sum, sizeof(float)*width*width);
     im_mutex.unlock();
     
-    ImAvgs im_avgs;
     im_avgs.width = width;
     im_avgs.im_plus_sum_encoded = im_plus_sum_encoded;
     im_avgs.im_minus_sum_encoded = im_minus_sum_encoded;
