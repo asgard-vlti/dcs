@@ -27,7 +27,8 @@ class CommanderServer(threading.Thread):
 
             msg = sock.recv_string().strip()
 
-            print(f"received: {msg}")
+            if 'poll_telem' not in msg:
+                print(f"received: {msg}")
 
             if msg == "exit":
                 sock.send_string("Exiting!")
