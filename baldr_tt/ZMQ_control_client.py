@@ -7,7 +7,7 @@ import zmq
 import json
 import base64
 
-server_port = 6660
+server_port = 6672
 context = zmq.Context()
 socket = context.socket(zmq.REQ)
 #socket.connect(f"tcp://192.168.100.2:{server_port}")
@@ -24,6 +24,15 @@ def send(cmd):
         print("Error: no reply from server")
         return None
     return resp
+
+def get_ims(cmd):
+	resp = send(cmd)
+	width = resp['width']
+	imp = np.frombuffer(base64.b64decode(resp['im_plus_sum_encoded']), dtype=np.float32)
+	imp = imp.reshape((width,width))
+	imm = np.frombuffer(base64.b64decode(resp['im_minus_sum_encoded']), dtype=np.float32)
+	imm = imm.reshape((width,width))
+	return imp, imm
 
 def get_im(cmd):
     """ Get the power spectrum or other image data"""

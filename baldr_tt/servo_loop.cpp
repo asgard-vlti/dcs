@@ -179,8 +179,8 @@ void servo_loop(){
             add_ty = 0.0;
         }
         rt_status.mutex.unlock();
-        control_u.tx = settings.s.ttxo + (1-settings.s.ttl) * control_u.tx + add_tx;
-        control_u.ty = settings.s.ttyo + (1-settings.s.ttl) * control_u.ty + add_ty;
+        control_u.tx = (1-settings.s.ttl) * (control_u.tx - settings.s.ttxo) + add_tx;
+        control_u.ty = (1-settings.s.ttl) * (control_u.ty - settings.s.ttyo) + add_ty;
         
         // Based on where we are in the modulation, set the high-order modes to be 
         // either positive or negative - relevant for the next image.
@@ -227,9 +227,9 @@ void servo_loop(){
         } else {
             // Update the plus or minus sum.
             if (control_u.ho_sign > 0) {
-                for (int j=0;j<width*width;j++) im_plus_sum[j] = im_plus[j];
+                for (int j=0;j<width*width;j++) im_plus_sum[j] += im_plus[j];
             } else {
-                for (int j=0;j<width*width;j++) im_minus_sum[j] = im_minus[j];
+                for (int j=0;j<width*width;j++) im_minus_sum[j] += im_minus[j];
             }
         }
         im_mutex.unlock();
@@ -249,8 +249,9 @@ void servo_loop(){
 
             // Multiply the high-order modes by the influence functions to get the DM shape.
             control_u.DM = control_a.influence_functions * control_a.modes;
-             // Update the DM image with the new high-order shape. 
-            DM_high.array.D = control_u.DM.data();
+             // Update the DM image with the new high-order shape.
+            for (int i=0; i<N_ACTUATORS; i++) 
+                DM_high.array.D[i] = control_u.DM(i);
             ImageStreamIO_sempost(&master_DM, 1);
         }
 

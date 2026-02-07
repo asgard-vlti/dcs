@@ -99,7 +99,7 @@ bool read_modes(std::string filename, Eigen::Matrix<double, N_ACTUATORS, N_MODES
     for (int i=0; i<N_MODES; i++) {
         for (int j=0; j<N_ACTUATORS; j++) {
             if (naxes[1] > i) {
-                modes(j,i) = data[j*N_MODES + i];
+                modes(j,i) = data[i*N_MODES + j];
             } else {
                 modes(j,i) = 0.0;
             }
@@ -284,17 +284,15 @@ ImAvgs poke_mode(int mode_ix, double amplitude){
     }
     // Encode the current im_plus_sum and im_minus_sum as base64 strings.
     im_mutex.lock();
-    std::string im_plus_sum_encoded = encode((char*)im_plus_sum, sizeof(float)*width*width);
-    std::string im_minus_sum_encoded = encode((char*)im_minus_sum, sizeof(float)*width*width);
+    im_avgs.im_plus_sum_encoded = encode((char*)im_plus_sum, sizeof(float)*width*width);
+    im_avgs.im_minus_sum_encoded = encode((char*)im_minus_sum, sizeof(float)*width*width);
     im_mutex.unlock();
     
     im_avgs.width = width;
-    im_avgs.im_plus_sum_encoded = im_plus_sum_encoded;
-    im_avgs.im_minus_sum_encoded = im_minus_sum_encoded;
 
     // Set the control_u DM command to be the poke of the given mode and amplitude.
-    control_u.DM.setZero();
-    control_u.DM(mode_ix) = amplitude;
+    control_a.modes.setZero();
+    control_a.modes(mode_ix) = amplitude;
     std::cout << "Poking mode " << mode_ix << " with amplitude " << amplitude << std::endl;
 
     // Wait 10ms for DM to settle, then set the im_plus_sum 

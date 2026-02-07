@@ -24,7 +24,7 @@
 //----------Defines-----------
 //#define SIMULATE
 
-#define N_MODES 10
+#define N_MODES 11
 #define N_ACTUATORS 144 // Including corners.
 #define N_BOXCAR 16
 #define N_TTMET 1000
