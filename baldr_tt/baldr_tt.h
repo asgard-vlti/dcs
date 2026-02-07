@@ -18,13 +18,14 @@
 #include <arpa/inet.h>
 #include <zmq.hpp>
 #include <chrono>
+#include <fitsio.h>
 #include <semaphore.h>
 
 //----------Defines-----------
 //#define SIMULATE
 
 #define N_MODES 10
-#define N_ACTUATORS 140
+#define N_ACTUATORS 144 // Including corners.
 #define N_BOXCAR 16
 #define N_TTMET 1000
 #define HO_CYCLE 3 // A high-order cycle. 
@@ -53,6 +54,7 @@ struct ControlU{
 // This is our knowledge of the DM modes
 struct ControlA{
     Eigen::Matrix<double, N_MODES, 1> modes;
+    Eigen::Matrix<double, N_ACTUATORS, N_MODES> influence_functions;
 };
 
 struct TTMet_save{
@@ -91,6 +93,13 @@ struct TTMet
 {
     std::vector<double> tx, ty, mx, my;
     unsigned int cnt;
+};
+
+struct ImAvgs
+{
+    int width;
+    std::string im_plus_sum_encoded;
+    std::string im_minus_sum_encoded;
 };
 
 //-------End of Commander structs------

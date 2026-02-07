@@ -15,8 +15,9 @@ long unsigned int cnt=0, cnt_since_init=0;
 long unsigned int nerrors=0;
 int sz=0;
 int *im_boxcar[N_BOXCAR];
-double *window, *subim, *im_plus_sum, *im_minus_sum;
+double *window, *subim;
 double *im_av, *im_plus, *im_minus, *norm_imsub;
+float *im_plus_sum, *im_minus_sum;
 std::mutex im_mutex; 
 TTMet_save ttmet_save;   
 
@@ -57,8 +58,8 @@ void initialise_servo(){
     im_av = (double*) malloc(sizeof(double) * sz * sz);
     im_plus = (double*) malloc(sizeof(double) * width * width);
     im_minus = (double*) malloc(sizeof(double) * width * width);
-    im_plus_sum = (double*) malloc(sizeof(double) * width * width);
-    im_minus_sum = (double*) malloc(sizeof(double) * width * width);
+    im_plus_sum = (float*) malloc(sizeof(float) * width * width);
+    im_minus_sum = (float*) malloc(sizeof(float) * width * width);
     window = (double*) malloc(sizeof(double) * width * width);
     subim = (double*) malloc(sizeof(double) * width * width);
     norm_imsub = (double*) malloc(sizeof(double) * width * width);
@@ -243,8 +244,15 @@ void servo_loop(){
                 norm_imsub[j] = (im_plus_sum[j] - im_minus_sum[width*width - 1 - j]) / sum_both;
             }
             im_mutex.unlock();
-        }
+            // Here we could compute the high-order modes based on norm_imsub
+            //!!! needs a reconstrutor.
 
+            // Multiply the high-order modes by the influence functions to get the DM shape.
+            control_u.DM = control_a.influence_functions * control_u.modes;
+             // Update the DM image with the new high-order shape. 
+            DM_high.array.D = control_u.DM.data();
+            ImageStreamIO_sempost(&master_DM, 1);
+        }
 
         // Done with critical parts. Update the boxcar average
         int ix = cnt % N_BOXCAR;

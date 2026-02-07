@@ -66,7 +66,59 @@ std::string encode(const char* input, unsigned int size)
     return output_str;
 }
 
+// Read the fits file containing the modes and store it in the provided Eigen matrix. 
+// The file should have N_MODES rows and N_ACTUATORS columns, but can have 
+// fewer than N_MODES rows, in which case the remaining modes will be set to zero.
+bool read_modes(std::string filename, Eigen::Matrix<double, N_ACTUATORS, N_MODES> &modes)
+{
+    fitsfile *fptr;   /* pointer to the FITS file, defined in fitsio.h */
+    int status = 0;   /* CFITSIO status value MUST be initialized to zero! */
+    int nfound, anynul;
+    long naxes[2] = {1,1};
+    double *data;
+
+    if (fits_open_file(&fptr, filename.c_str(), READONLY, &status)) {
+        std::cerr << "Error opening file: " << filename << std::endl;
+        return false;
+    }
+    if (fits_read_keys_dbl(fptr, "NAXIS", 1, 2, naxes, &nfound, &anynul, &status)) {
+        std::cerr << "Error reading NAXIS from file: " << filename << std::endl;
+        return false;
+    }
+    if ((naxes[0] != N_ACTUATORS) || (naxes[1] > N_MODES)) {
+        std::cerr << "Error: modes file has wrong dimensions. Expected " << N_ACTUATORS << "x" << N_MODES << ", got " << naxes[0] << "x" << naxes[1] << std::endl;
+        return false;
+    }
+    data = new double[N_ACTUATORS*N_MODES];
+    if (fits_read_img(fptr, TDOUBLE, 1, N_ACTUATORS*N_MODES, NULL, data, NULL, &status)) {
+        std::cerr << "Error reading image data from file: " << filename << std::endl;
+        delete[] data;
+        return false;
+    }
+    // Copy the data into the Eigen matrix. 
+    for (int i=0; i<N_MODES; i++) {
+        for (int j=0; j<N_ACTUATORS; j++) {
+            if (naxes[1] > i) {
+                modes(j,i) = data[j*N_MODES + i];
+            } else {
+                modes(j,i) = 0.0;
+            }
+        }
+    }
+    delete[] data;
+    fits_close_file(fptr, &status);
+    return true;
+}
+
 //----------commander functions from here---------------
+
+bool load_reconstructor(std::string filename){
+    // This is a placeholder function for loading a reconstructor from a fits file. 
+    // The actual implementation will depend on the format of the reconstructor file, 
+    // which is not yet defined. For now, we will just print a message and return true.
+    std::cout << "Loading reconstructor from file: " << filename << std::endl;
+    return true;
+}
 
 // Set the servo mode
 void set_servo_mode(std::string mode) {
@@ -221,6 +273,40 @@ TTMet get_ttmet(unsigned int last_cnt){
     return ttmet_vec;
 }
 
+ImAvgs poke_mode(int mode_ix, double amplitude){
+    if (mode_ix < 0 || mode_ix >= N_MODES) {
+        std::cout << "Invalid mode index. Must be between 0 and " << N_MODES-1 << std::endl;
+        return;
+    }
+    // Encode the current im_plus_sum and im_minus_sum as base64 strings.
+    im_mutex.lock();
+    std::string im_plus_sum_encoded = encode((char*)im_plus_sum, sizeof(float)*width*width);
+    std::string im_minus_sum_encoded = encode((char*)im_minus_sum, sizeof(float)*width*width);
+    im_mutex.unlock();
+    
+    ImAvgs im_avgs;
+    im_avgs.width = width;
+    im_avgs.im_plus_sum_encoded = im_plus_sum_encoded;
+    im_avgs.im_minus_sum_encoded = im_minus_sum_encoded;
+
+    // Set the control_u DM command to be the poke of the given mode and amplitude.
+    control_u.DM.setZero();
+    control_u.DM(mode_ix) = amplitude;
+    std::cout << "Poking mode " << mode_ix << " with amplitude " << amplitude << std::endl;
+
+    // Wait 10ms for DM to settle, then set the im_plus_sum 
+    // and im_minus_sum to zero.
+    usleep(10000);
+    im_mutex.lock();
+    for (int j=0;j<width*width;j++){
+        im_plus_sum[j]=0;
+        im_minus_sum[j]=0;
+    }
+    im_mutex.unlock();
+
+    return im_avgs;
+}
+
 COMMANDER_REGISTER(m)
 {
     using namespace commander::literals;
@@ -240,6 +326,8 @@ COMMANDER_REGISTER(m)
     m.def("flux_threshold", set_flux_threshold, "Set flux threshold", "value"_arg=100.0);
     m.def("zero_tt", zero_tt, "Zero tip/tilt based on current image position");
     m.def("ttmet", get_ttmet, "Get the saved tip/tilt metrology", "last_cnt"_arg=0);
+    m.def("poke", poke_mode, "Poke the DM with a given mode and amplitude", "mode_ix"_arg=0, "amplitude"_arg=0.1);
+    m.def("recon", load_reconstructor, "Load a reconstructor from a fits file", "filename"_arg="recon.fits");
  }
 
 int main(int argc, char* argv[]) {
@@ -265,6 +353,12 @@ int main(int argc, char* argv[]) {
     settings.s.focus_amp = config["focus_amp"].value_or(0.02);
     settings.s.focus_offset = config["focus_offset"].value_or(0.0);
     settings.s.flux_threshold = config["flux_threshold"].value_or(100.0);
+    // Read in the influence functions from the "modefile" fits file.
+    std::string modefile = config["modefile"].value_or("modes.fits");
+    if (!read_modes(modefile, control_a.influence_functions)) {
+        std::cerr << "Error reading modes file. Exiting." << std::endl;
+        return 1;
+    }
 
     // Compute the rotation matrix R based on the rotation angle in the config file. 
     double angle = config["rotation_angle"].value_or(0.0);
