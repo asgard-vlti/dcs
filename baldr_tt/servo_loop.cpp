@@ -15,7 +15,10 @@ long unsigned int cnt=0, cnt_since_init=0;
 long unsigned int nerrors=0;
 int sz=0;
 int *im_boxcar[N_BOXCAR];
-double *window;
+double *window, *subim, *im_plus_sum, *im_minus_sum;
+double *im_av, *im_plus, *im_minus, *norm_imsub;
+std::mutex im_mutex; 
+TTMet_save ttmet_save;   
 
 void set_dm_tilt_foc(double tx_in, double ty_in, double focus){
 #ifdef SIMULATE
@@ -41,6 +44,7 @@ void set_dm_tilt_foc(double tx_in, double ty_in, double focus){
 // Initialise variables and arrays on startup
 void initialise_servo(){
     cnt_since_init = 0;
+    ttmet_save.cnt = 0;
     // Check the subarray.
     if (subarray.md->naxis != 2) {
         throw std::runtime_error("Subarray is not 2D");
@@ -53,7 +57,11 @@ void initialise_servo(){
     im_av = (double*) malloc(sizeof(double) * sz * sz);
     im_plus = (double*) malloc(sizeof(double) * width * width);
     im_minus = (double*) malloc(sizeof(double) * width * width);
+    im_plus_sum = (double*) malloc(sizeof(double) * width * width);
+    im_minus_sum = (double*) malloc(sizeof(double) * width * width);
     window = (double*) malloc(sizeof(double) * width * width);
+    subim = (double*) malloc(sizeof(double) * width * width);
+    norm_imsub = (double*) malloc(sizeof(double) * width * width);
      // Initialise the window to a super-Gaussian with a 1/e^2 width equal to the image size.
     int ssz = (int)width;
     for (int ii=0; ii<ssz; ii++) {
@@ -70,6 +78,10 @@ void initialise_servo(){
     for (int j=0;j<width*width;j++){
         im_plus[j]=0;
         im_minus[j]=0;
+        subim[j]=0;
+        im_plus_sum[j]=0;
+        im_minus_sum[j]=0;
+        norm_imsub[j]=0;
     } 
 
     // Allocate memory for the boxcar averages and set to zero.
@@ -131,6 +143,14 @@ void servo_loop(){
         timespec then;
         clock_gettime(CLOCK_REALTIME, &then);
 #endif
+        // Copy the data from the IMAGE subarray to the subimage.
+        for (int ii=0; ii<width; ii++) {
+            for (int jj=0; jj<width; jj++) {
+                int y = settings.s.py - width/2 + ii;
+                int x = settings.s.px - width/2 + jj;
+                subim[ii*width + jj] = (double)(subarray.array.SI32[y*sz + x]-DARK_OFFSET);
+            }
+        }
         // Compute the weighted flux within +/- width/2 of the current (px, py) position.
         rt_status.mutex.lock();
         rt_status.s.flux=0;
@@ -138,11 +158,11 @@ void servo_loop(){
         rt_status.s.ty = 0;
         for (int ii=0; ii<width; ii++) {
             for (int jj=0; jj<width; jj++) {
-                int y = settings.s.py - width/2 + ii;
-                int x = settings.s.px - width/2 + jj;
-                rt_status.s.flux += window[ii*width + jj] * (double)(subarray.array.SI32[y*sz + x]-DARK_OFFSET);
-                rt_status.s.tx += window[ii*width + jj] * (double)(subarray.array.SI32[y*sz + x]-DARK_OFFSET) * (x - settings.s.px);
-                rt_status.s.ty += window[ii*width + jj] * (double)(subarray.array.SI32[y*sz + x]-DARK_OFFSET) * (y - settings.s.py);
+                double y = ii - width/2;
+                double x = jj - width/2;
+                rt_status.s.flux += window[ii*width + jj] * subim[ii*width + jj];
+                rt_status.s.tx += window[ii*width + jj] * subim[ii*width + jj] * x;
+                rt_status.s.ty += window[ii*width + jj] * subim[ii*width + jj] * y;
             }
         }
         rt_status.s.tx /= rt_status.s.flux;
@@ -158,20 +178,73 @@ void servo_loop(){
             add_ty = 0.0;
         }
         rt_status.mutex.unlock();
-        control_u.tx = (1-settings.s.ttl) * control_u.tx + add_tx;
-        control_u.ty = (1-settings.s.ttl) * control_u.ty + add_ty;
-        // Set the DM if we are in the appropriate mode.
-        if ((servo_mode == SERVO_HO) || (servo_mode == SERVO_TT)) 
-            set_dm_tilt_foc(control_u.tx, control_u.ty, settings.s.focus_amp * control_u.ho_sign);
-        else
-            set_dm_tilt_foc(settings.s.ttxo, settings.s.ttyo, 0);
-
+        control_u.tx = settings.s.ttxo + (1-settings.s.ttl) * control_u.tx + add_tx;
+        control_u.ty = settings.s.ttyo + (1-settings.s.ttl) * control_u.ty + add_ty;
+        
         // Based on where we are in the modulation, set the high-order modes to be 
-        // either positive or negative. 
+        // either positive or negative - relevant for the next image.
         control_u.ho_ix = (control_u.ho_ix + 1) % HO_CYCLE;
-        if (control_u.ho_ix == 0) {
+        if (control_u.ho_ix == HO_CYCLE - 1) {
             control_u.ho_sign *= -1;
         }
+        
+        // Set the DM if we are in the appropriate mode.
+        if ((servo_mode == SERVO_HO) || (servo_mode == SERVO_TT)) 
+            set_dm_tilt_foc(control_u.tx, control_u.ty, settings.s.focus_offset + settings.s.focus_amp * control_u.ho_sign);
+        else
+            set_dm_tilt_foc(settings.s.ttxo, settings.s.ttyo, settings.s.focus_offset);
+
+        // Update the saved tip/tilt metrology.
+        ttmet_save.mx[ttmet_save.cnt] = control_u.tx;
+        ttmet_save.my[ttmet_save.cnt] = control_u.ty;
+        ttmet_save.ty[ttmet_save.cnt] = rt_status.s.ty;
+        ttmet_save.tx[ttmet_save.cnt] = rt_status.s.tx;
+        ttmet_save.cnt = (ttmet_save.cnt + 1) % N_TTMET;
+
+        // Accumulate the im_plus and im_minus images for the high-order modulation.
+        // ho_ix=0 : last frame invalid.
+        // ho_ix=1 : last frame valid
+        // ho_ix=2 : last frame valid 
+        // ...
+        // ho_ix = (HO_CYCLE-1) : last frame valid. Just sent changed focus.
+
+        im_mutex.lock();
+        if (control_u.ho_ix > 0) {
+            if (control_u.ho_sign > 0) {
+                // Clear the plus image at the start of the plus phase.
+                if (control_u.ho_ix==1) for (int j=0;j<width*width;j++) im_plus[j]=0; 
+                for (int j=0;j<width*width;j++) {
+                    im_plus[j] += subim[j];
+                }
+            } else {
+                // Clear the minus image at the start of the minus phase.
+                if (control_u.ho_ix==1) for (int j=0;j<width*width;j++) im_minus[j]=0; 
+                for (int j=0;j<width*width;j++) {
+                    im_minus[j] += subim[j];
+                }
+            }
+        } else {
+            // Update the plus or minus sum.
+            if (control_u.ho_sign > 0) {
+                for (int j=0;j<width*width;j++) im_plus_sum[j] = im_plus[j];
+            } else {
+                for (int j=0;j<width*width;j++) im_minus_sum[j] = im_minus[j];
+            }
+        }
+        im_mutex.unlock();
+
+        // Are we ready for the high order loop? If so, subtract
+        // the inverted im_minus from im_plus.
+        if (control_u.ho_ix == (HO_CYCLE-1)){
+            im_mutex.lock();
+            double sum_both=0;
+            for (int j=0;j<width*width;j++) sum_both += im_plus_sum[j] + im_minus_sum[j];
+            for (int j=0;j<width*width;j++) {
+                norm_imsub[j] = (im_plus_sum[j] - im_minus_sum[width*width - 1 - j]) / sum_both;
+            }
+            im_mutex.unlock();
+        }
+
 
         // Done with critical parts. Update the boxcar average
         int ix = cnt % N_BOXCAR;
