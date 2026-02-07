@@ -166,6 +166,9 @@ def build_rtc_model(cfg) -> RTCModel:
 
     # filters 
     inner_pupil_filt = np.asarray( cfg.filters.inner_pupil_filt, dtype=bool).reshape(-1) 
+    
+    # NEW (NOT LEGACY)
+    strehl_filt =  np.asarray( cfg.filters.strehl_filt, dtype=bool).reshape(-1) 
 
     # reduction 
     #dark = np.asarray(cfg.matrices.M2C_HO, dtype=float)
@@ -178,9 +181,9 @@ def build_rtc_model(cfg) -> RTCModel:
         I0 = I2A @ I0
         N0 = I2A @ N0
         inner_pupil_filt = (I2A @ inner_pupil_filt).astype(bool)
-    
+        strehl_filt = (I2A @ strehl_filt).astype(bool)
     i_setpoint_runtime = I0 / np.mean( N0[inner_pupil_filt]  ) 
-    N0_runtime = N0
+    N0_runtime = np.mean( N0[inner_pupil_filt]  ) #N0
     
 
 
@@ -212,6 +215,7 @@ def build_rtc_model(cfg) -> RTCModel:
         N0_runtime=N0_runtime,
         dark=dark.reshape(32,32),
         inner_pupil_filt=inner_pupil_filt,
+        strehl_filt = strehl_filt,
         i_setpoint_runtime=i_setpoint_runtime,
         ctrl_LO=ctrl_LO,   # or g.ctrl_LO if you store controllers in globals
         ctrl_HO=ctrl_HO,
@@ -238,7 +242,7 @@ def _print_runtime_info(*, g: RuntimeGlobals, socket: str) -> None:
     print(f"  camera_io:      {cam_name}")
     print(f"  dm_io:          {dm_name}")
     print(f"  fps:            {cfg.fps}")
-    print(f"  controller:     {cfg.state.controller_type}")
+    print(f"  controller:     ")#{cfg.state.controller_type}")
     print(f"  telemetry:      {'ON' if cfg.state.take_telemetry else 'OFF'}")
     print(f"  servo:          {g.servo_mode.name}")
     print(f"  LO:             {g.servo_mode_LO.name}")

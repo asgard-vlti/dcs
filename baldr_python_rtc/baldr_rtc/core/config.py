@@ -120,6 +120,8 @@ def readBDRConfig_legacy(config_path: str, *, beam: int, phasemask: str) -> BDRC
     cfg.filters.secondary = ctrl_tbl["secondary"]
     cfg.filters.exterior = ctrl_tbl["exterior"]
     cfg.filters.inner_pupil_filt = ctrl_tbl["inner_pupil_filt"]
+    # NEW (from asgard-alignment/calibration/build_strehl_model_v2.py)
+    cfg.filters.strehl_filt = ctrl_tbl["strehl_filter"]
 
     # ---- matrices ----
     cfg.matrices.szm = int(ctrl_tbl.get("szm", 0) or 0)

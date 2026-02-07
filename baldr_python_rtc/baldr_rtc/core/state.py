@@ -150,7 +150,8 @@ class Filters:
     secondary: Any = field(default_factory=list)
     exterior: Any = field(default_factory=list)
     inner_pupil_filt: Any = field(default_factory=list)
-
+    # NEW strehl filt (not legacy)
+    strehl_filt: Any = field(default_factory=list)
     # DM-space projections
     bad_pixel_mask_dm: Any = field(default_factory=list)
     pupil_dm: Any = field(default_factory=list)
@@ -256,6 +257,7 @@ class RTCModel:
     N0_runtime: np.ndarray         # (n_sig,)
     i_setpoint_runtime: np.ndarray # (n_sig,)  # e.g. I_ref = I0/N0
     inner_pupil_filt: np.ndarray # (n_sig,) - used to filter N0 pupil for agregating in i_setpoint_runtime normalization (see build_rtc_model() in baldr_rtc_python/baldr_rtc/server.py)
+    strehl_filt: np.ndarray # (n_sig,) 
     dark: np.ndarray # n_pix
     # controllers (must expose .process(vec)->vec)
     ctrl_LO: Controller
