@@ -13,7 +13,7 @@ socket = context.socket(zmq.REQ)
 #socket.connect(f"tcp://192.168.100.2:{server_port}")
 socket.connect(f"tcp://localhost:{server_port}")
 
-print(f"ZMQ shell interface to talk to the heimdallr server on port {server_port}")
+print(f"ZMQ shell interface to talk to the Baldr TT server on port {server_port}")
 
 def send(cmd):
     ''' Send a command to the server and print the reply. '''

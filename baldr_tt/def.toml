@@ -14,11 +14,11 @@ px = 15
 py = 15
 
 #Width with respect to the central pixel. Must be odd!
-width = 21
-focus_amp = 0.05
+width = 19
+focus_amp = 0.04
 
 #Tip/tilt Gaussian weight 1/e^2 half width
-gauss_hwidth = 3
+gauss_hwidth = 3.5
 
 # Tip/tilt gain in units of DM stroke per pixel.
 ttg = 0.01
