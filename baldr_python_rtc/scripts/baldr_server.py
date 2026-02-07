@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime 
 from baldr_python_rtc.baldr_rtc.server import main as server_main
 
 beam2port = {
@@ -27,8 +28,10 @@ def main() -> int:
     ap.add_argument("--debug", action="store_true", help="Enable more verbose printing and/or plots for debugging")
     args = ap.parse_args()
 
+    tstamp_rough = datetime.datetime.now().strftime("%d-%m-%Y")
+    
     socket = args.socket or _default_socket_for_beam(args.beam)
-    telem_dir = args.telem_dir or f"./telem/beam{args.beam}"
+    telem_dir = args.telem_dir or f"/home/asg/ben_feb2026_bld_telem/{tstamp_rough}/beam{args.beam}"
 
     return server_main(
         beam=args.beam,
