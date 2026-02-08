@@ -187,9 +187,14 @@ root_path = "/data/20260208" #"/data/20260208"  # data/YYYYMMDD/
 
 # NOTES: 
 # close vs open loop TT beam 3 mask H4 
-# timing check of rtc at 1kHz frame rate was ~ 0.003ms (333Hz)
+# timing check of rtc at 1kHz frame rate was ~ 0.003ms (333Hz), but we only
 # averaged 3 frames before applying correction (in loop.py we set no_2_avg = 3)
+# so real feedback speed was ~333/3 = 100Hz 
+# seeing was quiet bad (~1.2")
 # TT gain : u_LO = 0.98 * u_LO - 0.4 * e_LO 
+
+# result - not so good, CL seemed to amplify 
+
 
 # simplest input: strings "HH:MM:SS[.sss]"
 timestart_CL = "03:59:00.000"
@@ -315,163 +320,150 @@ plt.show()
 
 
 
+####################### CORRELATION ANALYSIS 
 
+# ---------- TT/HO correlation analysis ----------
 
-# _plot_timeseries(t_s, e_LO, title="e_LO time series", labels=["LO0", "LO1"])
+def _zscore_rows(x, eps=1e-12):
+    # x: (modes, N)
+    x = np.asarray(x, float)
+    mu = np.nanmean(x, axis=1, keepdims=True)
+    xc = x - mu
+    sig = np.nanstd(xc, axis=1, keepdims=True)
+    sig = np.maximum(sig, eps)
+    return xc / sig
 
-# ho_idx = np.array([i for i in ho_show if 0 <= i < e_HO.shape[0]], dtype=int)
-# if ho_idx.size:
-#     _plot_timeseries(
-#         t_s,
-#         e_HO[ho_idx],
-#         title=f"e_HO time series (selected {ho_idx.tolist()})",
-#         labels=[f"HO{i}" for i in ho_idx.tolist()],
-#     )
+def _corr_tt_ho(e_lo, e_ho, zscore=True):
+    """
+    e_lo: (2, N)
+    e_ho: (Nho, N)
+    returns:
+      C: (2, Nho) Pearson corr
+      valid: (N,) boolean mask actually used
+    """
+    e_lo = np.asarray(e_lo, float)
+    e_ho = np.asarray(e_ho, float)
+    if e_lo.ndim != 2 or e_ho.ndim != 2:
+        raise ValueError("expected e_lo (2,N), e_ho (Nho,N)")
+    if e_lo.shape[1] != e_ho.shape[1]:
+        raise ValueError("time length mismatch")
 
-# _plot_psd_with_rcum(e_LO, fs=fs, title="e_LO Welch PSD (+ reverse cumulative)", labels=["LO0", "LO1"])
+    # robust mask: drop any time sample with NaN/Inf in any used channel
+    x = e_lo
+    y = e_ho
+    ok = np.isfinite(x).all(axis=0) & np.isfinite(y).all(axis=0)
 
-# if ho_idx.size:
-#     _plot_psd_with_rcum(
-#         e_HO[ho_idx],
-#         fs=fs,
-#         title=f"e_HO Welch PSD (selected {ho_idx.tolist()}) (+ reverse cumulative)",
-#         labels=[f"HO{i}" for i in ho_idx.tolist()],
-#     )
+    x = x[:, ok]
+    y = y[:, ok]
 
-# plt.figure()
-# plt.plot(t_s, opd_metric)
-# plt.xlabel("time [s]")
-# plt.ylabel("OPD metric")
-# plt.title("OPD metric time series")
-# plt.grid(True, alpha=0.3)
+    if zscore:
+        x = _zscore_rows(x)
+        y = _zscore_rows(y)
+    else:
+        # still demean so correlation is meaningful if you later swap in dot-products
+        x = x - np.nanmean(x, axis=1, keepdims=True)
+        y = y - np.nanmean(y, axis=1, keepdims=True)
 
-# plt.show()
+    # With zscore: corr = (x @ y.T)/(N-1)
+    # x: (2,N), y:(Nho,N) -> (2,Nho)
+    N = x.shape[1]
+    denom = max(N - 1, 1)
+    C = (x @ y.T) / denom
+    C = np.clip(C, -1.0, 1.0)
+    return C, ok
 
-### my skeleton 
-# from astropy.io import fits
-# import numpy as np
-# import matplotlib.pyplot as plt
-# import toml 
-# from baldr_python_rtc.baldr_rtc.core.config import readBDRConfig
- 
-# # need to 
-# # 1. populate get_files, also define best input type for timestart, timeend 
-# # 2. optimize merge data in a way that is consistent with how I deal with it later in the script (numpy stack?)
-# # 3. Produce time series and welch PSD of errors (e_LO, e_HO). Display them, LO has 2 modes, HO has upto 140 modes (so time series we could just seperate 1 plot for LO, 1 plot of HO, with selected inidicies for HO. Keep this all shortest and simplest possible code, don't ove complicate )
-# #    PSD should also have a reverse cumulative dashed line   
+def _sym_lims(C_list, q=99.0):
+    # symmetric color limits using a percentile across multiple matrices
+    v = np.concatenate([np.ravel(np.abs(C)) for C in C_list if C.size])
+    if v.size == 0:
+        return 1.0
+    return float(np.nanpercentile(v, q))
 
+def _plot_corr_summary(res, top_k=12, title_prefix="TT–HO corr", ho_limit=None):
+    # compute correlations
+    C = {}
+    ok = {}
+    for lab in res:
+        C[lab], ok[lab] = _corr_tt_ho(res[lab]["e_LO"], res[lab]["e_HO"], zscore=True)
 
-# def get_files(root_path, beam, timestart, timeend ):
-#     # assume root_path points to correct date 
-#     # get fits files from Baldr/Heimdallr cred1 server telemetry 
-#     # root_path/<instr><beam>_THH:MM.SSS.fits
-#     # e.g. root_path/baldr3_T02:51:51.168.fits
+    # consistent color scaling for OL vs CL
+    clim = _sym_lims([C["OL"], C["CL"]]) if ("OL" in C and "CL" in C) else _sym_lims(list(C.values()))
 
-#     # needs to return an ordered list of files 
-#     # (from oldest to most recent timestamp in file name)
-#     # between timestart and timeend. Not sure what best format input for these 'timestart and timeend' is?
+    # optionally truncate HO modes for plotting
+    def _slice(Cmat):
+        if ho_limit is None:
+            return Cmat
+        return Cmat[:, :int(ho_limit)]
 
+    # 1) heatmaps
+    plt.figure(figsize=(11, 4))
+    for i, lab in enumerate(["OL", "CL"]):
+        if lab not in C:
+            continue
+        plt.subplot(1, 2, i + 1)
+        M = _slice(C[lab])
+        im = plt.imshow(M, aspect="auto", origin="lower", vmin=-clim, vmax=clim)
+        plt.yticks([0, 1], ["TT0", "TT1"])
+        plt.xlabel("HO mode index")
+        plt.title(f"{title_prefix} ({lab})  N={ok[lab].sum()}")
+        plt.colorbar(im, fraction=0.046, pad=0.04, label="corr")
+    plt.tight_layout()
 
-# def merge_data( file_list ):
-#     data_cube = []
-#     for f in file_list:
-#         d = fits.open(f)
-#         data_cube.append( d[0].data ) #5000x32x32 np.array cube type int32
-#     return data_cube
+    # 2) |corr| summary vs HO index (max over TT)
+    plt.figure(figsize=(11, 4))
+    for lab, ls in zip(["OL", "CL"], ["-", "--"]):
+        if lab not in C:
+            continue
+        M = _slice(C[lab])
+        absM = np.abs(M)
+        best = np.nanmax(absM, axis=0)             # (Nho,)
+        which = np.nanargmax(absM, axis=0)         # 0 or 1 per HO
+        idx = np.arange(best.size)
+        plt.plot(idx, best, linestyle=ls, label=f"{lab}: max |corr|")
+        # annotate TT assignment lightly as a stepped line near top
+        plt.plot(idx, 0.02 + 0.02 * which, linestyle=ls, alpha=0.6)
 
+    plt.xlabel("HO mode index")
+    plt.ylabel("max |corr(TT, HO)|")
+    plt.title(f"{title_prefix} summary (max over TT); small offset line indicates TT0 vs TT1")
+    plt.grid(True, alpha=0.3)
+    plt.legend(loc="best", fontsize=9)
+    plt.tight_layout()
 
-# def get_telemetry( root_path, timestart, timeend):
-    
-#     # some function to get list of telemetry files within timestamps
-#     file_list = get_files(root_path, beam, timestart, timeend) 
-#     for fname in file_list:
-#         #d = fits.open( fname )
-#         data_cube = merge_data( file_list )
+    # 3) top-k scatter sanity checks for each dataset
+    for lab in ["OL", "CL"]:
+        if lab not in C:
+            continue
+        M = _slice(C[lab])
+        absM = np.abs(M)
+        score = np.nanmax(absM, axis=0)
+        order = np.argsort(score)[::-1]
+        order = order[: min(top_k, order.size)]
 
-#     return data_cube
+        e_lo = np.asarray(res[lab]["e_LO"], float)
+        e_ho = np.asarray(res[lab]["e_HO"], float)
+        # same mask used in corr
+        m = ok[lab]
+        e_lo = e_lo[:, m]
+        e_ho = e_ho[:, m]
 
+        plt.figure(figsize=(11, 6))
+        ncols = 4
+        nrows = int(np.ceil(order.size / ncols))
+        for j, ho_idx in enumerate(order):
+            tt_idx = int(np.nanargmax(np.abs(M[:, ho_idx])))
+            r = float(M[tt_idx, ho_idx])
 
-# beam = 3
-# phasemask = 'H4'
-# config_path = '/usr/local/etc/baldr/baldr_config_3.toml' # baldr reconstructor config file 
-# root_path = "/data/20260207" # include the date root_path = 'data/YYYYMMDD/'
-# timestart = # string or datetime?
-# timeend = # string or datetime?
+            plt.subplot(nrows, ncols, j + 1)
+            plt.plot(e_lo[tt_idx], e_ho[ho_idx], ".", markersize=2, alpha=0.5)
+            plt.title(f"{lab} HO{ho_idx} vs TT{tt_idx}\nr={r:+.2f}")
+            plt.xlabel(f"TT{tt_idx}")
+            plt.ylabel(f"HO{ho_idx}")
+            plt.grid(True, alpha=0.2)
 
-# # cred 1 camera subframes 
-# OL_telem = get_telemetry( root_path, beam, timestart, timeend)
-# CL_telem = get_telemetry( root_path, beam, timestart, timeend)
+        plt.tight_layout()
 
-# # baldr reconstructor configuration file 
-# cfg = readBDRConfig(config_path=config_path, beam=beam, phasemask=phasemask)
+    plt.show()
 
-# # useful shorthands we will use here (copied from baldr_python_rtc.baldr_rtc.server.build_rtc_model for consistency)
-# state = cfg.state
-# space = (state.signal_space or "pix").strip().lower()
-
-# I2A = np.asarray(cfg.matrices.I2A, dtype=float) # if space == "dm" else None
-
-# I2M_LO = np.asarray(cfg.matrices.I2M_LO, dtype=float)
-# I2M_HO = np.asarray(cfg.matrices.I2M_HO, dtype=float)
-# M2C_LO = np.asarray(cfg.matrices.M2C_LO, dtype=float)
-# M2C_HO = np.asarray(cfg.matrices.M2C_HO, dtype=float)
-
-# # filters 
-# inner_pupil_filt = np.asarray( cfg.filters.inner_pupil_filt, dtype=bool).reshape(-1) 
-
-# # NEW (NOT LEGACY)
-# strehl_filt =  np.asarray( cfg.filters.strehl_filt, dtype=bool).reshape(-1) 
-
-# # reduction 
-# I0 = np.asarray(cfg.reference_pupils.I0, dtype=float).reshape(-1)
-# N0 = np.asarray(cfg.reference_pupils.N0, dtype=float).reshape(-1)
-# dark = np.asarray(cfg.reference_pupils.dark, dtype=float).reshape(-1)
-# if space == "dm":
-#     # NOTE: assumes I0/N0 are already in the SAME reduced pixel vector space as I2A expects
-#     I0 = I2A @ I0
-#     N0 = I2A @ N0
-#     inner_pupil_filt = (I2A @ inner_pupil_filt).astype(bool)
-#     strehl_filt = (I2A @ strehl_filt).astype(bool)
-# i_setpoint_runtime = I0 / np.mean( N0[inner_pupil_filt]  ) 
-# N0_runtime = np.mean( N0[inner_pupil_filt]  ) #N0
-
-
-
-# # opd model (kind of hard coded parameters now (from asgard-alignment/calibration/build_strehl_model_v2.py))
-# def piecewise_continuous(x, interc, slope_1, slope_2, x_knee):
-#     # piecewise linear (hinge) model 
-#     return interc + slope_1 * x + slope_2 * np.maximum(0.0, x - x_knee)
-
-
-# interc = 9368.549647307767
-# slope_1 = -5882.950106515396
-# slope_2 = 4678.104756734429
-# x_knee = 1.5324802815558276
-
-# # process images using baldr cfg
-
-# # example with OL_telem
-# imgs = OL_telem.copy()
-
-# # Copy and make sure consistent with what was done in baldr_python_rtc/baldr_rtc/rtc/loop.py
-# i_raw = np.array( [i_raw - dark for i_raw in imgs] )
-
-# if space.lower().strip() == 'pix':
-#     i_space = np.array( [i_raw.reshape(-1) for i_raw in imgs] )
-# elif space.lower().strip() == 'dm':
-#     i_space = np.array( [I2A @ i_raw.reshape(-1) for i_raw in imgs] )
-
-
-# opd_sig_tmp  = np.array( [np.mean( iii[ strehl_filt] ) / N0_runtime  for iii in i_space] )
-# opd_metric = 0.03 * piecewise_continuous( opd_sig_tmp , interc, slope_1, slope_2, x_knee) 
-
-# # normalized intensity 
-# i_norm = i_space / N0_runtime 
-
-# s = i_norm  - i_setpoint_runtime 
-
-# # project intensity signal to error in modal space 
-# e_LO = I2M_LO @ s 
-# e_HO = I2M_HO @ s
-
-
+# run it
+_plot_corr_summary(res, top_k=12, title_prefix="TT–HO correlation", ho_limit=None)
