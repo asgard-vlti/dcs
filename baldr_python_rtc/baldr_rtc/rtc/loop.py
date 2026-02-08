@@ -123,6 +123,7 @@ class RTCThread(threading.Thread):
 
 
         elif t == "SET_LO_GAIN":
+            print(cmd)
             _apply_gain(self.g.model.ctrl_LO, cmd["param"], cmd["idx"], float(cmd["value"]))
 
         elif t == "SET_HO_GAIN":
@@ -156,8 +157,11 @@ class RTCThread(threading.Thread):
         fps = float(self.g.rtc_config.fps) if self.g.rtc_config.fps > 0 else 1000.0
         dt = 1.0 / fps
         next_t = time.perf_counter()
-        #close_LO = 0 
         
+        # init controller feedback vectors 
+        u_LO = np.zeros_like(self.g.model.ctrl_LO.ki)
+        u_HO = np.zeros_like(self.g.model.ctrl_HO.ki)
+
         # UPDATE N0
         # print('update N0_runtime before beginning. Put on clear pupil')
         # input('press enter when ready')
@@ -246,26 +250,28 @@ class RTCThread(threading.Thread):
                 e_HO = self.g.model.I2M_HO @ s
 
                 # control signals # get sign 
-                try:
-                    #if close_LO :
-                    if self.g.servo_mode_LO:
-                        #print('here')
-                        #self.g.model.ctrl_LO.ki
-                        u_LO = 0.98 * u_LO - 0.4 * e_LO #lo_gain * e_LO #self.g.model.ctrl_LO.process( e_LO )
-                        
-                    else:
-                        u_LO[:] = 0.0
+                #try:
+                #if close_LO :
+                if self.g.servo_mode_LO:
+                    #print('here')
+                    #self.g.model.ctrl_LO.ki
+                    u_LO = self.g.model.ctrl_LO.rho * u_LO - 0 * self.g.model.ctrl_LO.ki * e_LO #lo_gain * e_LO #self.g.model.ctrl_LO.process( e_LO )
+                    
+                    print( self.g.model.ctrl_LO.ki , self.g.model.ctrl_LO.rho)
+                else:
+                    u_LO[:] = 0.0
 
-                    if self.g.servo_mode_HO:
-                        # implement close_HO later 
-                        #np.array( [0.05 if ii < 10 else 0 for ii in range(len(e_HO))] )
-                        u_HO = 0.90 * u_HO - 0.05*e_HO #self.g.model.ctrl_HO.process( e_HO )
-                    else:
-                        u_HO[:] = 0.0
-                except:
-                    print('here')
-                    u_LO = np.zeros_like(e_LO)
-                    u_HO = np.zeros_like(e_HO)
+                if self.g.servo_mode_HO:
+                    # implement close_HO later 
+                    #np.array( [0.05 if ii < 10 else 0 for ii in range(len(e_HO))] )
+                    u_HO = self.g.model.ctrl_HO.rho * u_HO - self.g.model.ctrl_HO.ki*e_HO #self.g.model.ctrl_HO.process( e_HO )
+                    print( self.g.model.ctrl_LO.ki , self.g.model.ctrl_HO.rho)
+                else:
+                    u_HO[:] = 0.0
+                # except:
+                #     print('here')
+                #     u_LO = np.zeros_like(e_LO)
+                #     u_HO = np.zeros_like(e_HO)
                 # Project mode to DM commands 
                 c_LO = self.g.model.M2C_LO @ u_LO 
                 c_HO = self.g.model.M2C_HO @ u_HO
@@ -321,8 +327,8 @@ class RTCThread(threading.Thread):
                         ctrl_state_lo=getattr(self.g.model.ctrl_LO, "state", None),
                         ctrl_state_ho=getattr(self.g.model.ctrl_HO, "state", None),
                     )
-            TT1 = time.perf_counter()
-            print(TT1-TT0)
+            #TT1 = time.perf_counter()
+            #print(TT1-TT0)
 
 
 

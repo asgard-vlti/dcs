@@ -193,7 +193,8 @@ def build_rtc_model(cfg) -> RTCModel:
     n_HO = int(I2M_HO.shape[0])
     dt = 1/1000 # WE SHOULD NOT USE dt IN CONTROLLERS! 
 
-    ct = cfg.state.controller_type.strip().lower()
+    # dont worry about PID for now
+    ct = "leaky"  #cfg.state.controller_type.strip().lower()
     if ct == "pid":
         ctrl_LO = build_controller("pid", n_LO, dt=dt, kp=0, ki=0, kd=0, u_min=None, u_max=None)
         ctrl_HO = build_controller("pid", n_HO, dt=dt, kp=0, ki=0, kd=0, u_min=None, u_max=None)
@@ -201,9 +202,9 @@ def build_rtc_model(cfg) -> RTCModel:
         ctrl_LO = build_controller("leaky", n_LO, rho=1.0, ki=0, kp=0, u_min=None, u_max=None)
         ctrl_HO = build_controller("leaky", n_HO, rho=1.0, ki=0, kp=0, u_min=None, u_max=None)
     else:
-        print(f"controller_type {ct} is not implemented\n!!!!!!!!!! JUT CONTINUE WITH PID , FIX THIS LATER")
-        ctrl_LO = build_controller("pid", n_LO, dt=dt, kp=0, ki=0, kd=0, u_min=None, u_max=None)
-        ctrl_HO = build_controller("pid", n_HO, dt=dt, kp=0, ki=0, kd=0, u_min=None, u_max=None)
+        print(f"controller_type {ct} is not implemented\n!!!!!!!!!! JUT CONTINUE WITH Leaky , FIX THIS LATER")
+        ctrl_LO = build_controller("leaky", n_LO, rho=1.0, ki=0, kp=0, u_min=None, u_max=None)
+        ctrl_HO = build_controller("leaky", n_HO, rho=1.0, ki=0, kp=0, u_min=None, u_max=None)
     
     return RTCModel(
         signal_space=space,
