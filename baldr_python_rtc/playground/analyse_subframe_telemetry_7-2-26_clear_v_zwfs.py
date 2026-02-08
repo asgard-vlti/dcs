@@ -187,11 +187,11 @@ root_path = "/data/20260208"  # data/YYYYMMDD/
 
 # 
 # simplest input: strings "HH:MM:SS[.sss]"
-#timestart = "01:08:00.000"
-#timeend   = "01:09:30.000"
+timestart_clear = "01:08:00.000"
+timeend_clear   = "01:09:30.000"
 
-timestart = "01:06:50.000"
-timeend   = "01:08:00.000"
+timestart_zwfs = "01:06:50.000"
+timeend_zwfs   = "01:08:00.000"
 
 
 # camera sampling assumptions (needed for PSD)
@@ -202,8 +202,8 @@ ho_show = tuple(range(max_ho_show))  # indices to plot for HO
 
 # ---------- load raw telemetry ----------
 
-zwfs_telem = get_telemetry(root_path, instr="baldr", beam=beam, timestart=timestart, timeend=timeend)
-#clear_telem = get_telemetry(root_path, instr="baldr", beam=beam, timestart=timestart, timeend=timeend)
+zwfs_telem = get_telemetry(root_path, instr="baldr", beam=beam, timestart=timestart_zwfs, timeend=timeend_zwfs)
+clear_telem = get_telemetry(root_path, instr="baldr", beam=beam, timestart=timestart_clear, timeend=timeend_clear)
 
 if zwfs_telem.size == 0:
     raise RuntimeError("No ZWFS telemetry loaded for the requested window")
@@ -251,65 +251,96 @@ x_knee = 1.5324802815558276
 
 
 # ---------- processing (ZWFS example) ----------
+res = {}
+for lab,imgs in zip(['zwfs_pupil','clear_pupil'],[zwfs_telem, clear_telem]):
+    
+    res[lab] = {}
+    # subtract dark (broadcast safe)
+    res[lab]['i_raw'] = imgs.astype(np.float32, copy=False) - dark.reshape(1, imgs.shape[1], imgs.shape[2])
 
-imgs = zwfs_telem  # (N, ny, nx)
+    if space == "pix":
+        res[lab]['i_space'] = res[lab]['i_raw'].reshape(res[lab]['i_raw'].shape[0], -1)  # (N, P)
+    elif space == "dm":
+        res[lab]['i_space'] = (I2A @ res[lab]['i_raw'].reshape(res[lab]['i_raw'].shape[0], -1).T).T  # (N, P')
+    else:
+        raise ValueError(f"Unknown space: {space!r}")
 
-# subtract dark (broadcast safe)
-i_raw = imgs.astype(np.float32, copy=False) - dark.reshape(1, imgs.shape[1], imgs.shape[2])
+    # opd metric
+    opd_sig_tmp = np.mean(res[lab]['i_space'][:, strehl_filt], axis=1) / N0_runtime
+    res[lab]['opd_metric'] = 0.03 * piecewise_continuous(opd_sig_tmp, interc, slope_1, slope_2, x_knee)
 
-if space == "pix":
-    i_space = i_raw.reshape(i_raw.shape[0], -1)  # (N, P)
-elif space == "dm":
-    i_space = (I2A @ i_raw.reshape(i_raw.shape[0], -1).T).T  # (N, P')
-else:
-    raise ValueError(f"Unknown space: {space!r}")
+    # normalized intensity & signal
+    res[lab]['i_norm'] = res[lab]['i_space'] / N0_runtime
+    res[lab]['s'] = res[lab]['i_norm'] - i_setpoint_runtime[None, :]
 
-# opd metric
-opd_sig_tmp = np.mean(i_space[:, strehl_filt], axis=1) / N0_runtime
-opd_metric = 0.03 * piecewise_continuous(opd_sig_tmp, interc, slope_1, slope_2, x_knee)
+    # modal errors (shapes: LO -> (2,N), HO -> (Nm,N))
+    res[lab]['e_LO'] = (I2M_LO @ res[lab]['s'].T)
+    res[lab]['e_HO'] = (I2M_HO @ res[lab]['s'].T)
 
-# normalized intensity & signal
-i_norm = i_space / N0_runtime
-s = i_norm - i_setpoint_runtime[None, :]
-
-# modal errors (shapes: LO -> (2,N), HO -> (Nm,N))
-e_LO = (I2M_LO @ s.T)
-e_HO = (I2M_HO @ s.T)
 
 # ---------- plots: timeseries + PSD ----------
 
-N = s.shape[0]
+N = res[lab]['s'].shape[0]
 t_s = np.arange(N) / fs
 
-_plot_timeseries(t_s, e_LO, title="e_LO time series", labels=["LO0", "LO1"])
 
-ho_idx = np.array([i for i in ho_show if 0 <= i < e_HO.shape[0]], dtype=int)
-if ho_idx.size:
-    _plot_timeseries(
-        t_s,
-        e_HO[ho_idx],
-        title=f"e_HO time series (selected {ho_idx.tolist()})",
-        labels=[f"HO{i}" for i in ho_idx.tolist()],
-    )
-
-_plot_psd_with_rcum(e_LO, fs=fs, title="e_LO Welch PSD (+ reverse cumulative)", labels=["LO0", "LO1"])
-
-if ho_idx.size:
-    _plot_psd_with_rcum(
-        e_HO[ho_idx],
-        fs=fs,
-        title=f"e_HO Welch PSD (selected {ho_idx.tolist()}) (+ reverse cumulative)",
-        labels=[f"HO{i}" for i in ho_idx.tolist()],
-    )
 
 plt.figure()
-plt.plot(t_s, opd_metric)
-plt.xlabel("time [s]")
-plt.ylabel("OPD metric")
-plt.title("OPD metric time series")
-plt.grid(True, alpha=0.3)
+for lab,col in zip(res,['k','r']):
+    y = res[lab]['e_LO']
+    if y.ndim == 1:
+        y = y[None, :]
 
+    for k in range(y.shape[0]):
+        f, Pxx = welch(y[k], fs=fs, nperseg=None, detrend="constant", scaling="density")
+        df = float(f[1] - f[0]) if f.size > 1 else 1.0
+        rc = np.cumsum(Pxx[::-1]) * df
+        rc = rc[::-1]
+
+        #lab = None if labels is None else labels[k]
+        plt.loglog(f[1:], Pxx[1:], label=lab,color=col)
+        plt.loglog(f[1:], rc[1:], linestyle="--",color=col, alpha=0.8)
+
+plt.legend(loc="best", fontsize=9)
+plt.xlabel("frequency [Hz]")
+plt.ylabel("PSD [err^2/Hz]\nrev. cum [err^2]")
+#plt.title(title)
+plt.grid(True, which="both", alpha=0.3)
 plt.show()
+
+
+
+
+
+# _plot_timeseries(t_s, e_LO, title="e_LO time series", labels=["LO0", "LO1"])
+
+# ho_idx = np.array([i for i in ho_show if 0 <= i < e_HO.shape[0]], dtype=int)
+# if ho_idx.size:
+#     _plot_timeseries(
+#         t_s,
+#         e_HO[ho_idx],
+#         title=f"e_HO time series (selected {ho_idx.tolist()})",
+#         labels=[f"HO{i}" for i in ho_idx.tolist()],
+#     )
+
+# _plot_psd_with_rcum(e_LO, fs=fs, title="e_LO Welch PSD (+ reverse cumulative)", labels=["LO0", "LO1"])
+
+# if ho_idx.size:
+#     _plot_psd_with_rcum(
+#         e_HO[ho_idx],
+#         fs=fs,
+#         title=f"e_HO Welch PSD (selected {ho_idx.tolist()}) (+ reverse cumulative)",
+#         labels=[f"HO{i}" for i in ho_idx.tolist()],
+#     )
+
+# plt.figure()
+# plt.plot(t_s, opd_metric)
+# plt.xlabel("time [s]")
+# plt.ylabel("OPD metric")
+# plt.title("OPD metric time series")
+# plt.grid(True, alpha=0.3)
+
+# plt.show()
 
 ### my skeleton 
 # from astropy.io import fits

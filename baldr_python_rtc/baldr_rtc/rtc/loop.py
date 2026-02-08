@@ -14,11 +14,11 @@ def piecewise_continuous(x, interc, slope_1, slope_2, x_knee):
     # piecewise linear (hinge) model 
     return interc + slope_1 * x + slope_2 * np.maximum(0.0, x - x_knee)
 
-
-interc = 9368.549647307767
-slope_1 = -5882.950106515396
-slope_2 = 4678.104756734429
-x_knee = 1.5324802815558276
+#{'interc': 629.1738798737395, 'slope_1': -2032.353630969202, 'slope_2': 1208.6141949891808, 'x_knee': 0.13625865519335179, 'cost': 1} 
+interc = 629.173#9368.549647307767
+slope_1 = -2032.35 #-5882.950106515396
+slope_2 = 1208.614 #4678.104756734429
+x_knee = 0.1362 #1.5324802815558276
 
 # update N0_runtime onsky (not N0)
 # get clear pupil avg
@@ -180,6 +180,7 @@ class RTCThread(threading.Thread):
             self._frame_id += 1
             t_now = time.time()
 
+            TT0 = time.perf_counter()
             # # --- IO: read camera frame ---
             # if self.g.camera_io is None:
             #     # fallback: dummy frame (keeps thread alive)
@@ -190,7 +191,7 @@ class RTCThread(threading.Thread):
             #     #print(i_raw)
             
             ## Trying slow 
-            no_2_avg = 100
+            no_2_avg = 3
             avg_cnt = 0
             run_iteration = 0
             img_list = []
@@ -248,13 +249,16 @@ class RTCThread(threading.Thread):
                 try:
                     #if close_LO :
                     if self.g.servo_mode_LO:
-                        u_LO = 0.95 * u_LO - self.g.model.ctrl_LO.ki * e_LO #lo_gain * e_LO #self.g.model.ctrl_LO.process( e_LO )
+                        #print('here')
+                        #self.g.model.ctrl_LO.ki
+                        u_LO = 0.98 * u_LO - 0.4 * e_LO #lo_gain * e_LO #self.g.model.ctrl_LO.process( e_LO )
                         
                     else:
                         u_LO[:] = 0.0
 
                     if self.g.servo_mode_HO:
                         # implement close_HO later 
+                        #np.array( [0.05 if ii < 10 else 0 for ii in range(len(e_HO))] )
                         u_HO = 0.90 * u_HO - 0.05*e_HO #self.g.model.ctrl_HO.process( e_HO )
                     else:
                         u_HO[:] = 0.0
@@ -274,7 +278,7 @@ class RTCThread(threading.Thread):
 
                 # if working (params are hard coding)
                 opd_sig_tmp  = np.mean( i[ self.g.model.strehl_filt] ) / self.g.model.N0_runtime 
-                opd_metric = 0.03 * piecewise_continuous( opd_sig_tmp , interc, slope_1, slope_2, x_knee) 
+                opd_metric = 1 * piecewise_continuous( opd_sig_tmp , interc, slope_1, slope_2, x_knee) 
                 # otherwise 
                 #opd_metric = np.mean( i[ self.g.model.inner_pupil_filt.astype(bool) ] ) / self.g.model.N0_runtime#self.g.model.perf_model( i_norm , self.g.model.perf_param)
                 #self.g.model.perf_model(i_norm, self.g.model.perf_param) if self.g.model.perf_model is not None else 0.0 # g.perf_funct( )
@@ -317,7 +321,8 @@ class RTCThread(threading.Thread):
                         ctrl_state_lo=getattr(self.g.model.ctrl_LO, "state", None),
                         ctrl_state_ho=getattr(self.g.model.ctrl_HO, "state", None),
                     )
-
+            TT1 = time.perf_counter()
+            print(TT1-TT0)
 
 
 

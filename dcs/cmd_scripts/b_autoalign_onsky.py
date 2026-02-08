@@ -50,7 +50,7 @@ class BaldrAA:
         # for now dont do mds 
         #self.mds = self._open_mds_connection()
 
-        self.stream = self._open_stream_connection()
+        self.stream = self._open_stream_connection(self.beam)
 
         if "mcs" not in output:
             raise UserWarning("this is only implemented to update mcs or test mcs. Not internal alignment. This is done in asgard-algnment/calibration where we deal with phasemasks. Later I could put in here but will add dependancies / add complexity. Lets keep this critical onsky function simple ;) ")
@@ -71,14 +71,14 @@ class BaldrAA:
     #     socket.connect(server_address)
     #     return socket
     
-    def _open_stream_connection(self):
-        stream_path = "/dev/shm/cred1.im.shm"
+    def _open_stream_connection(self, beam):
+        stream_path = f"/dev/shm/baldr{beam}.im.shm"#"/dev/shm/cred1.im.shm"
         if not os.path.exists(stream_path):
             raise FileNotFoundError(f"Stream file {stream_path} does not exist.")
         return shm(stream_path)
 
     def get_frame(self):
-        full_frame = self.stream.get_data().mean(0)
+        full_frame = self.stream.get_data()#.mean(0)
         return full_frame
 
     def _get_active_rtc_config_toml(self):
@@ -239,16 +239,17 @@ class BaldrAA:
         # get the configured (registered) x,y pixels in the beam subframe 
         ref_x, ref_y, rc = self.extract_pupil_references(  ) # rc is the subframe pixels [r1,r2,c1,c2] in global frame coord
 
-        full_img = self.get_frame() # average of 200 frames
+        sub_img = self.get_frame()
+        # full_img = self.get_frame() # average of 200 frames
 
-        # check if in cropped mode
-        if full_img.shape == (256,320): # full CRED 1 frame 
-            sub_img = full_img[rc[0]:rc[1], rc[2]:rc[3]] # crop it to the beams local subframe (same reference frame as ref_x, ref_y pixels)
+        # # check if in cropped mode
+        # if full_img.shape == (256,320): # full CRED 1 frame 
+        #     sub_img = full_img[rc[0]:rc[1], rc[2]:rc[3]] # crop it to the beams local subframe (same reference frame as ref_x, ref_y pixels)
 
-        else: # CRED 1 must be in cropped mode. Crop mode only crops y (as of 13/9/25)
-            y_offset = int( 256 - full_img.shape[0] )
-            sub_img = full_img[rc[0]-y_offset : rc[1]-y_offset, rc[2] : rc[3]]
-        # could detect and interpolate bad pixels - only if this becomes a problem 
+        # else: # CRED 1 must be in cropped mode. Crop mode only crops y (as of 13/9/25)
+        #     y_offset = int( 256 - full_img.shape[0] )
+        #     sub_img = full_img[rc[0]-y_offset : rc[1]-y_offset, rc[2] : rc[3]]
+        # # could detect and interpolate bad pixels - only if this becomes a problem 
     
         mea_x, mea_y, a, b, theta, pupil_mask = self.detect_pupil( sub_img ,
                                                                   sigma=2, 
@@ -291,7 +292,7 @@ class BaldrAA:
         #x_off, y_off = pixel_offsets
         if 'bright' in mode.lower():
             # note pix_to_mm could be different for each beam. For baldr the VCMs lie in same plane so should be fine as I
-            pix_to_mm = np.array([[1,0],[0,1]]) * 18 / 12 # 18mm beam over 12 pixel diameter 
+            pix_to_mm = np.array([[1,0],[0,1]]) * 18 / 16 # 18mm beam over 16 pixel (upgraded baldr, old baldr was 12) diameter 
         elif 'faint' in mode.lower():
             pix_to_mm = np.array([[1,0],[0,1]]) * 18 / 6 # 18mm beam over 6 pixel diameter 
         else:
@@ -308,7 +309,10 @@ class BaldrAA:
         x_offset = millimeter_offsets[0] #offset are flipped! x on the detector is y on sky
         y_offset = millimeter_offsets[1] 
 
-
+        delta_pixel_lim = 10 # limit of pixels to move in 1 iteration (baldr frame)
+        x_offset = np.round( np.clip(x_offset, -18 / 16 * delta_pixel_lim, 18 / 16 * delta_pixel_lim), 3)
+        y_offset = np.round( np.clip(y_offset, -18 / 16 * delta_pixel_lim, 18 / 16 * delta_pixel_lim), 3)
+        
         msg = {
             "origin": "s_bld_pup_autoalign_sky",
             "beam":int(self.beam)-1,
@@ -470,7 +474,7 @@ if __name__ == "__main__":
     else:
         if baldr_aa.output == "mcs":
             x_offset, y_offset = baldr_aa.calculate_pixel_offsets()
-            
+            #print(x_offset, y_offset)
             baldr_aa._send_offsets_to_mcs(x_offset, y_offset, mode = baldr_aa.mode)
 
         elif baldr_aa.output == 'internal':
