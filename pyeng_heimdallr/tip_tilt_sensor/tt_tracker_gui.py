@@ -55,7 +55,7 @@ class App(QtWidgets.QMainWindow):
         super().__init__()
         self.title = 'Heimdallr TT tracker GUI'
         self.left, self.top = 0, 0
-        self.width, self.height = 800, 550
+        self.width, self.height = 820, 550
 
         self.setWindowTitle(self.title) 
         self.setGeometry(self.left, self.top, self.width, self.height)
@@ -98,19 +98,18 @@ class MyMainWidget(QWidget):
         self.gView_plot_ttx = pg.PlotWidget(self)
         self.gView_plot_tty = pg.PlotWidget(self)
 
-        self.pB_start = QtWidgets.QPushButton(self)
-        self.pB_stop = QtWidgets.QPushButton(self)
-        self.pB_calibrate = QtWidgets.QPushButton(self)
-        self.pB_close_loop = QtWidgets.QPushButton(self)
-        self.pB_open_loop = QtWidgets.QPushButton(self)
-        self.pB_reset_DMs = QtWidgets.QPushButton(self)
+        self.pB_start = QtWidgets.QPushButton("START", self)
+        self.pB_stop = QtWidgets.QPushButton("STOP", self)
+        self.pB_calibrate = QtWidgets.QPushButton("CALIB", self)
+        self.pB_close_loop = QtWidgets.QPushButton("CLOSE-L", self)
+        self.pB_open_loop = QtWidgets.QPushButton("OPEN-L", self)
+        self.pB_reset_DMs = QtWidgets.QPushButton("RESET DMs", self)
         
-        self.pB_start.setText("START")
-        self.pB_stop.setText("STOP")
-        self.pB_calibrate.setText("CALIB")
-        self.pB_close_loop.setText("CLOSE-L")
-        self.pB_open_loop.setText("OPEN-L")
-        self.pB_reset_DMs.setText("RESET DMs")
+        self.in_gain = QtWidgets.QLineEdit(self)
+        self.in_wwf  = QtWidgets.QLineEdit(self)
+
+        self.pB_setGain = QtWidgets.QPushButton("GAIN", self)
+        self.pB_setWgt  = QtWidgets.QPushButton("WEIGHT", self)
 
         self.tracking = False
         self.close_loop_on = False
@@ -123,12 +122,15 @@ class MyMainWidget(QWidget):
 
         self.ttx_log = [[], [], [], []]
         self.tty_log = [[], [], [], []]
+        self.ttx_w = [0.1, 0.1, 0.1, 0.1]
+        self.tty_w = [0.1, 0.1, 0.1, 0.1]
+
         self.first_time = True
 
         self.hmd = HMD_TTS()
         self.hmd.make_apodizing_mask(arad=10, pwr=4)
         self.semid = 7
-        self.dstream = shm("/dev/shm/hei_k1.im.shm", nosem=False)
+        self.dstream = shm("/dev/shm/hei_k2.im.shm", nosem=False)
 
         img = self.dstream.get_data() * 1.0
         self.img = np.zeros_like(img)
@@ -137,6 +139,7 @@ class MyMainWidget(QWidget):
         self.hmd.optimize_pupil_model(img)
 
         self.gain = 0.01
+        self.wwf = 0.1
         self.dms = []
         self.sems = []
         self.chn = 1  # DM test channel
@@ -191,6 +194,15 @@ class MyMainWidget(QWidget):
         self.pB_open_loop.setGeometry(QRect(btx, 180, 100, clh))
         self.pB_reset_DMs.setGeometry(QRect(btx, 210, 100, clh))
 
+        self.pB_setGain.setGeometry(QRect(btx+70, 270, 70, clh))
+        self.pB_setWgt.setGeometry(QRect(btx+70, 300, 70, clh))
+
+        self.in_gain.setGeometry(QRect(btx, 270, 60, clh))
+        self.in_wwf.setGeometry(QRect(btx, 300, 60, clh))
+
+        self.in_gain.setText(f"{self.gain}")
+        self.in_wwf.setText(f"{self.wwf}")
+
         self.gView_plot_ttx.setGeometry(QRect(10, 10, plw, plh))
         self.gView_plot_tty.setGeometry(QRect(10, 30 + plh, plw, plh))
         self.gView_plot_ttx.setYRange(-0.5, 0.5)
@@ -222,6 +234,9 @@ class MyMainWidget(QWidget):
         self.pB_open_loop.clicked.connect(self.trigger_open)
         self.pB_reset_DMs.clicked.connect(self.trigger_reset)
 
+        self.pB_setGain.clicked.connect(self.set_gain)
+        self.pB_setWgt.clicked.connect(self.set_wwf)
+
     # =========================================================================
     def tracker_start(self):
         if self.tracking:
@@ -231,6 +246,35 @@ class MyMainWidget(QWidget):
             print("Start")
             self.tt_thread = GenericThread(self.loop)
             self.tt_thread.start()
+
+    # =========================================================================
+    def set_gain(self):
+        try:
+            gain = float(self.in_gain.text())
+        except:
+            print("numerical value required")
+            self.in_gain.setText(f"{self.gain}")
+            return
+        if 0.1 > gain > 0:
+            self.gain = gain
+            print(f"set gain = {self.gain}")
+
+        else:
+            self.in_gain.setText(f"{self.gain}")
+
+    # =========================================================================
+    def set_wwf(self):
+        try:
+            wwf = float(self.in_wwf.text())
+        except:
+            print("numerical value required")
+            self.in_wwf.setText(f"{self.wwf}")
+            return
+        if 0.2 > wwf > 0:
+            self.wwf = wwf
+            print(f"set wwf = {self.wwf}")
+        else:
+            self.in_wwf.setText(f"{self.wwf}")
 
     # =========================================================================
     def trigger_calibrate(self):
@@ -283,10 +327,38 @@ class MyMainWidget(QWidget):
                 self.dispatch(cmd)
 
     # =========================================================================
+    def get_signal(self):
+        img = np.zeros_like(self.img)
+        for ii in range(self.nav):
+            img += (self.dstream.get_data() * 1.0 - 1000.0)
+        self.hmd.apodize_data(img/self.nav)
+        wft = self.hmd.get_pupil_wft(img, pfilter=True)
+        return self.hmd.wft_to_ttxy(wft)
+            
+    # =========================================================================
+    def log_data(self):
+        for ii in range(self.hmd.nbm):
+            self.ttx_log[ii].append(self.ttx[ii])
+            self.tty_log[ii].append(self.tty[ii])
+            
+        if len(self.ttx_log[0]) > self.log_len:
+            for ii in range(self.hmd.nbm):
+                self.ttx_log[ii].pop(0)
+                self.tty_log[ii].pop(0)
+
+                # weighting factors based on SNR of last 50 points
+                self.ttx_w[ii] = self.wwf / np.var(self.ttx_log[ii][-50:])
+                self.tty_w[ii] = self.wwf / np.var(self.ttx_log[ii][-50:])
+
+        print(f"\r{np.round(self.ttx_w, 3)}", end='', flush=True)
+
+    # =========================================================================
     def dispatch(self, cmd):
         for ii in range(self.hmd.nbm):
             corrx, corry = cmd[ii], cmd[ii+self.hmd.nbm]
-            correc = corrx * self.tt_modes[0] + corry * self.tt_modes[1]
+            correc = self.ttx_w[ii] * corrx * self.tt_modes[0] + \
+                self.tty_w[ii] * corry * self.tt_modes[1]
+            # correc = corrx * self.tt_modes[0] + corry * self.tt_modes[1]
             dm0 = self.dms[ii].get_data()
             self.dms[ii].set_data(0.999 * (dm0 - self.gain * correc))
             self.sems[ii].post_sems(1)
@@ -332,26 +404,6 @@ class MyMainWidget(QWidget):
         for ii in range(nbm):
             az = np.arctan(self.RESP[ii+nbm,ii] / self.RESP[ii,ii]) *180/np.pi
             print(f"DM#{ii+1} - Azim = {az:.1f} deg")
-
-    # =========================================================================
-    def get_signal(self):
-        img = np.zeros_like(self.img)
-        for ii in range(self.nav):
-            img += (self.dstream.get_data() * 1.0 - 1000.0)
-        self.hmd.apodize_data(img/self.nav)
-        wft = self.hmd.get_pupil_wft(img, pfilter=True)
-        return self.hmd.wft_to_ttxy(wft)
-            
-    # =========================================================================
-    def log_data(self):
-        for ii in range(self.hmd.nbm):
-            self.ttx_log[ii].append(self.ttx[ii])
-            self.tty_log[ii].append(self.tty[ii])
-
-        if len(self.ttx_log[0]) > self.log_len:
-            for ii in range(self.hmd.nbm):
-                self.ttx_log[ii].pop(0)
-                self.tty_log[ii].pop(0)
 
     # =========================================================================
     def close_program(self):

@@ -195,7 +195,7 @@ class RTCThread(threading.Thread):
             #     #print(i_raw)
             
             ## Trying slow 
-            no_2_avg = 3
+            no_2_avg = 1
             avg_cnt = 0
             run_iteration = 0
             img_list = []
@@ -255,9 +255,9 @@ class RTCThread(threading.Thread):
                 if self.g.servo_mode_LO:
                     #print('here')
                     #self.g.model.ctrl_LO.ki
-                    u_LO = self.g.model.ctrl_LO.rho * u_LO - 0 * self.g.model.ctrl_LO.ki * e_LO #lo_gain * e_LO #self.g.model.ctrl_LO.process( e_LO )
+                    u_LO = self.g.model.ctrl_LO.rho * u_LO - self.g.model.ctrl_LO.ki * e_LO #lo_gain * e_LO #self.g.model.ctrl_LO.process( e_LO )
                     
-                    print( self.g.model.ctrl_LO.ki , self.g.model.ctrl_LO.rho)
+                    #print( self.g.model.ctrl_LO.ki , self.g.model.ctrl_LO.rho)
                 else:
                     u_LO[:] = 0.0
 
@@ -265,7 +265,7 @@ class RTCThread(threading.Thread):
                     # implement close_HO later 
                     #np.array( [0.05 if ii < 10 else 0 for ii in range(len(e_HO))] )
                     u_HO = self.g.model.ctrl_HO.rho * u_HO - self.g.model.ctrl_HO.ki*e_HO #self.g.model.ctrl_HO.process( e_HO )
-                    print( self.g.model.ctrl_LO.ki , self.g.model.ctrl_HO.rho)
+                    #print( self.g.model.ctrl_LO.ki , self.g.model.ctrl_HO.rho)
                 else:
                     u_HO[:] = 0.0
                 # except:

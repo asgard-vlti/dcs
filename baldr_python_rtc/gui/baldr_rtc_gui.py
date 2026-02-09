@@ -347,7 +347,7 @@ from baldr_python_rtc.scripts.baldr_server import beam2port
 def default_socket_for_beam(beam: int) -> str:
     # matches your python RTC default mapping (3001, 3002, ...)
     return f"tcp://127.0.0.1:{beam2port[int(beam)]}"
-
+    
 
 def main():
     ap = argparse.ArgumentParser()

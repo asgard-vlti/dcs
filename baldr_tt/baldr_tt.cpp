@@ -342,7 +342,7 @@ int main(int argc, char* argv[]) {
         config = toml::parse_file(argv[1]);
         std::cout << "Configuration file read: "<< config["name"] << std::endl;
     }
-    beam = config["beam"].value_or(2.05);
+    beam = config["beam"].value_or(1);
     settings.s.px = config["px"].value_or(15);
     settings.s.py = config["py"].value_or(15);
     width = config["width"].value_or(15);
@@ -362,7 +362,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Compute the rotation matrix R based on the rotation angle in the config file. 
-    double angle = config["rotation_angle"].value_or(0.0);
+    double angle = config["dm_rotation"][beam-1].value_or(0.0);
     double cos_angle = std::cos(angle * M_PI / 180.0);
     double sin_angle = std::sin(angle * M_PI / 180.0);
     control_u.R << cos_angle, -sin_angle, sin_angle, cos_angle;

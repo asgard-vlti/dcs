@@ -199,8 +199,8 @@ def build_controller(
         )
     if t == "leaky":
         return LeakyIntegrator(
-            rho=_as_vec(rho, n, 1.0),
-            ki=_as_vec(ki, n, 0.0),
+            rho=_as_vec(rho, n, 0.98),
+            ki=_as_vec(ki, n, 0.1),
             kp=_as_vec(kp, n, 0.0) if kp is not None else None,
             u_min=_as_vec(u_min, n) if u_min is not None else None,
             u_max=_as_vec(u_max, n) if u_max is not None else None,

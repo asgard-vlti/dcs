@@ -46,7 +46,7 @@ parser.add_argument("--mds_port", type=int, default=5555)
 
 parser.add_argument("--LO", type=int, default=2)
 
-parser.add_argument("--signal_space", type=str, default="pix", help="'pix' or 'dm' (demod performed in that space)")
+parser.add_argument("--signal_space", type=str, default="dm", help="'pix' or 'dm' (demod performed in that space)")
 parser.add_argument("--mode_idx", type=int, default=0, help="index into modal_basis to modulate")
 parser.add_argument("--amp", type=float, default=0.05, help="modulation amplitude in DM command units")
 parser.add_argument("--f_mod", type=float, default=200.0, help="modulation frequency (Hz)")
