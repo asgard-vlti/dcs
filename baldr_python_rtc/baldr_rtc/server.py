@@ -170,6 +170,12 @@ def build_rtc_model(cfg) -> RTCModel:
     # NEW (NOT LEGACY)
     strehl_filt =  np.asarray( cfg.filters.strehl_filt, dtype=bool).reshape(-1) 
 
+    interc = float( cfg.filters.opd_m_interc)
+    slope_1 = float( cfg.filters.opd_m_slope_1)
+    slope_2 = float( cfg.filters.opd_m_slope_2)
+    x_knee =  float(  cfg.filters.opd_m_x_knee )
+
+
     # reduction 
     #dark = np.asarray(cfg.matrices.M2C_HO, dtype=float)
     # references from legacy toml
@@ -199,12 +205,12 @@ def build_rtc_model(cfg) -> RTCModel:
         ctrl_LO = build_controller("pid", n_LO, dt=dt, kp=0, ki=0, kd=0, u_min=None, u_max=None)
         ctrl_HO = build_controller("pid", n_HO, dt=dt, kp=0, ki=0, kd=0, u_min=None, u_max=None)
     elif ct == "leaky":
-        ctrl_LO = build_controller("leaky", n_LO, rho=1.0, ki=0, kp=0, u_min=None, u_max=None)
-        ctrl_HO = build_controller("leaky", n_HO, rho=1.0, ki=0, kp=0, u_min=None, u_max=None)
+        ctrl_LO = build_controller("leaky", n_LO, rho=0.98, ki=0.05, kp=0, u_min=None, u_max=None)
+        ctrl_HO = build_controller("leaky", n_HO, rho=0.97, ki=0.0, kp=0, u_min=None, u_max=None)
     else:
         print(f"controller_type {ct} is not implemented\n!!!!!!!!!! JUT CONTINUE WITH Leaky , FIX THIS LATER")
-        ctrl_LO = build_controller("leaky", n_LO, rho=1.0, ki=0, kp=0, u_min=None, u_max=None)
-        ctrl_HO = build_controller("leaky", n_HO, rho=1.0, ki=0, kp=0, u_min=None, u_max=None)
+        ctrl_LO = build_controller("leaky", n_LO, rho=0.98, ki=0.05, kp=0, u_min=None, u_max=None)
+        ctrl_HO = build_controller("leaky", n_HO, rho=0.97, ki=0.0, kp=0, u_min=None, u_max=None)
     
     return RTCModel(
         signal_space=space,
@@ -222,7 +228,7 @@ def build_rtc_model(cfg) -> RTCModel:
         ctrl_HO=ctrl_HO,
         process_frame=None,
         perf_model=None,
-        perf_param=None,
+        perf_param=(interc, slope_1, slope_2, x_knee),
     )
 
 

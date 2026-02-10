@@ -14,11 +14,12 @@ def piecewise_continuous(x, interc, slope_1, slope_2, x_knee):
     # piecewise linear (hinge) model 
     return interc + slope_1 * x + slope_2 * np.maximum(0.0, x - x_knee)
 
-#{'interc': 629.1738798737395, 'slope_1': -2032.353630969202, 'slope_2': 1208.6141949891808, 'x_knee': 0.13625865519335179, 'cost': 1} 
-interc = 629.173#9368.549647307767
-slope_1 = -2032.35 #-5882.950106515396
-slope_2 = 1208.614 #4678.104756734429
-x_knee = 0.1362 #1.5324802815558276
+# #{'interc': 629.1738798737395, 'slope_1': -2032.353630969202, 'slope_2': 1208.6141949891808, 'x_knee': 0.13625865519335179, 'cost': 1} 
+# interc = 629.173#9368.549647307767
+# slope_1 = -2032.35 #-5882.950106515396
+# slope_2 = 1208.614 #4678.104756734429
+# x_knee = 0.1362 #1.5324802815558276
+
 
 # update N0_runtime onsky (not N0)
 # get clear pupil avg
@@ -158,6 +159,13 @@ class RTCThread(threading.Thread):
         dt = 1.0 / fps
         next_t = time.perf_counter()
         
+        # opd model (from exterior pixels of ZWFS )
+        interc, slope_1, slope_2, x_knee = self.g.model.perf_param
+        # g.rtc_config.filters.opd_m_interc
+        # g.rtc_config.filters.opd_m_slope_1
+        # g.rtc_config.filters.opd_m_slope_2
+        # g.rtc_config.filters.opd_m_x_knee
+
         # init controller feedback vectors 
         u_LO = np.zeros_like(self.g.model.ctrl_LO.ki)
         u_HO = np.zeros_like(self.g.model.ctrl_HO.ki)
@@ -167,7 +175,7 @@ class RTCThread(threading.Thread):
         # input('press enter when ready')
         # self.update_N0_runtime()
 
-        lo_gain = 0.2 # default start 
+        #lo_gain = 0.2 # default start 
         # start
         while not self.stop_event.is_set():
             if self.g.servo_mode == MainState.SERVO_STOP:

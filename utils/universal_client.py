@@ -15,6 +15,8 @@ sockets = [
     ("baldr4", 6665),
     ("baldrtt1", 6671),
     ("baldrtt2", 6672),
+    ("baldrtt3", 6673),
+    ("baldrtt4", 6674),
 ]
 
 

@@ -125,6 +125,12 @@ def readBDRConfig_legacy(config_path: str, *, beam: int, phasemask: str) -> BDRC
     #cfg.filters.strehl_filt = np.zeros(32*32)
     cfg.filters.strehl_filt = ctrl_tbl["strehl_filter"]
 
+
+    cfg.filters.opd_m_interc = ctrl_tbl["opd_m_interc"]
+    cfg.filters.opd_m_slope_1 = ctrl_tbl["opd_m_slope_1"]
+    cfg.filters.opd_m_slope_2 = ctrl_tbl["opd_m_slope_2"]
+    cfg.filters.opd_m_x_knee = ctrl_tbl["opd_m_x_knee"]
+
     # ---- matrices ----
     cfg.matrices.szm = int(ctrl_tbl.get("szm", 0) or 0)
     cfg.matrices.sza = int(ctrl_tbl.get("sza", 0) or 0)
