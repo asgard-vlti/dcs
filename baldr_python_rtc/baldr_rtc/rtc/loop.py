@@ -5,6 +5,10 @@ import threading
 import time
 import numpy as np
 
+from astropy.io import fits
+from datetime import datetime
+from pathlib import Path
+
 from baldr_python_rtc.baldr_rtc.core.state import MainState, RuntimeGlobals, ServoState
 from baldr_python_rtc.baldr_rtc.telemetry.ring import TelemetryRingBuffer
 
@@ -21,7 +25,7 @@ def piecewise_continuous(x, interc, slope_1, slope_2, x_knee):
 # x_knee = 0.1362 #1.5324802815558276
 
 
-
+    
 
 # help to apply "gain" editing commands 
 def _apply_gain(ctrl, param: str, idx, value: float):
@@ -126,9 +130,60 @@ class RTCThread(threading.Thread):
         def _image_processing_fn(i, filt=self.g.model.strehl_filt):
             return( np.mean( i[filt] ))
         
+        def _write_I0_update_fits(self, prior_I0, post_I0, outdir=None):
+            """
+            Save prior/post i_setpoint_runtime as a FITS with 2 image HDUs.
+            prior_I0, post_I0: array-like (1D or 2D). Stored as float32.
+            """
+            ts = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            # Choose output directory
+            if outdir is None:
+                # Prefer your existing telemetry/log directory if you have it
+                outdir = getattr(self.g, "telem_dir", None) or getattr(self.g, "log_dir", None) or "/tmp"
+            outdir = Path(outdir)
+            outdir.mkdir(parents=True, exist_ok=True)
+
+            beam_id = getattr(self, "beam_id", getattr(self.g, "beam_id", None))
+
+            # Convert to arrays (preserve 2D if already 2D; otherwise keep as 1D)
+            prior = np.asarray(prior_I0, dtype=np.float32)
+            post  = np.asarray(post_I0,  dtype=np.float32)
+
+            # File name (UTC-safe)
+            fname = outdir / f"I0_runtime_update_beam{beam_id}_{ts.replace(':','-')}.fits"
+
+            # ---- primary header metadata ----
+            hdr = fits.Header()
+            hdr["DATE-OBS"] = (ts, "UTC timestamp of update")
+            if beam_id is not None:
+                hdr["BEAM"] = (int(beam_id), "Baldr beam id")
+            hdr["SRC"] = ("update_I0_runtime", "Source routine")
+
+            # Optional camera/system settings (only if available)
+            # (Safely fill if your object has these fields)
+            #fps  = getattr(self.g, "fps", None) or getattr(getattr(self.g, "model", None), "fps", None)
+            #gain = getattr(self.g, "gain", None) or getattr(getattr(self.g, "model", None), "gain", None)
+
+            #if fps is not None:  hdr["FPS"]  = (float(fps),  "Camera FPS")
+            #if gain is not None: hdr["GAIN"] = (float(gain), "Camera gain")
+
+            hdr["NAXPRIOR"] = (int(prior.ndim), "Dims of PRIOR array")
+            hdr["NAXPOST"]  = (int(post.ndim),  "Dims of POST array")
+            hdr["NPRIOR"]   = (int(prior.size), "Number of elements in PRIOR")
+            hdr["NPOST"]    = (int(post.size),  "Number of elements in POST")
+
+            phdu = fits.PrimaryHDU(header=hdr)
+            hdu_prior = fits.ImageHDU(data=prior, name="PRIOR_I0")
+            hdu_post  = fits.ImageHDU(data=post,  name="POST_I0")
+
+            fits.HDUList([phdu, hdu_prior, hdu_post]).writeto(fname, overwrite=True)
+            return str(fname)
+
+        ######### START 
         I_prior = self.g.model.i_setpoint_runtime
 
-        perf_quant_threshold = 0.05 # quantil cut for performance metric (OPD here)
+        perf_quant_threshold = 0.03 # quantil cut for performance metric (OPD here)
         # need to find a way to do this without disturbing the loop - because we want to do this ideally in closed loop
         N_dumps = 5
         sleep_between_dumps = 1.0
@@ -164,7 +219,7 @@ class RTCThread(threading.Thread):
                        image_processing_fn = _image_processing_fn, 
                        performance_model = piecewise_continuous ,
                        model_param = model_param_tmp, 
-                       quantile_threshold=0.03, 
+                       quantile_threshold=perf_quant_threshold , 
                        keep="<threshold")
         
         # pixelwise avg lucky imgs 
@@ -186,7 +241,10 @@ class RTCThread(threading.Thread):
         # update 
         self.g.model.i_setpoint_runtime = I_post
 
-        print( "completed update of i_setpoint_runtime")
+        # save for sanity checking 
+        path_tmp = self._write_I0_update_fits(I_prior, I_post)
+
+        print( f"completed update of i_setpoint_runtime.\nsaved fits with before & after i_setpoint_runtime for comparison here:\n{path_tmp}\n")
 
 
 
