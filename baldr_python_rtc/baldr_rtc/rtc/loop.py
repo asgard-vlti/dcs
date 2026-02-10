@@ -90,7 +90,6 @@ class RTCThread(threading.Thread):
         self._apply_command({'type':"RESUME"})
 
     def update_I0_runtime(self):
-        print(f"here\nself.telem_ring.i_space.shape={self.telem_ring.i_space.shape} ")
         # from telemetry buffer store N samples (while loop is runnin) 
         # of performance metric (opd_metric) dark subtracted image
         # after filled N samples , quantile images based on performance metric
@@ -136,7 +135,7 @@ class RTCThread(threading.Thread):
         samp = 0 
         i_norm_samples = []
         perf_metric_samples = []
-        print(f"dumping telem ring every {sleep_between_dumps} second(s)")
+        print(f"dumping telem ring every {sleep_between_dumps} second(s)\nto update ZWFS intensity setpoint\n-----------")
         while samp < N_dumps:
             print(f"...telem ring dump {samp}/{N_dumps}")
             # could we just dump a few ring buffers (need to be synchronized the dumping)
