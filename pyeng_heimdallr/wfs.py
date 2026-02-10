@@ -19,8 +19,7 @@ import asgard_alignment.controllino as co
 # pupil geometry design
 hcoords = np.loadtxt("N1_hole_coordinates.txt")
 
-logfile = "log_fringe_monitor.log"
-
+default_log = "log_fringe_monitor.log"
 # ----------------------------------------
 # piston mode design
 dms = 12
@@ -47,7 +46,7 @@ def unwrap(val, prev):
     else:
         return val + 2*np.pi
 
-def log(message=""):
+def log(message="", logfile=default_log, echo=True):
     ''' -----------------------------------------------------------------------
     Simple logging utility to keep track of HFO and HPOL modulation sequences
     ----------------------------------------------------------------------- '''
@@ -55,6 +54,8 @@ def log(message=""):
     myline = f"{tstamp}: {message}"
     with open(logfile, "a") as mylog:
         mylog.write(myline+'\n')
+    if echo:
+        print(myline)
 
 class Heimdallr():
     # =========================================================================
@@ -121,13 +122,14 @@ class Heimdallr():
         self.socket.setsockopt(zmq.RCVTIMEO, 10000)
         self.socket.connect("tcp://192.168.100.2:5555")
 
+        log("Starting fringe monitor!")
         # connecting to HFOs
         # ===================
         self.hfo_pos = np.zeros(self.ndm)
         print("---")
         for ii in range(self.ndm):
             self.hfo_pos[ii] = self.get_dl_pos(ii+1)
-            print(f"HFO{ii+1} = {self.hfo_pos[ii]:8.2f} um")
+            log(f"HFO{ii+1} = {self.hfo_pos[ii]:8.2f} um")
         print("---")
 
         # connecting to HPOLs
@@ -137,7 +139,7 @@ class Heimdallr():
         self.hpol_pos = np.zeros(self.ndm, dtype=int)
         for ii in range(self.ndm):
             self.hpol_pos[ii] = self.get_hpol_pos(ii+1)
-            print(f"HPOL{ii+1} = {self.hpol_pos[ii]:+6d} (steps)")
+            log(f"HPOL{ii+1} = {self.hpol_pos[ii]:+6d} (steps)")
         print("---")
 
         # ===================
@@ -330,7 +332,9 @@ class Heimdallr():
             self.hfo_pos[ii] = self.get_dl_pos(ii+1)
             
         x0 = self.hfo_pos[beamid-1] # startup position
-        steps = np.arange(x0 - srange, x0 + srange, step)
+        # steps = np.arange(x0 - srange, x0 + srange, step)
+        steps = np.linspace(x0 - srange, x0 + srange,
+                            int(1+2*srange/step))
         sensor = self.hdlr1 if band == "K1" else self.hdlr2
 
         log(f"---- HFO{beamid} SCAN sequence starting ----")
@@ -403,48 +407,109 @@ class Heimdallr():
         return best_pos, best_vis
 
     # =========================================================================
-    def hpol_pos_scan(self, beamid, pmin, pmax, srange=100.0, step=5.0,
-                      band="K1"):
+    def dual_fringe_scan(self, beamid=1, srange=100.0, step=5.0,
+                         logname=default_log):
+        ''' -------------------------------------------------- 
+        Fringe scan across provided range of HFO, recording 
+        the response in both K1 and K2 bands. Called by the
+        hpol_pos_scan()
+
+        After the scan, returns the HFO back to its original
+        position.
+
+        Parameters:
+        ----------
+
+        - beamid   : 1, 2, 3 or 4 (BEAM ID #) (int)
+        - srange   : the +/- search range in microns (float)
+        - step     : the scan step in microns (float)
+        -------------------------------------------------- '''
+        nav = 5  # number of measurements to average
+
+        for ii in range(self.ndm):
+            self.hfo_pos[ii] = self.get_dl_pos(ii+1)
+            
+        x0 = self.hfo_pos[beamid-1] # startup position
+        steps = np.linspace(x0 - srange, x0 + srange,
+                            int(1+2*srange/step))
+
+        log(f"---- HFO{beamid} SCAN sequence starting ----",
+            logfile=logname)
+
+        if self.cloop_on:
+            self.cloop_on = False  # interrupting the loop
+            print("Opening the loop")
+
+        for ii, pos in enumerate(steps):
+            msg1 = f"K1-HFO{beamid} pos={pos:8.2f} vis="
+            msg2 = f"K2-HFO{beamid} pos={pos:8.2f} vis="
+            self.move_dl(pos, beamid)            
+            time.sleep(0.25)
+
+            vis1, vis2 = [], []
+            for jj in range(nav):
+                vis1.append(np.abs(self.hdlr1.cvis[0]))
+                vis2.append(np.abs(self.hdlr2.cvis[0]))
+
+            vis1 = np.mean(np.array(vis1), axis = 0)
+            vis2 = np.mean(np.array(vis2), axis = 0)
+
+            # logging all 6 visibilities
+            msg1 += np.array2string(
+                vis1, precision=2, floatmode='fixed', separator=', ')
+            msg2 += np.array2string(
+                vis2, precision=2, floatmode='fixed', separator=', ')
+
+            log(msg1, logfile=logname)
+            log(msg2, logfile=logname)
+
+            if self.abort is True:
+                log(f"---- HFO{beamid} SCAN aborted ----",
+                    logfile=logname)
+                time.sleep(0.5)
+                self.abort = False
+                break
+
+        log(f"---- End of HFO{beamid} SCAN ---", logfile=logname)
+        print("Return to starting HFO position")
+        self.move_dl(x0, beamid)
+        time.sleep(2)
+
+    # =========================================================================
+    def hpol_pos_scan(self, beamid, pmin, pmax, srange=100.0, step=5.0):
         ''' -------------------------------------------------------------------
         HPOL optimal position procedure
 
-        The idea is as follows: doing a ramp of HPOL commands
-        At each step, scan HFO to optimize fringe visibilities
+        The idea is as follows: doing a ramp of HPOL commands.
+        At each step, scan corresponding HFO and log output.
 
+        At the end, bring back HFO and HPOL to their original spot.
         ------------------------------------------------------------------- '''
         ssize = 25  # step size for HPOL
-        pos_all = np.arange(pmin, pmax, ssize)
-        best_hpo_pos = 0
-        best_best_dl_pos = 0
-        best_best_vis = 0
+        pos_all = np.linspace(pmin, pmax, int((pmax-pmin)/ssize+1))
+
+        utcnow = datetime.utcnow()
+        tstamp = utcnow.strftime("%Y%m%d_%H:%M:%S")
+        logname = f"log_{tstamp}_HPOL{beamid}_scan.log"
+        
         log(f"---- HPOL{beamid} SCAN sequence starting ----")
         x0_hpol = self.get_hpol_pos(beamid)  # initial position
+
         for pos in pos_all:
-            print(f"pos = {pos}")
             self.move_hpol(pos, beamid)
-            log(f"HPOL{beamid} pos = {pos}")
+            log(f"HPOL{beamid} pos = {pos}", logfile=logname)
 
             if self.abort is True:
-                print("Aborting HPOL SCAN")
+                log(f"---- HPOL{beamid} SCAN aborted ----")
                 time.sleep(0.5)
                 self.abort = False
-                log(f"---- HPOL{beamid} SCAN aborted ----")
                 break
 
-            best_dl_pos, best_vis = self.fringe_search(
-                beamid=beamid, srange=srange, step=step,
-                band=band, thorough=True)
+            self.dual_fringe_scan(beamid=beamid, srange=srange,
+                                  step=step, logname=logname)
 
-            if best_vis > best_best_vis:
-                best_best_vis = best_vis
-                best_best_dl_pos = best_dl_pos
-                best_hpo_pos = pos
-            print(f"HPOL #{beamid} pos = {pos} - best {band} fringes at {best_dl_pos}")
-        #print(f"FINAL: HPOL #{beamid} pos = {best_hpo_pos} - best {band} fringes at {best_best_dl_pos}")
         print(f"HPOL{beamid} back to initial position {pos}")
         self.move_hpol(x0, beamid)
-        # self.move_hpol(best_hpo_pos, beamid)
-        # self.move_dl(best_best_dl_pos)
 
     # =========================================================================
     def dm_modulation_response(self):

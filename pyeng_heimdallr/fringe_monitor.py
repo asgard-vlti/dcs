@@ -9,7 +9,7 @@ from PyQt5.QtCore import QRect
 
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
 
-from wfs import Heimdallr
+from wfs import Heimdallr, log
 
 import threading
 
@@ -111,32 +111,15 @@ class MyMainWidget(QWidget):
         self.gView_plot_vis_k2 = pg.PlotWidget(self)
         self.gView_plot_gdlay = pg.PlotWidget(self)
 
-        self.pB_start = QtWidgets.QPushButton(self)
-        self.pB_start.setText("START")
-
-        self.pB_stop = QtWidgets.QPushButton(self)
-        self.pB_stop.setText("STOP")
-
-        self.pB_cloop = QtWidgets.QPushButton(self)
-        self.pB_cloop.setText("C-LOOP")
-
-        self.pB_oloop = QtWidgets.QPushButton(self)
-        self.pB_oloop.setText("O-LOOP")
-        
-        self.pB_reset_dms = QtWidgets.QPushButton(self)
-        self.pB_reset_dms.setText("RESET DMs")
-
-        self.pB_set_phot = QtWidgets.QPushButton(self)
-        self.pB_set_phot.setText("SET PHOT")
-
-        self.pB_gd_set_offset = QtWidgets.QPushButton(self)
-        self.pB_gd_set_offset.setText("Offset GD")
-
-        self.pB_gd_fgt_offset = QtWidgets.QPushButton(self)
-        self.pB_gd_fgt_offset.setText("Reset GD")
-        
-        self.pB_dm_modul = QtWidgets.QPushButton(self)
-        self.pB_dm_modul.setText("MOD-SEQ")
+        self.pB_start = QtWidgets.QPushButton("START", self)
+        self.pB_stop = QtWidgets.QPushButton("STOP", self)
+        self.pB_cloop = QtWidgets.QPushButton("C-LOOP", self)
+        self.pB_oloop = QtWidgets.QPushButton("O-LOOP", self)     
+        self.pB_reset_dms = QtWidgets.QPushButton("RESET DMs", self)
+        self.pB_set_phot = QtWidgets.QPushButton("SET PHOT", self)
+        self.pB_gd_set_offset = QtWidgets.QPushButton("Offset GD", self)
+        self.pB_gd_fgt_offset = QtWidgets.QPushButton("Reset GD", self)
+        self.pB_dm_modul = QtWidgets.QPushButton("MOD-SEQ", self)
 
         # ----- scanning for fringes ----
         self.cmB_select_filter = QtWidgets.QComboBox(self)
@@ -154,22 +137,16 @@ class MyMainWidget(QWidget):
         self.chB_fine_scan = QtWidgets.QCheckBox(self)
         self.chB_fine_scan.setText("fine")
         
-        self.pB_scan_beam1 = QtWidgets.QPushButton(self)
-        self.pB_scan_beam1.setText("SCAN HFO1")
-        self.pB_scan_beam2 = QtWidgets.QPushButton(self)
-        self.pB_scan_beam2.setText("SCAN HFO2")
-        self.pB_scan_beam3 = QtWidgets.QPushButton(self)
-        self.pB_scan_beam3.setText("SCAN HFO3")
-        self.pB_scan_beam4 = QtWidgets.QPushButton(self)
-        self.pB_scan_beam4.setText("SCAN HFO4")
+        self.pB_scan_beam1 = QtWidgets.QPushButton("SCAN HFO1", self)
+        self.pB_scan_beam2 = QtWidgets.QPushButton("SCAN HFO2", self)
+        self.pB_scan_beam3 = QtWidgets.QPushButton("SCAN HFO3", self)
+        self.pB_scan_beam4 = QtWidgets.QPushButton("SCAN HFO4", self)
 
         self.pB_jump_pos = []
         self.pB_jump_neg = []
         for ii in range(4):
-            self.pB_jump_pos.append(QtWidgets.QPushButton(self))
-            self.pB_jump_neg.append(QtWidgets.QPushButton(self))
-            self.pB_jump_pos[ii].setText("JUMP+")
-            self.pB_jump_neg[ii].setText("JUMP-")
+            self.pB_jump_pos.append(QtWidgets.QPushButton("JUMP+", self))
+            self.pB_jump_neg.append(QtWidgets.QPushButton("JUMP-", self))
 
         # ----- HPOL control widgets -----
         self.pBs_scan_hpol = []
@@ -405,22 +382,19 @@ class MyMainWidget(QWidget):
         self.pB_gd_set_offset.clicked.connect(self.set_gd_offset)
         self.pB_gd_fgt_offset.clicked.connect(self.fgt_gd_offset)
 
-
         for ii in range(4):
             self.pBs_scan_hpol[ii].clicked.connect(self.scan_hpol(ii))
             self.pB_hpol_jump_pos[ii].clicked.connect(self.jump_HPOL_pos(ii))
             self.pB_hpol_jump_neg[ii].clicked.connect(self.jump_HPOL_neg(ii))
 
         self.pB_dm_modul.clicked.connect(self.trigger_modulation)
-        # self.pB_dec_pscale.clicked.connect(self.dec_pscale)
 
     # =========================================================================
     def set_photometry(self):
-        print("click!")
         self.wfs.K1_norm = self.wfs.norm1
         self.wfs.K2_norm = self.wfs.norm2
-        print(f"Photometry: K1={self.wfs.K1_norm:.0f}, K2={self.wfs.K2_norm:.0f}")
-        pass
+        msg = f"Photometry: K1={self.wfs.K1_norm:.0f}, K2={self.wfs.K2_norm:.0f}"
+        log(msg)
 
     # =========================================================================
     def scan_hpol(self, ii):
@@ -429,7 +403,7 @@ class MyMainWidget(QWidget):
                 self.wfs.hpol_pos_scan,
                 beamid=ii+1, pmin=self.dspB_hpol_p0[ii].value(),
                 pmax=self.dspB_hpol_p1[ii].value(),
-                srange=self.srange_val, step=self.scan_step, band=self.band)
+                srange=self.srange_val, step=self.scan_step)
             self.hpol_scan_thread.start()
         return scan
 
@@ -438,7 +412,7 @@ class MyMainWidget(QWidget):
         def jump():
             pos = self.wfs.get_hpol_pos(ii + 1)
             new_pos = pos + self.hpol_step
-            print(f"HPOL{ii+1} = {pos} - jump to {new_pos}")
+            log(f"HPOL{ii+1}: jump {pos} --> {new_pos}")
             self.wfs.move_hpol(new_pos, ii+1)
         return jump
 
@@ -447,7 +421,7 @@ class MyMainWidget(QWidget):
         def jump():
             pos = self.wfs.get_hpol_pos(ii + 1)
             new_pos = pos - self.hpol_step
-            print(f"HPOL{ii+1} = {pos} - jump to {new_pos}")
+            log(f"HPOL{ii+1}: jump {pos} --> {new_pos}")
             self.wfs.move_hpol(new_pos, ii+1)
         return jump
 
@@ -456,7 +430,7 @@ class MyMainWidget(QWidget):
         def jump():
             pos = self.wfs.get_dl_pos(ii + 1)
             new_pos = pos + 2 * self.srange_val
-            print(f"HFO{ii+1} = {pos:.2f} um - jump to {new_pos:.2f} um")
+            log(f"HFO{ii+1}: jump {pos:.2f} um --> {new_pos:.2f} um")
             self.wfs.move_dl(new_pos, ii+1)
         return jump
 
@@ -465,7 +439,7 @@ class MyMainWidget(QWidget):
         def jump():
             pos = self.wfs.get_dl_pos(ii + 1)
             new_pos = pos - 2 * self.srange_val
-            print(f"HFO{ii+1} = {pos:.2f} um - jump to {new_pos:.2f} um")
+            log(f"HFO{ii+1}: jump {pos:.2f} um --> {new_pos:.2f} um")
             self.wfs.move_dl(new_pos, ii+1)
         return jump
 
@@ -482,8 +456,6 @@ class MyMainWidget(QWidget):
         if "Cl-phs" in self.delay2display:
             for ii in range(self.wfs.ncp, self.wfs.nbl):
                 self.logplot_gdlay[ii].setData(np.zeros(self.wfs.log_len))
-
-        # print("Switch to ", self.delay2display)
 
     # =========================================================================
     def set_gd_offset(self):
@@ -513,7 +485,6 @@ class MyMainWidget(QWidget):
             self.scan_step = 0.5
         else:
             self.scan_step = 5.0
-        # print(f"step size updated to {self.scan_step} um")
 
     # =========================================================================
     def trigger_modulation(self):
@@ -553,6 +524,7 @@ class MyMainWidget(QWidget):
     # =========================================================================
     def reset_dms(self):
         self.wfs.reset_dms()
+        log("Reset DM commands")
 
     # =========================================================================
     def refresh_plot(self):
@@ -576,8 +548,6 @@ class MyMainWidget(QWidget):
             for ii in range(self.wfs.nbl):
                 self.logplot_gdlay[ii].setData(self.wfs.gdlays[ii])
             
-        # for ii in range(3):
-        #     self.logplot_gdlay[ii].setData(self.wfs.opds[ii])
         for ii in range(self.wfs.nbl):
             self.logplot_vis_k1[ii].setData(self.wfs.vis_k1[ii])
             self.logplot_vis_k2[ii].setData(self.wfs.vis_k2[ii])

@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
 
 import threading
 
+from datetime import datetime
 import time
 import sys
 import os
@@ -23,6 +24,18 @@ myqt = 0   # myqt is a global variable
 
 os.environ["OPENBLAS_NUM_THREAD"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
+
+logfile = "log_tt_tracker.log"
+
+def log(message=""):
+    ''' -----------------------------------------------------------------------
+    Simple logging utility to keep track of loop commands by tt_tracker
+    ----------------------------------------------------------------------- '''
+    tstamp = datetime.utcnow().strftime('%D %H:%M:%S')
+    myline = f"{tstamp}: {message}"
+    with open(logfile, "a") as mylog:
+        mylog.write(myline+'\n')
+
 
 # ============================================================
 #                   Thread specifics
@@ -66,7 +79,8 @@ class App(QtWidgets.QMainWindow):
 
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.refresh)
-        self.timer.start(200)
+        self.timer.start(300)
+        log("TT tracker start")
 
     # ------------------------------------------------------
     def refresh(self):
@@ -107,9 +121,11 @@ class MyMainWidget(QWidget):
         
         self.in_gain = QtWidgets.QLineEdit(self)
         self.in_wwf  = QtWidgets.QLineEdit(self)
-
+        self.in_nav = QtWidgets.QLineEdit(self)
+        
         self.pB_setGain = QtWidgets.QPushButton("GAIN", self)
-        self.pB_setWgt  = QtWidgets.QPushButton("WEIGHT", self)
+        self.pB_setWgt = QtWidgets.QPushButton("WEIGHT", self)
+        self.pB_setNav = QtWidgets.QPushButton("NAV", self)
 
         self.tracking = False
         self.close_loop_on = False
@@ -134,7 +150,7 @@ class MyMainWidget(QWidget):
 
         img = self.dstream.get_data() * 1.0
         self.img = np.zeros_like(img)
-        self.nav = 20  # number of averaged images
+        self.nav = 10  # number of averaged images
         self.hmd.subtract_background(img)
         self.hmd.optimize_pupil_model(img)
 
@@ -159,23 +175,24 @@ class MyMainWidget(QWidget):
         for ii in range(2):
             self.tt_modes[ii] /= self.tt_modes[ii][amask].std()
 
-
-        self.RESP = np.array([[10.71,  0.  ,  0.  ,  0.  , -4.51,  0.  ,  0.  ,  0.  ],
-                              [ 0.  ,  9.36,  0.  ,  0.  ,  0.  , -1.35,  0.  ,  0.  ],
-                              [ 0.  ,  0.  ,  9.79,  0.  ,  0.  ,  0.  , -2.5 ,  0.  ],
-                              [ 0.  ,  0.  ,  0.  ,  3.34,  0.  ,  0.  ,  0.  ,  8.05],
-                              [-2.68,  0.  ,  0.  ,  0.  , -8.7 ,  0.  ,  0.  ,  0.  ],
-                              [ 0.  , -0.97,  0.  ,  0.  ,  0.  , -9.25,  0.  ,  0.  ],
-                              [ 0.  ,  0.  , -0.23,  0.  ,  0.  ,  0.  , -2.03,  0.  ],
-                              [ 0.  ,  0.  ,  0.  ,  7.07,  0.  ,  0.  ,  0.  , -7.2 ]])
+        self.RESP = np.array(
+            [[10.71,  0.00,  0.00,  0.00, -4.51,  0.00,  0.00,  0.00],
+             [ 0.00,  9.36,  0.00,  0.00,  0.00, -1.35,  0.00,  0.00],
+             [ 0.00,  0.00,  9.79,  0.00,  0.00,  0.00, -2.50,  0.00],
+             [ 0.00,  0.00,  0.00,  3.34,  0.00,  0.00,  0.00,  8.05],
+             [-2.68,  0.00,  0.00,  0.00, -8.70,  0.00,  0.00,  0.00],
+             [ 0.00, -0.97,  0.00,  0.00,  0.00, -9.25,  0.00,  0.00],
+             [ 0.00,  0.00, -0.23,  0.00,  0.00,  0.00, -2.03,  0.00],
+             [ 0.00,  0.00,  0.00,  7.07,  0.00,  0.00,  0.00, -7.20]])
 
         print("-----------------------")
-        print(np.round(self.RESP, 2))
+        print(np.array2string(self.RESP, precision=2,
+                              floatmode='fixed', separator=', '))
         print("Checksum   :", np.round(np.sqrt(np.sum(self.RESP**2, axis=1)),2))
 
         for ii in range(self.hmd.nbm):
-            az = np.arctan(self.RESP[ii+self.hmd.nbm,ii] / self.RESP[ii,ii]) * 180/np.pi
-            print(f"DM#{ii+1} - Azim = {az:.1f} deg")
+            az = np.arctan(self.RESP[ii+self.hmd.nbm,ii] / self.RESP[ii,ii])
+            print(f"DM#{ii+1} - Azim = {az * 180/np.pi:.1f} deg")
         print("-----------------------")
         self.PINV = np.linalg.pinv(self.RESP)
 
@@ -196,12 +213,15 @@ class MyMainWidget(QWidget):
 
         self.pB_setGain.setGeometry(QRect(btx+70, 270, 70, clh))
         self.pB_setWgt.setGeometry(QRect(btx+70, 300, 70, clh))
+        self.pB_setNav.setGeometry(QRect(btx+70, 330, 70, clh))
 
         self.in_gain.setGeometry(QRect(btx, 270, 60, clh))
         self.in_wwf.setGeometry(QRect(btx, 300, 60, clh))
-
+        self.in_nav.setGeometry(QRect(btx, 330, 60, clh))
+        
         self.in_gain.setText(f"{self.gain}")
         self.in_wwf.setText(f"{self.wwf}")
+        self.in_nav.setText(f"{self.nav}")
 
         self.gView_plot_ttx.setGeometry(QRect(10, 10, plw, plh))
         self.gView_plot_tty.setGeometry(QRect(10, 30 + plh, plw, plh))
@@ -258,7 +278,7 @@ class MyMainWidget(QWidget):
         if 0.1 > gain > 0:
             self.gain = gain
             print(f"set gain = {self.gain}")
-
+            log(f"set gain = {self.gain}")
         else:
             self.in_gain.setText(f"{self.gain}")
 
@@ -273,6 +293,7 @@ class MyMainWidget(QWidget):
         if 0.2 > wwf > 0:
             self.wwf = wwf
             print(f"set wwf = {self.wwf}")
+            log(f"set wwf = {self.wwf}")
         else:
             self.in_wwf.setText(f"{self.wwf}")
 
@@ -289,6 +310,8 @@ class MyMainWidget(QWidget):
         else:
             self.close_loop_on = True
             print("Loop closed")
+            log("loop closed")
+
     # =========================================================================
     def trigger_open(self):
         if not self.close_loop_on:
@@ -296,17 +319,20 @@ class MyMainWidget(QWidget):
         else:
             self.close_loop_on = False
             print("Loop opened")
+            log("loop opened")
 
     # =========================================================================
     def trigger_reset(self):
         for ii in range(self.hmd.nbm):
             self.dms[ii].set_data(0 * self.tt_modes[0])  # reset
             self.sems[ii].post_sems(1)
+        log("DM reset")
 
     # =========================================================================
     def tracker_stop(self):
         self.tracking = False
         print("Done")
+        log("TT tracking is stopped")
 
     # =========================================================================
     def refresh_plot(self):
@@ -398,7 +424,9 @@ class MyMainWidget(QWidget):
 
         self.RESP = np.round(resp / a0, 2)
         self.PINV = np.linalg.pinv(self.RESP)
-        print(np.round(self.RESP, 2))
+
+        print(np.array2string(self.RESP, precision=2,
+                              floatmode='fixed', separator=', '))
 
         print("Checksum:", np.sqrt(np.sum(self.RESP**2, axis=1)))
         for ii in range(nbm):
@@ -409,6 +437,7 @@ class MyMainWidget(QWidget):
     def close_program(self):
         # called when using menu or ctrl-Q
         self.dstream.close(erase_file=False)
+        log("TT tracker quit")
         # self.wfs_stop()
         # try:
         #     self.wfs.close()
