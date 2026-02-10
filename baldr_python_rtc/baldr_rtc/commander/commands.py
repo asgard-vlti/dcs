@@ -308,6 +308,10 @@ def build_commander_module(
     def update_N0_runtime(args): 
         command_queue.put(make_cmd("UPDATE_N0_RUNTIME"))
         return {"ok": True}
+    
+    def update_I0_runtime(args): 
+        command_queue.put(make_cmd("UPDATE_I0_RUNTIME"))
+        return {"ok": True}
     ##################
     # STATUS
     # !!IMPORTANT!! - this format is to match the expected format for wag (see legacy get_status in https://github.com/mikeireland/dcs/blob/main/baldr/baldr.cpp)
@@ -372,6 +376,7 @@ def build_commander_module(
     ##################
     # UPDATE REFERENCE INTENSITIES
     m.def_command("update_N0_runtime", update_N0_runtime, description="Update clear pupil normalization in runtime", return_type="object") 
+    m.def_command("update_I0_runtime", update_I0_runtime, description="Update ZWFS pupil intensity setpoint", return_type="object") 
 
     ##################
     # GAIN

@@ -89,8 +89,6 @@ class BaldrAA:
             # rtc path by asgard-alignment/calibration/copy_configs_to_stable_versions.sh
             # it is EXTREMELY unlikely that this should have different pupil registrations from the active RTC 
             # This would only happen if someone loaded a different config file to the rtc
-            # we could also query the baldr rtc on the correct socket mapping 
-            # via >get_rtc_field "pixels.secondary_pixels" <-- but this will fail if the RTC is not running 
             # for now we opt for the option that is least likely to break something 
             # and require tired troubleshooting 
             default_toml = os.path.join("/usr/local/etc/baldr/", "baldr_config_#.toml") 
@@ -239,7 +237,15 @@ class BaldrAA:
         # get the configured (registered) x,y pixels in the beam subframe 
         ref_x, ref_y, rc = self.extract_pupil_references(  ) # rc is the subframe pixels [r1,r2,c1,c2] in global frame coord
 
-        sub_img = self.get_frame()
+        sub_img_list = []
+        for _ in range(50):
+            sub_img_list.append( self.get_frame() )
+            time.sleep(0.01)
+
+        # simple removal of bad pixels etc 
+        #r_sub_img_list = reduce(sub_img_list)
+        sub_img = np.median(r_sub_img_list, axis=0)
+
         # full_img = self.get_frame() # average of 200 frames
 
         # # check if in cropped mode
@@ -257,17 +263,23 @@ class BaldrAA:
                                                                   plot=False, 
                                                                   savepath=self.savepath)
 
-        return( mea_x, mea_y )
+        return( mea_x, mea_y, a, b, theta, pupil_mask )
 
 
     def calculate_pixel_offsets( self ):
         ref_x, ref_y, _ = self.extract_pupil_references(  ) # rc is the subframe pixels [r1,r2,c1,c2] in global frame coord
 
-        mea_x, mea_y = self.measure_pupil_center( ) 
+        mea_x, mea_y, a_semiMaj, b_semiMin, theta, pupil_mask = self.measure_pupil_center( ) 
 
-        # calculate pixel offsets
-        x_pixel_offsets = ref_x - mea_x
-        y_pixel_offsets = ref_y - mea_y
+        if abs( abs(a_semiMaj) - abs(b_semiMin) ) > 5: # semi major axis is 5 pixels bigger than semi minor
+            x_pixel_offsets = 0
+            y_pixel_offsets = 0
+            print( f"WARNING - highly elliptical. Semi major axis = {np.round(a,2)}pixels which > 5 pixels of semi minor axis = {np.round(b,2)}pixels. Not safe to apply offset to DL VCM. Try manually adjusting")
+        else:
+            # calculate pixel offsets
+            x_pixel_offsets = ref_x - mea_x
+            y_pixel_offsets = ref_y - mea_y
+
 
         return x_pixel_offsets, y_pixel_offsets
     

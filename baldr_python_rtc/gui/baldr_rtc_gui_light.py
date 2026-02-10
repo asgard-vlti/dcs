@@ -68,47 +68,35 @@ class CommanderClient:
 
 # ------------- helpers -------------
 
-def _parse_indices(s: str) -> str | list[int]:
-    """Parse indices spec.
+def _parse_indices(s: str) -> str:
+    """Validate and normalize an indices spec, returning a STRING.
 
     Accepts:
       - "all" (case-insensitive)
       - comma-separated ints: "0, 1, 5"
       - ranges: "0-7" or mixed "0-3,8,10-12"
 
-    Returns either "all" or a list[int].
+    Returns either "all" or a normalized string like "1,2,3,4" or "0-3,8,10-12".
     Raises ValueError on invalid input.
     """
-    t = (s or "").strip().lower()
-    if not t or t == "all":
+    t = (s or "").strip()
+    if not t or t.lower() == "all":
         return "all"
 
-    out: list[int] = []
+    # normalize: remove whitespace around commas/dashes
+    # and validate tokens are ints or int-int ranges.
     parts = [p.strip() for p in t.split(",") if p.strip()]
+    norm_parts: list[str] = []
     for p in parts:
         if "-" in p:
             a, b, *rest = [x.strip() for x in p.split("-")]
-            if rest:
+            if rest or a == "" or b == "":
                 raise ValueError(f"Bad range token: {p!r}")
-            if a == "" or b == "":
-                raise ValueError(f"Bad range token: {p!r}")
-            ia = int(a)
-            ib = int(b)
-            if ib < ia:
-                ia, ib = ib, ia
-            out.extend(list(range(ia, ib + 1)))
+            int(a); int(b)  # validate
+            norm_parts.append(f"{int(a)}-{int(b)}")
         else:
-            out.append(int(p))
-
-    # de-dup while preserving order
-    seen = set()
-    dedup: list[int] = []
-    for i in out:
-        if i not in seen:
-            dedup.append(i)
-            seen.add(i)
-    return dedup
-
+            norm_parts.append(str(int(p)))
+    return ",".join(norm_parts)
 
 @dataclass(frozen=True)
 class GainSpec:
@@ -149,15 +137,19 @@ class BeamControlPanel(QWidget):
         self.close_ho_btn = QPushButton("CLOSE_HO")
         self.close_ho_btn.clicked.connect(lambda: self._send_simple("close_baldr_HO"))
 
-        self.phot_btn = QPushButton("PHOT")
+        self.phot_btn = QPushButton("UPDATE PHOTOMETRY (ON CLEAR PUPIL)")
         self.phot_btn.clicked.connect(lambda: self._send_simple("update_N0_runtime"))
+        # I0 update 
+        self.i0_btn = QPushButton("UPDATE ZWFS INTENS. SETPOINT")
+        self.i0_btn.clicked.connect(lambda: self._send_simple("update_I0_runtime"))
 
         quick.addWidget(self.open_lo_btn, 0, 0)
         quick.addWidget(self.open_ho_btn, 0, 1)
         quick.addWidget(self.close_lo_btn, 1, 0)
         quick.addWidget(self.close_ho_btn, 1, 1)
-        quick.addWidget(self.phot_btn, 2, 0, 1, 2)
-
+        #quick.addWidget(self.phot_btn, 2, 0, 1, 2)
+        quick.addWidget(self.phot_btn, 2, 0)
+        quick.addWidget(self.i0_btn, 2, 1)
         root.addLayout(quick)
 
         # separator

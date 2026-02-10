@@ -9,7 +9,7 @@ from baldr_python_rtc.baldr_rtc.core.state import MainState, RuntimeGlobals, Ser
 from baldr_python_rtc.baldr_rtc.telemetry.ring import TelemetryRingBuffer
 
 
-# opd model
+# opd model (used for performance monitoring and lucky imaging for updating ZWFS intensity setpoint onsky)
 def piecewise_continuous(x, interc, slope_1, slope_2, x_knee):
     # piecewise linear (hinge) model 
     return interc + slope_1 * x + slope_2 * np.maximum(0.0, x - x_knee)
@@ -21,12 +21,6 @@ def piecewise_continuous(x, interc, slope_1, slope_2, x_knee):
 # x_knee = 0.1362 #1.5324802815558276
 
 
-# update N0_runtime onsky (not N0)
-# get clear pupil avg
-
-# update N0 in g
-# also g.N0_runtime 
-# make sure consistent with baldr_python_rtc/baldr_rtc/server.build_rtc_model
 
 
 # help to apply "gain" editing commands 
@@ -95,6 +89,108 @@ class RTCThread(threading.Thread):
         usr_input = input('before resuming put mask back in (later this will be automatic..).\npress enter when ready to start loop')
         self._apply_command({'type':"RESUME"})
 
+    def update_I0_runtime(self):
+        print(f"here\nself.telem_ring.i_space.shape={self.telem_ring.i_space.shape} ")
+        # from telemetry buffer store N samples (while loop is runnin) 
+        # of performance metric (opd_metric) dark subtracted image
+        # after filled N samples , quantile images based on performance metric
+        # (with opd metric we want lower quantile => higher strehl)
+        # then i_setpoint_new = <I0>/N0_runtime 
+        # take Bayesian weights of new image  
+
+
+        def _lucky_img(I0_meas,
+                       image_processing_fn , 
+                       performance_model ,
+                       model_param,
+                       quantile_threshold=0.03, 
+                       keep="<threshold"):
+            # I0_meas is list of 2D images, we process them with image_processing_fn (user specifiied function)
+            # the input that processed signal to performance_model (another user specified function, with model_param input)
+            # we then do a percentile cut at quantile_threshold and keep images based on "keep" input (i.e. images with performance metric less than threshold)
+
+            img_signal = np.array( [image_processing_fn(ii) for ii in I0_meas])
+
+            perf_est = performance_model(img_signal, **model_param)
+
+            perf_threshold = np.quantile( perf_est , quantile_threshold)
+
+            if keep == "<threshold":
+                I0_lucky = np.array( I0_meas )[ perf_est < perf_threshold ]
+            elif keep == ">threshold":
+                I0_lucky = np.array( I0_meas )[ perf_est > perf_threshold ]
+            else:
+                raise UserWarning("_lucky_img has invalid 'keep' entry. Must be keep = '<threshold'|'>threshold'")    
+            return I0_lucky 
+        
+        
+        def _image_processing_fn(i, filt=self.g.model.strehl_filt):
+            return( np.mean( i[filt] ))
+        
+        I_prior = self.g.model.i_setpoint_runtime
+
+        perf_quant_threshold = 0.05 # quantil cut for performance metric (OPD here)
+        # need to find a way to do this without disturbing the loop - because we want to do this ideally in closed loop
+        N_dumps = 5
+        sleep_between_dumps = 1.0
+        samp = 0 
+        i_norm_samples = []
+        perf_metric_samples = []
+        print(f"dumping telem ring every {sleep_between_dumps} second(s)")
+        while samp < N_dumps:
+            print(f"...telem ring dump {samp}/{N_dumps}")
+            # could we just dump a few ring buffers (need to be synchronized the dumping)
+            # normalize so in the sasme normalized space as self.g.model.i_setpoint_runtime 
+            i_norm = self.telem_ring.i_space / self.g.model.N0_runtime
+            i_norm_samples.append( i_norm )
+
+            # perf_metric_samples.append( self.telem_ring.opd_metric )  
+            time.sleep( sleep_between_dumps )
+            samp += 1
+
+        # flatten 
+        i_norm_samples = np.array([item[0] for item in i_norm_samples]) 
+        perf_metric_samples = np.array([item[0] for item in perf_metric_samples])
+
+        # this is hard coded for now so fragile!
+        model_param_tmp = {
+            "interc":self.g.model.perf_param[0],
+            "slope_1":self.g.model.perf_param[1],
+            "slope_2":self.g.model.perf_param[2],
+            "x_knee":self.g.model.perf_param[3],
+        }
+        
+        # list of our lucky zwfs images 
+        lucky_imgs = _lucky_img( I0_meas = i_norm,
+                       image_processing_fn = _image_processing_fn, 
+                       performance_model = piecewise_continuous ,
+                       model_param = model_param_tmp, 
+                       quantile_threshold=0.03, 
+                       keep="<threshold")
+        
+        # pixelwise avg lucky imgs 
+        I_meas = np.mean(lucky_imgs, axis=0 )
+
+        # pixelwise std err 
+        sigma_meas = np.std( lucky_imgs ,axis = 0) / np.sqrt( len(lucky_imgs) )
+
+        alpha = 0.1 # 0.05 strong prior, 0.2 weak prior
+        sigma_prior = alpha * np.abs( I_prior ) # we could make this more advance considering pixelwise prior weighting  
+
+        # bayesian weigths 
+        w_meas = 1/sigma_meas**2
+        w_prior = 1/sigma_prior**2
+
+        # Bayesian pixelwise update 
+        I_post = w_meas * I_meas + w_prior * I_prior
+
+        # update 
+        self.g.model.i_setpoint_runtime = I_post
+
+        print( "completed update of i_setpoint_runtime")
+
+
+
     def _apply_command(self, cmd: dict) -> None:
         t = cmd.get("type", "")
         if t == "PAUSE":
@@ -119,12 +215,16 @@ class RTCThread(threading.Thread):
                 self.g.active_config_filename = cmd.get("path", self.g.active_config_filename)
         
         elif t == "UPDATE_N0_RUNTIME":
-            print( 'here to' )
+            #print( 'here to' )
             self.update_N0_runtime()
 
 
+        elif t == "UPDATE_I0_RUNTIME":
+            #print('here I0')
+            self.update_I0_runtime()
+
         elif t == "SET_LO_GAIN":
-            print(cmd)
+            #print(cmd)
             _apply_gain(self.g.model.ctrl_LO, cmd["param"], cmd["idx"], float(cmd["value"]))
 
         elif t == "SET_HO_GAIN":
@@ -265,7 +365,6 @@ class RTCThread(threading.Thread):
                     #self.g.model.ctrl_LO.ki
                     u_LO = self.g.model.ctrl_LO.rho * u_LO - self.g.model.ctrl_LO.ki * e_LO #lo_gain * e_LO #self.g.model.ctrl_LO.process( e_LO )
                     
-                    #print( self.g.model.ctrl_LO.ki , self.g.model.ctrl_LO.rho)
                 else:
                     u_LO[:] = 0.0
 
@@ -291,8 +390,8 @@ class RTCThread(threading.Thread):
                 snr_metric = np.mean( i_in_pup_tmp  ) / np.std( i_in_pup_tmp ) if np.std( i_in_pup_tmp ) !=0 else 0
 
                 # if working (params are hard coding)
-                opd_sig_tmp  = np.mean( i[ self.g.model.strehl_filt] ) / self.g.model.N0_runtime 
-                opd_metric = 1 * piecewise_continuous( opd_sig_tmp , interc, slope_1, slope_2, x_knee) 
+                opd_sig_tmp  = np.mean( i_norm[ self.g.model.strehl_filt] ) 
+                opd_metric =  piecewise_continuous( opd_sig_tmp , interc, slope_1, slope_2, x_knee) 
                 # otherwise 
                 #opd_metric = np.mean( i[ self.g.model.inner_pupil_filt.astype(bool) ] ) / self.g.model.N0_runtime#self.g.model.perf_model( i_norm , self.g.model.perf_param)
                 #self.g.model.perf_model(i_norm, self.g.model.perf_param) if self.g.model.perf_model is not None else 0.0 # g.perf_funct( )
