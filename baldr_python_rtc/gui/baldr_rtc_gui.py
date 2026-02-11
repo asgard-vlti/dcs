@@ -148,14 +148,9 @@ class BeamPanel(QWidget):
 
         self.mode_dm = QCheckBox("DM map")
         self.mode_dm.setChecked(False)
-
-        self.n_spin = QSpinBox()
-        self.n_spin.setRange(1, 2000)
-        self.n_spin.setValue(200)
-
-        self.dec_spin = QSpinBox()
-        self.dec_spin.setRange(1, 128)
-        self.dec_spin.setValue(1)
+        # hard-coded poll window (removed GUI controls for stability)
+        self.n_default = 200
+        self.decimate_default = 1
 
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.clicked.connect(self._clear)
@@ -163,15 +158,37 @@ class BeamPanel(QWidget):
         self.refresh_btn = QPushButton("Refresh fields")
         self.refresh_btn.clicked.connect(self._refresh_info)
 
+        # --- quick actions ---
+        self.open_lo_btn = QPushButton("OPEN_LO")
+        self.open_lo_btn.clicked.connect(lambda: self._send_simple("open_baldr_LO"))
+
+        self.open_ho_btn = QPushButton("OPEN_HO")
+        self.open_ho_btn.clicked.connect(lambda: self._send_simple("open_baldr_HO"))
+
+        self.close_lo_btn = QPushButton("CLOSE_LO")
+        self.close_lo_btn.clicked.connect(lambda: self._send_simple("close_baldr_LO"))
+
+        self.close_ho_btn = QPushButton("CLOSE_HO")
+        self.close_ho_btn.clicked.connect(lambda: self._send_simple("close_baldr_HO"))
+
+        self.phot_btn = QPushButton("PHOT")
+        self.phot_btn.clicked.connect(lambda: self._send_simple("update_N0_runtime"))
+
         top.addWidget(QLabel("Field"), 1, 0); top.addWidget(self.field, 1, 1)
         top.addWidget(QLabel("Reducer"), 2, 0); top.addWidget(self.reducer, 2, 1)
         top.addWidget(QLabel("Index"), 3, 0); top.addWidget(self.idx_spin, 3, 1)
-        top.addWidget(QLabel("n"), 4, 0); top.addWidget(self.n_spin, 4, 1)
-        top.addWidget(QLabel("decimate"), 5, 0); top.addWidget(self.dec_spin, 5, 1)
-        top.addWidget(self.mode_2d, 6, 0)
-        top.addWidget(self.mode_dm, 6, 1)
-        top.addWidget(self.clear_btn, 7, 0)
-        top.addWidget(self.refresh_btn, 7, 1)
+
+        top.addWidget(self.mode_2d, 4, 0)
+        top.addWidget(self.mode_dm, 4, 1)
+
+        top.addWidget(self.clear_btn, 5, 0)
+        top.addWidget(self.refresh_btn, 5, 1)
+
+        top.addWidget(self.open_lo_btn, 6, 0)
+        top.addWidget(self.open_ho_btn, 6, 1)
+        top.addWidget(self.close_lo_btn, 7, 0)
+        top.addWidget(self.close_ho_btn, 7, 1)
+        top.addWidget(self.phot_btn, 8, 0, 1, 2)
 
         # --- plots ---
         self.plot = pg.PlotWidget()
@@ -215,7 +232,15 @@ class BeamPanel(QWidget):
     def _log(self, s: str):
         self.cmd_out.append(s)
 
+    def _send_simple(self, cmd: str):
+        raw = self.client.send_raw(cmd)
+        if raw:
+            self._log(f"> {cmd}\n{raw}\n")
+        else:
+            self._log(f"> {cmd}\n(timeout)\n")
+
     def _send_cmd(self):
+
         msg = self.cmd_in.text().strip()
         if not msg:
             return
@@ -255,8 +280,8 @@ class BeamPanel(QWidget):
         if not fld:
             return
 
-        n = int(self.n_spin.value())
-        dec = int(self.dec_spin.value())
+        n = int(self.n_default)
+        dec = int(self.decimate_default)
 
         req = {"n": n, "decimate": dec, "fields": ["t_s", fld]}
         resp = self.client.call("poll_telem", json.dumps(req))
@@ -347,7 +372,7 @@ from baldr_python_rtc.scripts.baldr_server import beam2port
 def default_socket_for_beam(beam: int) -> str:
     # matches your python RTC default mapping (3001, 3002, ...)
     return f"tcp://127.0.0.1:{beam2port[int(beam)]}"
-
+    
 
 def main():
     ap = argparse.ArgumentParser()

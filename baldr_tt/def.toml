@@ -4,7 +4,7 @@ name = "Default Configuration"
 beam = 2
 
 # DM Rotations in radians
-dm_rotations = [0,0,0,0]
+dm_rotation = [-20,0,0,50]
 
 #Wavelength in microns
 wave = 1.65

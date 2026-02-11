@@ -10,6 +10,17 @@ from scipy.signal import welch
 
 from baldr_python_rtc.baldr_rtc.core.config import readBDRConfig
 
+# Note: timestampe cred teleemtry is UT time, goes to new date at 00:00 
+
+
+# TO DO 
+# make a function to comapre, two different periods, compare time series section and PSDs 
+# optimize gains (transfer function analysis)
+# update toml (clear pupil, I0, inner_pupil_filter, N0_runtime, I2M_LO, I2M_HO) 
+# argparser 
+
+
+
 # ---------- telemetry I/O ----------
 
 # pattern for matching time in cred 1 files
@@ -171,18 +182,20 @@ def _plot_psd_with_rcum(y, fs, title, labels=None, nperseg=None):
 beam = 3
 phasemask = "H4"
 config_path = "/usr/local/etc/baldr/baldr_config_3.toml"
-root_path = "/data/20260207"  # data/YYYYMMDD/
+root_path = "/data/20260208"  # data/YYYYMMDD/
 
+
+# 
 # simplest input: strings "HH:MM:SS[.sss]"
-timestart_clear = "04:53:00.000"
-timeend_clear   = "04:55:50.000"
+#timestart = "01:08:00.000"
+#timeend   = "01:09:30.000"
 
-timestart_zwfs = "02:54:56.000"
-timeend_zwfs   = "02:55:00.000"
+timestart = "01:06:50.000"
+timeend   = "01:08:00.000"
 
 
 # camera sampling assumptions (needed for PSD)
-fs = 2000.0  # Hz (set from your actual camera FPS / burst rate)
+fs = 1000.0  # Hz (set from your actual camera FPS / burst rate)
 max_ho_show = 8
 ho_show = tuple(range(max_ho_show))  # indices to plot for HO
 

@@ -160,7 +160,7 @@ pthread_t tid_fetch;           // thread ID for the image fetching to SHM
 pthread_t tid_save;            // thread ID when saving data
 pthread_t tid_save_dark;       // thread ID when saving a dark (triggered)
 sem_t sync_save;               // semaphore to signal it's time to save!
-char status_cstr[8] = "idle";  // to answer ZMQ status queries
+char status_cstr[16] = "idle"; // to answer ZMQ status queries
 
 char dashline[80] =
   "-----------------------------------------------------------------------------\n";
@@ -919,6 +919,21 @@ std::string cli(std::string cmd) {
  *                          Returns server status
  * ------------------------------------------------------------------------- */
 std::string status() {
+  int nbshm = 8;
+  int counter = 8;
+
+  if (access("/dev/shm/cred1.im.shm", F_OK) != 0) counter -= 1;
+  if (access("/dev/shm/cred1_dark.im.shm", F_OK) != 0) counter -= 1;
+  if (access("/dev/shm/baldr1.im.shm", F_OK) != 0) counter -= 1;
+  if (access("/dev/shm/baldr2.im.shm", F_OK) != 0) counter -= 1;
+  if (access("/dev/shm/baldr3.im.shm", F_OK) != 0) counter -= 1;
+  if (access("/dev/shm/baldr4.im.shm", F_OK) != 0) counter -= 1;
+  if (access("/dev/shm/hei_k1.im.shm", F_OK) != 0) counter -= 1;
+  if (access("/dev/shm/hei_k2.im.shm", F_OK) != 0) counter -= 1;
+
+  if (counter != nbshm)
+      sprintf(status_cstr, "%s", "SHM PROBLEM!");
+
   return status_cstr;
 }
 

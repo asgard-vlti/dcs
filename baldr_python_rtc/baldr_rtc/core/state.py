@@ -152,6 +152,12 @@ class Filters:
     inner_pupil_filt: Any = field(default_factory=list)
     # NEW strehl filt (not legacy)
     strehl_filt: Any = field(default_factory=list)
+
+    opd_m_interc: float = 0 
+    opd_m_slope_1: float = 0 
+    opd_m_slope_2: float = 0 
+    opd_m_x_knee: float = 0  
+
     # DM-space projections
     bad_pixel_mask_dm: Any = field(default_factory=list)
     pupil_dm: Any = field(default_factory=list)
