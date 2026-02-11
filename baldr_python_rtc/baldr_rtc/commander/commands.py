@@ -266,6 +266,13 @@ def build_commander_module(
     # #################
     # GAIN
     # setting gains 
+    def frames_2_avg(args):
+
+        f2a = int(args[0])
+        command_queue.put(make_cmd("FRAMES_2_AVG", value=f2a) )
+        return {"ok": True, "frames to avg":f2a}
+
+
     def set_lo_gain_cmd(args):
         # set_lo_gain <param> <indices|all> <value>
         if len(args) < 3:
@@ -311,6 +318,16 @@ def build_commander_module(
     
     def update_I0_runtime(args): 
         command_queue.put(make_cmd("UPDATE_I0_RUNTIME"))
+        return {"ok": True}
+    
+    def update_recon_LO(args):
+        # update reconstructor on-sky with new pupil measurement
+        command_queue.put(make_cmd("UPDATE_RECON_LO"))
+        return {"ok": True}
+
+    def update_recon_HO(args):
+        # update reconstructor on-sky with new pupil measurement
+        command_queue.put(make_cmd("UPDATE_RECON_HO"))
         return {"ok": True}
     ##################
     # STATUS
@@ -377,6 +394,9 @@ def build_commander_module(
     # UPDATE REFERENCE INTENSITIES
     m.def_command("update_N0_runtime", update_N0_runtime, description="Update clear pupil normalization in runtime", return_type="object") 
     m.def_command("update_I0_runtime", update_I0_runtime, description="Update ZWFS pupil intensity setpoint", return_type="object") 
+    
+    m.def_command("update_recon_LO", update_recon_LO, description="Passive update of reconstructor matrix on-sky with new measured pupil", return_type="object") 
+    m.def_command("update_recon_HO", update_recon_HO, description="Passive update of reconstructor matrix on-sky with new measured pupil", return_type="object") 
 
     ##################
     # GAIN
@@ -384,7 +404,8 @@ def build_commander_module(
     # m.def_command("set_LO_gain", set_LO_gain, description="Update LO gains", return_type="object") 
     # m.def_command("set_HO_gain", set_HO_gain, description="Update HO gains", return_type="object") 
 
-
+    m.def_command('frames_2_avg', frames_2_avg, description="update number of frames to average in RTC before applying correction", return_type="object") 
+    
     m.def_command(
         "set_lo_gain",
         set_lo_gain_cmd,

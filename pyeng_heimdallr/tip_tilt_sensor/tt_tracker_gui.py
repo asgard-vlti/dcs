@@ -17,6 +17,7 @@ from datetime import datetime
 import time
 import sys
 import os
+import zmq
 
 from hmd_tts import HMD_TTS
 
@@ -148,14 +149,20 @@ class MyMainWidget(QWidget):
         self.semid = 7
         self.dstream = shm("/dev/shm/hei_k2.im.shm", nosem=False)
 
+        # self.zmq_context = zmq.Context()
+        # self.socket = self.zmq_context.socket(zmq.REQ)
+        # self.socket.setsockopt(zmq.RCVTIMEO, 10000)
+        # self.socket.connect("tcp://192.168.100.2:5555")
+        
         img = self.dstream.get_data() * 1.0
         self.img = np.zeros_like(img)
-        self.nav = 10  # number of averaged images
+        self.nav = 10        # number of averaged images
+        self.gain = 0.01     # loop gain
+        self.wwf = 0.1       # weighting factor for SNR
+        self.dm_mode = True  # close-loop on DM or Heimdallr mirrors
         self.hmd.subtract_background(img)
         self.hmd.optimize_pupil_model(img)
 
-        self.gain = 0.01
-        self.wwf = 0.1
         self.dms = []
         self.sems = []
         self.chn = 1  # DM test channel
@@ -175,7 +182,7 @@ class MyMainWidget(QWidget):
         for ii in range(2):
             self.tt_modes[ii] /= self.tt_modes[ii][amask].std()
 
-        self.RESP = np.array(
+        self.RESP1 = np.array(  # the DM response
             [[10.71,  0.00,  0.00,  0.00, -4.51,  0.00,  0.00,  0.00],
              [ 0.00,  9.36,  0.00,  0.00,  0.00, -1.35,  0.00,  0.00],
              [ 0.00,  0.00,  9.79,  0.00,  0.00,  0.00, -2.50,  0.00],
@@ -186,15 +193,32 @@ class MyMainWidget(QWidget):
              [ 0.00,  0.00,  0.00,  7.07,  0.00,  0.00,  0.00, -7.20]])
 
         print("-----------------------")
-        print(np.array2string(self.RESP, precision=2,
+        print(np.array2string(self.RESP1, precision=2,
                               floatmode='fixed', separator=', '))
-        print("Checksum   :", np.round(np.sqrt(np.sum(self.RESP**2, axis=1)),2))
+        print("Checksum   :", np.round(np.sqrt(np.sum(self.RESP1**2, axis=1)),2))
 
         for ii in range(self.hmd.nbm):
-            az = np.arctan(self.RESP[ii+self.hmd.nbm,ii] / self.RESP[ii,ii])
+            az = np.arctan(self.RESP1[ii+self.hmd.nbm,ii] / self.RESP1[ii,ii])
             print(f"DM#{ii+1} - Azim = {az * 180/np.pi:.1f} deg")
         print("-----------------------")
-        self.PINV = np.linalg.pinv(self.RESP)
+        self.PINV1 = np.linalg.pinv(self.RESP1)
+
+        # ==============================================
+        self.RESP2 = 0.1 * np.array(
+            [[ 0,  0,  0,  0,  1,  0,  0,  0],
+             [ 0,  0,  0,  0,  0,  1,  0,  0],
+             [ 0,  0,  1,  0,  0,  0,  0,  0],
+             [ 0,  0,  0,  0,  0,  0,  0,  1],
+             [-1,  0,  0,  0,  0,  0,  0,  0],
+             [ 0, -1,  0,  0,  0,  0,  0,  0],
+             [ 0,  0,  0,  0,  0,  0,  1,  0],
+             [ 0,  0,  0, -1,  0,  0,  0,  0]])
+
+        self.dev_list = ['HTTI1', 'HTTI2', 'HTTI3', 'HTTI4',
+                         'HTTP1', 'HTTP2', 'HTTP3', 'HTTP4']
+
+        self.PINV2 = np.linalg.pinv(self.RESP2)
+        self.PINV = self.PINV1 if self.dm_mode else self.PINV2
 
     # =========================================================================
     def apply_layout(self):
@@ -256,6 +280,7 @@ class MyMainWidget(QWidget):
 
         self.pB_setGain.clicked.connect(self.set_gain)
         self.pB_setWgt.clicked.connect(self.set_wwf)
+        self.pB_setNav.clicked.connect(self.set_nav)
 
     # =========================================================================
     def tracker_start(self):
@@ -277,10 +302,23 @@ class MyMainWidget(QWidget):
             return
         if 0.1 > gain > 0:
             self.gain = gain
-            print(f"set gain = {self.gain}")
             log(f"set gain = {self.gain}")
         else:
             self.in_gain.setText(f"{self.gain}")
+
+    # =========================================================================
+    def set_nav(self):
+        try:
+            nav = int(self.in_nav.text())
+        except:
+            print("integer number required")
+            self.in_nav.setText(f"{self.nav}")
+            return
+        if 25 > nav > 0:
+            self.nav = nav
+            log(f"set nav = {self.nav}")
+        else:
+            self.in_nav.setText(f"{self.nav}")
 
     # =========================================================================
     def set_wwf(self):
@@ -372,9 +410,11 @@ class MyMainWidget(QWidget):
                 self.ttx_log[ii].pop(0)
                 self.tty_log[ii].pop(0)
 
-                # weighting factors based on SNR of last 50 points
-                self.ttx_w[ii] = self.wwf / np.var(self.ttx_log[ii][-50:])
-                self.tty_w[ii] = self.wwf / np.var(self.ttx_log[ii][-50:])
+                varx = np.var(self.ttx_log[ii][-20:])
+                vary = np.var(self.tty_log[ii][-20:])
+                # weighting factors based on SNR of last 20 points
+                self.ttx_w[ii] = np.min(np.append(self.wwf / varx, 1))
+                self.tty_w[ii] = np.min(np.append(self.wwf / vary, 1))
 
         print(f"\r{np.round(self.ttx_w, 3)}", end='', flush=True)
 
@@ -388,6 +428,14 @@ class MyMainWidget(QWidget):
             dm0 = self.dms[ii].get_data()
             self.dms[ii].set_data(0.999 * (dm0 - self.gain * correc))
             self.sems[ii].post_sems(1)
+
+    # =========================================================================
+    def dispatch_hmd_mirrors(self, cmd):
+        for ii, device in enumerate(self.dev_list):
+            socket.send_string(f"tt_step {device} cmd[ii]")
+            socket.recv_string()  # acknowledgement
+            time.sleep(0.01)
+        time.sleep(1)
 
     # =========================================================================
     def calibrate_dms(self, a0=0.01):
@@ -422,15 +470,15 @@ class MyMainWidget(QWidget):
             self.dms[ii].set_data(dm0)
             self.sems[ii].post_sems(1)
 
-        self.RESP = np.round(resp / a0, 2)
-        self.PINV = np.linalg.pinv(self.RESP)
+        self.RESP1 = np.round(resp / a0, 2)
+        self.PINV1 = np.linalg.pinv(self.RESP1)
 
-        print(np.array2string(self.RESP, precision=2,
+        print(np.array2string(self.RESP1, precision=2,
                               floatmode='fixed', separator=', '))
 
-        print("Checksum:", np.sqrt(np.sum(self.RESP**2, axis=1)))
+        print("Checksum:", np.sqrt(np.sum(self.RESP1**2, axis=1)))
         for ii in range(nbm):
-            az = np.arctan(self.RESP[ii+nbm,ii] / self.RESP[ii,ii]) *180/np.pi
+            az = np.arctan(self.RESP1[ii+nbm,ii] / self.RESP1[ii,ii]) *180/np.pi
             print(f"DM#{ii+1} - Azim = {az:.1f} deg")
 
     # =========================================================================

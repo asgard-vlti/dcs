@@ -359,7 +359,7 @@ class Heimdallr():
         for ii, pos in enumerate(steps):
             self.move_dl(pos, beamid)
             logline = f"{band}-HFO{beamid} pos={pos:8.2f} "
-            print(f"HFO{beamid} pos = {pos:8.2f} ", end="")
+            # print(f"HFO{beamid} pos = {pos:8.2f} ", end="")
             time.sleep(0.25)
             vis = []
             for jj in range(nav):
@@ -368,11 +368,11 @@ class Heimdallr():
 
             uvis = np.round(vis[bl_ii], 2)  # the useful visibilities here
             global_vis = np.round(np.sqrt(np.mean(uvis**2)), 2)
-            print(uvis, global_vis, end="")
+            # print(uvis, global_vis, end="")
 
             # logging all 6 visibilities
             data2print = np.array2string(
-                vis, precision=2, floatmode='fixed', separator=', ')
+                uvis, precision=2, floatmode='fixed', separator=', ')
             logline += f"vis={data2print}"
             log(logline)
 
@@ -508,8 +508,8 @@ class Heimdallr():
             self.dual_fringe_scan(beamid=beamid, srange=srange,
                                   step=step, logname=logname)
 
-        print(f"HPOL{beamid} back to initial position {pos}")
-        self.move_hpol(x0, beamid)
+        print(f"HPOL{beamid} back to initial position {x0_hpol}")
+        self.move_hpol(x0_hpol, beamid)
 
     # =========================================================================
     def dm_modulation_response(self):

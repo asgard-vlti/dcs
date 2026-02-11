@@ -244,7 +244,7 @@ class BaldrAA:
 
         # simple removal of bad pixels etc 
         #r_sub_img_list = reduce(sub_img_list)
-        sub_img = np.median(r_sub_img_list, axis=0)
+        sub_img = np.median(sub_img_list, axis=0)
 
         # full_img = self.get_frame() # average of 200 frames
 

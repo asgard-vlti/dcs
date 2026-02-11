@@ -151,7 +151,7 @@ struct Baselines{
     Eigen::Matrix<dcomp, N_BL, 1> gd_phasor_boxcar[MAX_N_GD_BOXCAR];
     Eigen::Matrix<dcomp, N_BL, 1> pd_phasor_boxcar_avg;
     Eigen::Matrix<dcomp, N_BL, 1> pd_phasor_boxcar[MAX_N_PD_BOXCAR];
-    unsigned int n_gd_boxcar, n_pd_boxcar
+    unsigned int n_gd_boxcar, n_pd_boxcar;
     // Set n_gd_boxcar and zero gd_phasor_boxcar
     void set_gd_boxcar(unsigned int n) {
         n_gd_boxcar = n;
@@ -321,6 +321,7 @@ extern ForwardFt *K1ft, *K2ft;
 
 // Delay line offloads
 extern sem_t sem_offload;
+bool initialize_delay_line(std::string type);
 void set_delay_lines(Eigen::Vector4d dl);
 void add_to_delay_lines(Eigen::Vector4d dl);
 void set_delay_line(int dl, double value);

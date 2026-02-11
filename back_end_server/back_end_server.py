@@ -167,6 +167,7 @@ import subprocess
 import logging
 
 # from rts_base import AbstractRTSTask, RTSContext, RTSState, RTSErr
+#from back_end_server.handlers.baldr_rts_handlers import register as register_baldr_rts
 from handlers.baldr_rts_handlers import register as register_baldr_rts
 
 
@@ -769,7 +770,9 @@ class BackEndServer:
 
     # def foreground(self, command):
 
-
-if __name__ == "__main__":
+def main():
     server = BackEndServer()
     server.run()
+
+if __name__ == "__main__":
+    main()

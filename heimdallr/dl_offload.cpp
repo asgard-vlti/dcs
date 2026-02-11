@@ -37,6 +37,10 @@ zmq::socket_t wag_rmn_socket(wag_rmn_context, zmq::socket_type::req);
 const std::string wag_rmn_host_str = "tcp://192.168.100.1:7050";
 bool mds_zmq_initialized = false, controllino_initialized = false, wag_rmn_initialized = false;
 
+bool initialize_delay_line(std::string type){
+ return true;
+}
+
 // Initialize the connection to wag for the RMN relay
 void init_wag_rmn() {
     if (!wag_rmn_initialized) {

@@ -142,14 +142,25 @@ class BeamControlPanel(QWidget):
         # I0 update 
         self.i0_btn = QPushButton("UPDATE ZWFS INTENS. SETPOINT")
         self.i0_btn.clicked.connect(lambda: self._send_simple("update_I0_runtime"))
+        # recon update 
+        self.rLO_btn = QPushButton("UPDATE LO RECON.")
+        self.rLO_btn.clicked.connect(lambda: self._send_simple("update_recon_LO"))
+        self.rHO_btn = QPushButton("UPDATE HO RECON.")
+        self.rHO_btn.clicked.connect(lambda: self._send_simple("update_recon_HO"))
 
         quick.addWidget(self.open_lo_btn, 0, 0)
         quick.addWidget(self.open_ho_btn, 0, 1)
         quick.addWidget(self.close_lo_btn, 1, 0)
         quick.addWidget(self.close_ho_btn, 1, 1)
+        # recon 
+        quick.addWidget(self.rLO_btn, 2, 0)
+        quick.addWidget(self.rHO_btn, 2, 1)
         #quick.addWidget(self.phot_btn, 2, 0, 1, 2)
-        quick.addWidget(self.phot_btn, 2, 0)
-        quick.addWidget(self.i0_btn, 2, 1)
+        quick.addWidget(self.phot_btn, 3, 0)
+        quick.addWidget(self.i0_btn, 3, 1)
+
+
+
         root.addLayout(quick)
 
         # separator

@@ -249,8 +249,8 @@ void set_offload_gd_gain(double gain) {
 void set_delay_line_type(std::string type) {
     static const std::set<std::string> valid_types = {"piezo", "hfo", "rmn"};
     if (valid_types.count(type)) {
-        delay_line_type = type; //XXX 
-        initialize_delay_line("type"));
+        delay_line_type = type; 
+        initialize_delay_line(type);
         std::cout << "Delay line type updated to " << delay_line_type << std::endl;
     } else {
         std::cout << "Delay line type not recognised: " << type << std::endl;

@@ -277,7 +277,7 @@ class RTCModel:
 @dataclass
 class RuntimeGlobals:
     beam: int = 0
-    phasemask: str = "H1"
+    phasemask: str = "H4"
     
     active_config_filename: str | None = None
     mode: str = "unknown" # This is required for status which wag needs 
@@ -285,7 +285,7 @@ class RuntimeGlobals:
     servo_mode_LO: ServoState = ServoState.SERVO_OPEN
     servo_mode_HO: ServoState = ServoState.SERVO_OPEN
     pause_rtc: bool = False
-
+    number_frames_2_avg: int = 1
     # IO handles (wired by server at startup)
     camera_io: Optional[CameraIO] = None
     dm_io: Optional[DMIO] = None

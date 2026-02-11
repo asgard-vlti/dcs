@@ -357,8 +357,8 @@ void fringe_tracker(){
 #endif
         // Extract the phases from the Fourier transforms, one baseline
         // at a time. This could in principle be vectorised. 
-        int gd_ix = cnt % baselines.n_gd_boxcar;
-        int pd_ix = cnt % baselines.n_pd_boxcar;
+        int gd_ix = ft_cnt % baselines.n_gd_boxcar;
+        int pd_ix = ft_cnt % baselines.n_pd_boxcar;
         for (int bl=0; bl<N_BL; bl++){
             // Use the peak of the splodge to compute the phase
             x_px = lround(x_px_K1[bl]) % K1ft->subim_sz;

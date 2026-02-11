@@ -6,12 +6,13 @@ import time
 import numpy as np
 
 from astropy.io import fits
-from datetime import datetime
 from pathlib import Path
-
+import datetime 
 from baldr_python_rtc.baldr_rtc.core.state import MainState, RuntimeGlobals, ServoState
 from baldr_python_rtc.baldr_rtc.telemetry.ring import TelemetryRingBuffer
 
+# global number of frames to average before correction
+#N0_2_AVG = 1
 
 # opd model (used for performance monitoring and lucky imaging for updating ZWFS intensity setpoint onsky)
 def piecewise_continuous(x, interc, slope_1, slope_2, x_knee):
@@ -130,56 +131,6 @@ class RTCThread(threading.Thread):
         def _image_processing_fn(i, filt=self.g.model.strehl_filt):
             return( np.mean( i[filt] ))
         
-        def _write_I0_update_fits(self, prior_I0, post_I0, outdir=None):
-            """
-            Save prior/post i_setpoint_runtime as a FITS with 2 image HDUs.
-            prior_I0, post_I0: array-like (1D or 2D). Stored as float32.
-            """
-            ts = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-
-            # Choose output directory
-            if outdir is None:
-                # Prefer your existing telemetry/log directory if you have it
-                outdir = getattr(self.g, "telem_dir", None) or getattr(self.g, "log_dir", None) or "/tmp"
-            outdir = Path(outdir)
-            outdir.mkdir(parents=True, exist_ok=True)
-
-            beam_id = getattr(self, "beam_id", getattr(self.g, "beam_id", None))
-
-            # Convert to arrays (preserve 2D if already 2D; otherwise keep as 1D)
-            prior = np.asarray(prior_I0, dtype=np.float32)
-            post  = np.asarray(post_I0,  dtype=np.float32)
-
-            # File name (UTC-safe)
-            fname = outdir / f"I0_runtime_update_beam{beam_id}_{ts.replace(':','-')}.fits"
-
-            # ---- primary header metadata ----
-            hdr = fits.Header()
-            hdr["DATE-OBS"] = (ts, "UTC timestamp of update")
-            if beam_id is not None:
-                hdr["BEAM"] = (int(beam_id), "Baldr beam id")
-            hdr["SRC"] = ("update_I0_runtime", "Source routine")
-
-            # Optional camera/system settings (only if available)
-            # (Safely fill if your object has these fields)
-            #fps  = getattr(self.g, "fps", None) or getattr(getattr(self.g, "model", None), "fps", None)
-            #gain = getattr(self.g, "gain", None) or getattr(getattr(self.g, "model", None), "gain", None)
-
-            #if fps is not None:  hdr["FPS"]  = (float(fps),  "Camera FPS")
-            #if gain is not None: hdr["GAIN"] = (float(gain), "Camera gain")
-
-            hdr["NAXPRIOR"] = (int(prior.ndim), "Dims of PRIOR array")
-            hdr["NAXPOST"]  = (int(post.ndim),  "Dims of POST array")
-            hdr["NPRIOR"]   = (int(prior.size), "Number of elements in PRIOR")
-            hdr["NPOST"]    = (int(post.size),  "Number of elements in POST")
-
-            phdu = fits.PrimaryHDU(header=hdr)
-            hdu_prior = fits.ImageHDU(data=prior, name="PRIOR_I0")
-            hdu_post  = fits.ImageHDU(data=post,  name="POST_I0")
-
-            fits.HDUList([phdu, hdu_prior, hdu_post]).writeto(fname, overwrite=True)
-            return str(fname)
-
         ######### START 
         I_prior = self.g.model.i_setpoint_runtime
 
@@ -226,17 +177,17 @@ class RTCThread(threading.Thread):
         I_meas = np.mean(lucky_imgs, axis=0 )
 
         # pixelwise std err 
-        sigma_meas = np.std( lucky_imgs ,axis = 0) / np.sqrt( len(lucky_imgs) )
+        sigma_meas = np.std( lucky_imgs ,axis = 0) #/ np.sqrt( len(lucky_imgs) )
 
-        alpha = 0.1 # 0.05 strong prior, 0.2 weak prior
-        sigma_prior = alpha * np.abs( I_prior ) # we could make this more advance considering pixelwise prior weighting  
+        alpha = 0.001 # # 0.001 strong prior, 0.01 weak prior
+        sigma_prior = alpha * np.mean( I_prior ) #np.quantile( I_prior ,0.95) # we could make this more advance considering pixelwise prior weighting  
 
-        # bayesian weigths 
+        # bayesian weigths (gaussian noise)
         w_meas = 1/sigma_meas**2
         w_prior = 1/sigma_prior**2
 
         # Bayesian pixelwise update 
-        I_post = w_meas * I_meas + w_prior * I_prior
+        I_post = (w_meas * I_meas + w_prior * I_prior) / (w_meas + w_prior)
 
         # update 
         self.g.model.i_setpoint_runtime = I_post
@@ -247,6 +198,57 @@ class RTCThread(threading.Thread):
         print( f"completed update of i_setpoint_runtime.\nsaved fits with before & after i_setpoint_runtime for comparison here:\n{path_tmp}\n")
 
 
+    # thinking more this should turn into a more general write fits for comparison file
+    def _write_I0_update_fits(self, prior_I0, post_I0, outdir=None):
+        """
+        Save prior/post i_setpoint_runtime as a FITS with 2 image HDUs.
+        prior_I0, post_I0: array-like (1D or 2D). Stored as float32.
+        """
+        ts = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # Choose output directory
+        if outdir is None:
+            # Prefer your existing telemetry/log directory if you have it
+            tstamp_rough = datetime.datetime.now().strftime("%Y-%m-%d")
+            outdir = f"/home/asg/ben_feb2026_bld_telem/{tstamp_rough}/beam{self.g.beam}/"#getattr(self.g, "telem_dir", None) or getattr(self.g, "log_dir", None) or "/tmp"
+        outdir = Path(outdir)
+        outdir.mkdir(parents=True, exist_ok=True)
+
+        beam_id = self.g.beam #getattr(self, "beam_id", getattr(self.g, "beam_id", None))
+        phasemask = self.g.phasemask
+        # Convert to arrays (preserve 2D if already 2D; otherwise keep as 1D)
+        prior = np.asarray(prior_I0, dtype=np.float32)
+        post  = np.asarray(post_I0,  dtype=np.float32)
+
+        # File name 
+        fname = outdir / f"I0_runtime_update_beam{beam_id}__mask-{phasemask}_{ts.replace(':','-')}.fits"
+
+        # ---- primary header metadata ----
+        hdr = fits.Header()
+        hdr["DATE-OBS"] = (ts, "UTC timestamp of update")
+        if beam_id is not None:
+            hdr["BEAM"] = (int(beam_id), "Baldr beam id")
+        hdr["SRC"] = ("update_I0_runtime", "Source routine")
+
+        # Optional camera/system settings (only if available)
+        # (Safely fill if your object has these fields)
+        #fps  = getattr(self.g, "fps", None) or getattr(getattr(self.g, "model", None), "fps", None)
+        #gain = getattr(self.g, "gain", None) or getattr(getattr(self.g, "model", None), "gain", None)
+
+        #if fps is not None:  hdr["FPS"]  = (float(fps),  "Camera FPS")
+        #if gain is not None: hdr["GAIN"] = (float(gain), "Camera gain")
+
+        hdr["NAXPRIOR"] = (int(prior.ndim), "Dims of PRIOR array")
+        hdr["NAXPOST"]  = (int(post.ndim),  "Dims of POST array")
+        hdr["NPRIOR"]   = (int(prior.size), "Number of elements in PRIOR")
+        hdr["NPOST"]    = (int(post.size),  "Number of elements in POST")
+
+        phdu = fits.PrimaryHDU(header=hdr)
+        hdu_prior = fits.ImageHDU(data=prior, name="PRIOR_I0")
+        hdu_post  = fits.ImageHDU(data=post,  name="POST_I0")
+
+        fits.HDUList([phdu, hdu_prior, hdu_post]).writeto(fname, overwrite=True)
+        return str(fname)
 
     def _apply_command(self, cmd: dict) -> None:
         t = cmd.get("type", "")
@@ -280,6 +282,22 @@ class RTCThread(threading.Thread):
             #print('here I0')
             self.update_I0_runtime()
 
+        elif t == "UPDATE_RECON_LO":
+            print( 'to do here' )
+            # move pahsemask out (usr responsibility)
+            # get <N0> in signal space (use self.telem_ring.i_space), 
+            # normalize <N0> to mask in [0,1], 
+            # g.model.I2M_LO = (g.model.I2M_LO.T * <N0>).T            
+
+        elif t == "UPDATE_RECON_HO":
+            print('to do here')
+            # move pahsemask out (usr responsibility)
+            # get <N0> in signal space (use self.telem_ring.i_space), 
+            # normalize <N0> to mask in [0,1], 
+            # g.model.I2M_HO = (g.model.I2M_HO.T * <N0>).T  
+
+        elif t == "FRAMES_2_AVG":
+            N0_2_AVG = int(cmd['value'])
         elif t == "SET_LO_GAIN":
             #print(cmd)
             _apply_gain(self.g.model.ctrl_LO, cmd["param"], cmd["idx"], float(cmd["value"]))
@@ -360,11 +378,11 @@ class RTCThread(threading.Thread):
             #     #print(i_raw)
             
             ## Trying slow 
-            no_2_avg = 1
+            
             avg_cnt = 0
             run_iteration = 0
             img_list = []
-            while avg_cnt < no_2_avg :
+            while avg_cnt < self.g.number_frames_2_avg :
                 # --- IO: read camera frame ---
                 if self.g.camera_io is None:
                     # fallback: dummy frame (keeps thread alive)
@@ -399,7 +417,7 @@ class RTCThread(threading.Thread):
                 else:
                     raise UserWarning("invalid signal_space. Must be 'pix' | 'dm'")
                 
-                # use self.g.model.process_frame to take moving average or something 
+                # use self.g.model.process_frame to take advance proceesing of image
                 i = i_space #self.g.model.process_frame( i_space , fn = None) # this could be a simple moving average . In my sim I think i did this in error space - but should it be here? LPF straight up 
 
                 # normalized intensity 
