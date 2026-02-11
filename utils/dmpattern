@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+
+import numpy as np
+import argparse
+from xaosim.shmlib import shm
+import astropy.io.fits as pf
+
+dms = 12  # linear size of DM in actuators
+chn = 1   # channels the pattern will be applied to
+dmid = 0  # the DM identifier (1, 2, 3 or 4)
+
+patterns = ('vg', 'hg', 'zero')
+
+patterns = {'vgrid': 'Vertical grating',
+            'hgrid': 'Horizontal grating',
+            'vbar': '2 vertical bars',
+            'hbar': '2 horizontal bars',
+            'zero': 'Erases pattern'}
+
+msg = '''Valid pattern names are:\n'''
+for pname in patterns:
+    # desc = patterns[pname]
+    msg += f"'{pname}' : {patterns[pname]}  - "
+
+def make_pattern(pname, a0=0.1):
+    ''' Create the test pattern:
+    Arguments:
+    ---------
+    - pname: the test pattern name
+    - a0: its peak amplitude
+    '''
+    xx = np.arange(dms)
+    gx = np.cos(6 * 2*np.pi*xx/dms)  # grating pattern
+    bx = np.zeros(dms)
+    bx[2], bx[9] = 1, 1
+
+    if 'vg' in pname: 
+        return a0 * np.outer(gx, np.ones(dms))
+    elif 'hg' in pname: 
+        return a0 * np.outer(np.ones(dms), gx)
+    elif 'vb' in pname:
+        return a0 * np.outer(bx, np.ones(dms))
+    elif 'hb' in pname:
+        return a0 * np.outer(np.ones(dms), bx)
+    else:
+        return np.zeros((dms, dms))
+
+
+# =========================================================
+def parse_arguments():
+    '''Entry point when the program is executed from the CLI
+
+    '''
+    parser = argparse.ArgumentParser(
+        prog='dm_apply_pattern',
+        description='A command line tool for the ASGARD DMs',
+        epilog=msg)
+
+    parser.add_argument("dmid", type=int, choices=[1, 2, 3, 4], 
+                        help="ID of the DM to control (1, 2, 3, or 4).")
+
+    parser.add_argument("-pattern", type=str, required=True,
+                        help="Name of the pattern to apply.")
+
+    parser.add_argument("-a", type=float, required=False,
+                        help="Amplitude of pattern(-1 < a < 1) .")
+
+    # Parse the arguments
+    args = parser.parse_args()
+    dmid = int(args.dmid)
+    pname = args.pattern
+    a0 = 0.1 if args.a is None else float(args.a)
+    return dmid, pname, a0
+
+# ==========================================================
+# ==========================================================
+if __name__ == "__main__":
+    dmid, pname, a0 = parse_arguments()
+    pattern = make_pattern(pname, a0=a0)
+    dmc = shm(f"/dev/shm/dm{dmid}disp{chn:02d}.im.shm", nosem=False)
+    shm0 = shm(f"/dev/shm/dm{dmid}.im.shm", nosem=False)
+    dmc.set_data(pattern)
+    shm0.post_sems(1)
+    dmc.close(erase_file=False)
