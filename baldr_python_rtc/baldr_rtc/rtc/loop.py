@@ -8,6 +8,7 @@ import numpy as np
 from astropy.io import fits
 from pathlib import Path
 import datetime 
+from xaosim.shmlib import shm
 from baldr_python_rtc.baldr_rtc.core.state import MainState, RuntimeGlobals, ServoState
 from baldr_python_rtc.baldr_rtc.telemetry.ring import TelemetryRingBuffer
 
@@ -179,7 +180,7 @@ class RTCThread(threading.Thread):
         # pixelwise std err 
         sigma_meas = np.std( lucky_imgs ,axis = 0) #/ np.sqrt( len(lucky_imgs) )
 
-        alpha = 0.001 # # 0.001 strong prior, 0.01 weak prior
+        alpha = 1 # # 0.001 strong prior, 0.01 weak prior
         sigma_prior = alpha * np.mean( I_prior ) #np.quantile( I_prior ,0.95) # we could make this more advance considering pixelwise prior weighting  
 
         # bayesian weigths (gaussian noise)
@@ -289,6 +290,19 @@ class RTCThread(threading.Thread):
             # normalize <N0> to mask in [0,1], 
             # g.model.I2M_LO = (g.model.I2M_LO.T * <N0>).T            
 
+            I2M_LO_before = self.g.model.I2M_LO
+            avg_i_space = np.mean(self.telem_ring.i_space, axis = 0)
+            # normalize mask [0-1]
+            avg_i_space_norm = (avg_i_space-np.max( avg_i_space )) / (np.max(avg_i_space)-np.min(avg_i_space))
+            self.g.model.I2M_LO = (I2M_LO_before * avg_i_space_norm)
+
+
+            # save for sanity checking 
+            path_tmp = self._write_I0_update_fits(I2M_LO_before, self.g.model.I2M_LO)
+
+            print( f"completed update of I2M_LO.\nsaved fits with before & after self.g.model.I2M_LO for comparison here:\n{path_tmp}\n")
+
+
         elif t == "UPDATE_RECON_HO":
             print('to do here')
             # move pahsemask out (usr responsibility)
@@ -296,8 +310,24 @@ class RTCThread(threading.Thread):
             # normalize <N0> to mask in [0,1], 
             # g.model.I2M_HO = (g.model.I2M_HO.T * <N0>).T  
 
+            I2M_HO_before = self.g.model.I2M_HO
+            avg_i_space = np.mean(self.telem_ring.i_space, axis = 0)
+            # normalize mask [0-1]
+            avg_i_space_norm = (avg_i_space-np.max( avg_i_space )) / (np.max(avg_i_space)-np.min(avg_i_space))
+            self.g.model.I2M_HO = (I2M_HO_before * avg_i_space_norm)
+
+            # save for sanity checking 
+            path_tmp = self._write_I0_update_fits(I2M_HO_before, self.g.model.I2M_HO)
+
+            print( f"completed update of I2M_HO.\nsaved fits with before & after self.g.model.I2M_HO for comparison here:\n{path_tmp}\n")
+
+
+
         elif t == "FRAMES_2_AVG":
-            N0_2_AVG = int(cmd['value'])
+            #if cmd['value'] == ''
+            #else try update 
+            self.g.number_frames_2_avg = int(cmd['value'])
+
         elif t == "SET_LO_GAIN":
             #print(cmd)
             _apply_gain(self.g.model.ctrl_LO, cmd["param"], cmd["idx"], float(cmd["value"]))
@@ -313,7 +343,8 @@ class RTCThread(threading.Thread):
                         if arr is not None:
                             arr[:] = 0.0
 
-
+        elif t == "WRITE_DM_FLAT":
+            self.g.write_to_flat = True
 
 
     def _drain_commands(self) -> None:
@@ -333,6 +364,7 @@ class RTCThread(threading.Thread):
         fps = float(self.g.rtc_config.fps) if self.g.rtc_config.fps > 0 else 1000.0
         dt = 1.0 / fps
         next_t = time.perf_counter()
+        
         
         # opd model (from exterior pixels of ZWFS )
         interc, slope_1, slope_2, x_knee = self.g.model.perf_param
@@ -357,7 +389,7 @@ class RTCThread(threading.Thread):
                 self.stop_event.set()
                 break
 
-            ## Uncommet and debug this!!
+            #
             self._drain_commands()
 
             if self.g.pause_rtc:
@@ -368,17 +400,8 @@ class RTCThread(threading.Thread):
             t_now = time.time()
 
             TT0 = time.perf_counter()
-            # # --- IO: read camera frame ---
-            # if self.g.camera_io is None:
-            #     # fallback: dummy frame (keeps thread alive)
-            #     i_raw0 = np.zeros((1, 1), dtype=np.float32)
-            # else:
-            #     fr = self.g.camera_io.get_frame( ) #reform=True)
-            #     i_raw0 = fr.data - self.g.model.dark
-            #     #print(i_raw)
             
-            ## Trying slow 
-            
+
             avg_cnt = 0
             run_iteration = 0
             img_list = []
@@ -436,6 +459,7 @@ class RTCThread(threading.Thread):
                 #try:
                 #if close_LO :
                 if self.g.servo_mode_LO:
+                    
                     #print('here')
                     #self.g.model.ctrl_LO.ki
                     u_LO = self.g.model.ctrl_LO.rho * u_LO - self.g.model.ctrl_LO.ki * e_LO #lo_gain * e_LO #self.g.model.ctrl_LO.process( e_LO )
@@ -483,12 +507,35 @@ class RTCThread(threading.Thread):
                 run_iteration = 0
 
 
+                if self.g.write_to_flat:
+                    
+                    dm = shm( f'/dev/shm/dm{self.g.beam}disp00.im.shm' )
+                    current_flat =  dm.get_data()
+
+                    avg_dcmd = np.mean(self.telem_ring.cmd, axis = 0)
+                    ## when we were doing it fast from intensity space 
+                    dm.set_data(current_flat + avg_dcmd.reshape(12,12))
+
+                    ## when we were doing it slow from intensity space 
+                    #dm.set_data(current_flat + dcmd.reshape(12,12))
+
+                    # need to reset controller state 
+                    u_LO = np.zeros_like(u_LO)
+                    u_HO = np.zeros_like(u_HO)
+                    # open loops 
+                    self.g.servo_mode_LO = 0
+                    self.g.servo_mode_LO = 0
+                    # reset flag 
+                    self.g.write_to_flat = False
+                    dm.close(erase_file=False)
+                    print('updated DM {g.beam} flat, and reset baldr LO & HO feedback state')
+
                 if self.telem_ring is not None and self.g.model is not None:
                     self.telem_ring.push(
                         frame_id=self._frame_id,
                         t_s=t_now,
-                        lo_state=int(self.g.servo_mode_LO.value),
-                        ho_state=int(self.g.servo_mode_HO.value),
+                        lo_state=int(self.g.servo_mode_LO), #.value
+                        ho_state=int(self.g.servo_mode_HO), #.value
                         paused=bool(self.g.pause_rtc),
 
                         snr_metric = snr_metric,
