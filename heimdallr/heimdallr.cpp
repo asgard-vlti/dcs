@@ -223,13 +223,6 @@ EncodedImage get_ps(std::string filter) {
     return ei; //encoded_ps;  
 }
 
-// Save the dark frames for K1 and K2. Can probably be removed, as this
-// is now done in the camera server !!!
-void save_dark() {
-    K1ft->save_dark_frames = true;
-    K2ft->save_dark_frames = true;
-}
-
 // Set the phase delay gain.
 void set_gain(double gain) {
     pid_settings.mutex.lock();
@@ -256,7 +249,8 @@ void set_offload_gd_gain(double gain) {
 void set_delay_line_type(std::string type) {
     static const std::set<std::string> valid_types = {"piezo", "hfo", "rmn"};
     if (valid_types.count(type)) {
-        delay_line_type = type;
+        delay_line_type = type; //XXX 
+        initialize_delay_line("type"));
         std::cout << "Delay line type updated to " << delay_line_type << std::endl;
     } else {
         std::cout << "Delay line type not recognised: " << type << std::endl;
@@ -281,14 +275,11 @@ std::string set_delay_lines_wrapper(double delay1=0.0, double delay2=0.0, double
 
 
 // Add setter functions for thresholds
+// !!! ToDo: These should probably be in a struct like the PID settings,
+ // with a mutex, to avoid locking the whole baseline mutex when we want to change one threshold.
 void set_gd_threshold(double val) { gd_threshold = val; }
 void set_pd_threshold(double val) { pd_threshold = val; }
 void set_gd_search_reset(double val) { gd_search_reset = val; }
-
-// Getter for gd_threshold
-double get_gd_threshold() {
-    return gd_threshold;
-}
 
 Status get_status() {
     Status status;
@@ -333,7 +324,7 @@ Status get_status() {
         status.gd_tel[i] = std::round(control_a.gd(i)* 1000.0)/1000.0;
         status.pd_tel[i] = std::round(control_a.pd(i)* 1000.0)/1000.0;
         status.dm_piston[i] = std::round(control_u.dm_piston(i)* 1000.0)/1000.0;
-        status.dl_offload[i] = std::round(last_offload(i)* 1000.0)/1000.0; // not the offload increment, but the total offload!
+        status.dl_offload[i] = std::round(next_offload(i)* 1000.0)/1000.0; // not the offload increment, but the total offload!
     }
     for (int i = 0; i < N_CP; i++) {
         status.closure_phase_K1[i] = std::round(bispectra_K1[i].closure_phase* 1000.0)/1000.0;
@@ -388,7 +379,7 @@ void zero_gd_offsets(void){
 }
 
 // Return the phasor offsets for all baselines to 3 decimal places
-std::vector<double> get_gd_offsets(void){
+std::vector<double> get_gd_toml_offsets(void){
     std::vector<double> gd_offsets(6);
     baseline_mutex.lock();
     for (int bl=0;bl<N_BL; bl++)
@@ -524,7 +515,7 @@ std::string set_gd_boxcar(int n){
 }
 
 std::string default_gains(void){
-    // Lets movea maxmum of 70% of the way to the target in offload_time_ms. 
+    // Lets move maxmum of 70% of the way to the target in offload_time_ms. 
     double temp_gain = 0.0007 * offload_time_ms / (baselines.n_gd_boxcar * control_u.dit);
     if (temp_gain > 0.7) temp_gain = 0.7;
     baseline_mutex.lock();
@@ -573,47 +564,47 @@ COMMANDER_REGISTER(m)
     m.def("linear_search", linear_search, "Execute a linear fringe search on a single beam (1,2,3 or 4)", 
         "beam"_arg, "start"_arg, "stop"_arg, "rate"_arg=1.0, "search_dt_ms"_arg=200, "search_snr_threshold"_arg=10.0);
     m.def("get_ps", get_ps, "Get the power spectrum in 2D", "filter"_arg="K1");
+    m.def("get_search_offset", get_search_offset, "Get the search offset in microns");
+    m.def("get_gd_toml_offsets", get_gd_toml_offsets, "Get the GD phasor offsets for all baselines in microns, to 3 decimal places");
     m.def("servo", set_servo_mode, "Set the servo mode", "mode"_arg="off");
     m.def("offload", set_offload_mode, "Set the offload (slow servo) mode", "mode"_arg="off");
+    // Settings routines...
     m.def("offload_time", set_offload_time, "Set the offload time in ms", "time"_arg=1000);
     m.def("set_search_offset", set_search_offset, "Set the search offset in microns. \n This is added to the search position when starting a search.", 
         "offset"_arg=std::vector<double>(N_TEL, 0.0));
-    m.def("get_search_offset", get_search_offset, "Get the search offset in microns");
-    m.def("dark", save_dark, "Save the dark frames");
     m.def("dl", set_delay_line, "Set a delay line value in microns", 
         "beam"_arg, "value"_arg=0.0);
     m.def("dls", set_delay_lines_wrapper, "Set a delay line value in microns", 
         "dl1"_arg, "dl2"_arg, "dl3"_arg, "dl4"_arg);
-    m.def("status", get_status, "Get the status of the system");
-    m.def("settings", get_settings, "Get current system settings");
-    m.def("gain", set_gain, "Set the gain for the servo loop", "gain"_arg=0.0);
+        m.def("gain", set_gain, "Set the gain for the servo loop", "gain"_arg=0.0);
     m.def("ggain", set_ggain, "Set the gain for the GD servo loop", "gain"_arg=0.0);
     m.def("offload_gd_gain", set_offload_gd_gain, "Set the gain when operating GD only in steps", "gain"_arg=0.0);
-    m.def("dl_type", set_delay_line_type, "Set the delay line type", "type"_arg="piezo");
-    m.def("test", test, "Make a test pattern - fractional DM motion every n samples.", "beam"_arg, "value"_arg=0.0, "n"_arg=10);
-    m.def("zero_gd_offsets", zero_gd_offsets, "Zero the group delay offsets i.e. track on this position");
-    m.def("get_gd_offsets", get_gd_offsets, "Return the GD offsets in a format to be added to the toml file");
-    m.def("search", set_search_params, "Set the fringe tracker search parameter", 
-        "delta"_arg=0.5, "turnaround"_arg=10);    
+    m.def("dl_type", set_delay_line_type, "Set the delay line type and initialize.", "type"_arg="piezo");
     m.def("set_gd_threshold", set_gd_threshold, "Set GD SNR threshold", "value"_arg=5.0);
-    m.def("get_gd_threshold", get_gd_threshold, "Get GD SNR threshold");
     m.def("set_pd_threshold", set_pd_threshold, "Set PD SNR threshold", "value"_arg=4.5);
     m.def("set_gd_search_reset", set_gd_search_reset, "Set GD search reset threshold", "value"_arg=5.0);
-    m.def("foreground", set_foreground, "Set (1) or unset (0) foreground delay line offsets", "state"_arg=1);
+    m.def("set_dit", set_dit, "Set the DIT in seconds", "dit"_arg=0.001);
+    m.def("set_bad_pixels", set_bad_pixels, "Set the bad pixel map from 4 vectors", 
+        "k1x"_arg=std::vector<int>(), "k1y"_arg=std::vector<int>(), "k2x"_arg=std::vector<int>(), "k2y"_arg=std::vector<int>());
+    m.def("set_gd_boxcar", set_gd_boxcar, "Set the number of frames for the GD boxcar average", "n"_arg=32);
     m.def("tweak_gd_offsets", tweak_gd_offsets, "Add offsets to beams 1,2,4 and project to baseline space", 
         "offset1"_arg=0.0, "offset2"_arg=0.0, "offset4"_arg=0.0);
     m.def("set_gd_offsets", set_gd_offsets, "Set the GD offsets directly from a list of offsets for beams 1,2,4", 
         "offset1"_arg=0.0, "offset2"_arg=0.0, "offset4"_arg=0.0);
     m.def("beams_active", beams_active, "Set which beams are active", "b1"_arg=1,"b2"_arg=1,"b3"_arg=1,"b4"_arg=1);
-    m.def("set_itime", set_itime, "Set the target integration time", "itime"_arg=100);
-    m.def("expstatus", expstatus, "Get the exposure time status (success if complete)");
-    m.def("set_gd_boxcar", set_gd_boxcar, "Set the number of frames for the GD boxcar average", "n"_arg=32);
     m.def("dlr", delay_line_relative_move, "Move the delay lines by a relative amount", 
         "dl_move1"_arg=0.0, "dl_move2"_arg=0.0, "dl_move3"_arg=0.0, "dl_move4"_arg=0.0);
+    m.def("search", set_search_params, "Set the fringe tracker search parameter", 
+        "delta"_arg=0.5, "turnaround"_arg=10);    
+    // Special wag routines, and status.
+    m.def("set_itime", set_itime, "Set the target integration time", "itime"_arg=100);
+    m.def("status", get_status, "Get the status of the system");
+    m.def("settings", get_settings, "Get current system settings");
+    m.def("test", test, "Make a test pattern - fractional DM motion every n samples.", "beam"_arg, "value"_arg=0.0, "n"_arg=10);
+    m.def("zero_gd_offsets", zero_gd_offsets, "Zero the group delay offsets i.e. track on this position");
+    m.def("foreground", set_foreground, "Set (1) or unset (0) foreground delay line offsets", "state"_arg=1);
+    m.def("expstatus", expstatus, "Get the exposure time status (success if complete)");
     m.def("default_gains", default_gains, "Set the gains to default values");
-    m.def("set_dit", set_dit, "Set the DIT in seconds", "dit"_arg=0.001);
-    m.def("set_bad_pixels", set_bad_pixels, "Set the bad pixel map from 4 vectors", 
-        "k1x"_arg=std::vector<int>(), "k1y"_arg=std::vector<int>(), "k2x"_arg=std::vector<int>(), "k2y"_arg=std::vector<int>());
 }
 
 int main(int argc, char* argv[]) {

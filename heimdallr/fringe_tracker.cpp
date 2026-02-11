@@ -127,7 +127,6 @@ void initialise_baselines(){
     baselines.pd_snr.setZero();
     baselines.set_gd_boxcar(64);
     baselines.n_pd_boxcar=MAX_N_PD_BOXCAR;
-    baselines.ix_pd_boxcar=0;
     baselines.pd_phasor.setZero();
     baselines.pd_phasor_boxcar_avg.setZero();
     baselines.pd_av_filtered.setZero();
@@ -358,8 +357,8 @@ void fringe_tracker(){
 #endif
         // Extract the phases from the Fourier transforms, one baseline
         // at a time. This could in principle be vectorised. 
-        int gd_ix = baselines.ix_gd_boxcar;
-        int pd_ix = baselines.ix_pd_boxcar;
+        int gd_ix = cnt % baselines.n_gd_boxcar;
+        int pd_ix = cnt % baselines.n_pd_boxcar;
         for (int bl=0; bl<N_BL; bl++){
             // Use the peak of the splodge to compute the phase
             x_px = lround(x_px_K1[bl]) % K1ft->subim_sz;
@@ -445,9 +444,7 @@ void fringe_tracker(){
                 var_pd(bl) = 1e6;
             }
         }
-        baselines.ix_gd_boxcar = (gd_ix + 1) % baselines.n_gd_boxcar;
-        baselines.ix_pd_boxcar = (pd_ix + 1) % baselines.n_pd_boxcar;
-
+        
         // Make the beams_active a vector.
         beams_active = Eigen::Vector4d(control_u.beams_active[0],control_u.beams_active[1],control_u.beams_active[2],control_u.beams_active[3]);
 
@@ -675,12 +672,6 @@ void fringe_tracker(){
                 //control_u.dl_offload.setZero();
             }
             else if (offload_mode == OFFLOAD_GD) {
-                /*double o1 = -pid_settings.offload_gd_gain*control_a.gd(0) * config["wave"]["K1"].value_or(2.05);
-                double o2 = -pid_settings.offload_gd_gain*control_a.gd(1) * config["wave"]["K1"].value_or(2.05);
-                double o3 = -pid_settings.offload_gd_gain*control_a.gd(2) * config["wave"]["K1"].value_or(2.05);
-                double o4 = -pid_settings.offload_gd_gain*control_a.gd(3) * config["wave"]["K1"].value_or(2.05);
-                double otot = std::fabs(o1) + std::fabs(o2) + std::fabs(o3) + std::fabs(o4);
-                fmt::print("Adding {:.2f} {:.2f} {:.2f} {:.2f} to GD. total: {:.2f}\n", o1,o2,o3,o4,otot); */
                 add_to_delay_lines(control_u.search - pid_settings.offload_gd_gain*control_a.gd * config["wave"]["K1"].value_or(2.05));
             }
             last_dl_offload = now;

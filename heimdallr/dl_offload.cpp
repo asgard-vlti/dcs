@@ -11,6 +11,8 @@ sem_t sem_offload;
 int controllinoSocket;
 Eigen::Vector4d next_offload;
 // This is non-zero to make sure if using the Piezos the DLs are centred.
+// It has a bad name - it is actually the sum of the next_offload
+// and the search_offset, i.e. it is a total offload.
 Eigen::Vector4d last_offload = Eigen::Vector4d::Constant(0.01);
 int search_ix = 0;
 int search_length = 0;

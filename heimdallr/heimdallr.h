@@ -46,10 +46,10 @@
 // ... this means we need 12.5^2 = ~150 times more frames to average for group delay than for
 // phase delay.
 #define MAX_N_GD_BOXCAR 512 
-#define N_TO_JUMP 10         // Number of frames to wait before checking for a phase jump !!! Unused.
-#define MAX_N_BS_BOXCAR 64   // Maximum number of frames to average for bispectrum
-#define MAX_N_PS_BOXCAR 64   // Maximum number of frames to average for power spectrum
 #define MAX_N_PD_BOXCAR 256  // Maximum number of frames to keep for phase delay history (phasor and phase)
+#define MAX_N_BS_BOXCAR 256   // Maximum number of frames to average for bispectrum
+///!!! Always set to the maximum, and not synced to GD_BOXCAR.
+#define MAX_N_PS_BOXCAR 256   // Maximum number of frames to average for power spectrum
 
 #define N_TEL 4 // Number of telescopes
 #define N_BL 6  // Number of baselines
@@ -151,11 +151,10 @@ struct Baselines{
     Eigen::Matrix<dcomp, N_BL, 1> gd_phasor_boxcar[MAX_N_GD_BOXCAR];
     Eigen::Matrix<dcomp, N_BL, 1> pd_phasor_boxcar_avg;
     Eigen::Matrix<dcomp, N_BL, 1> pd_phasor_boxcar[MAX_N_PD_BOXCAR];
-    unsigned int n_gd_boxcar, ix_gd_boxcar, n_pd_boxcar, ix_pd_boxcar;
-    // Set n_gd_boxcar, reset ix_gd_boxcar, and zero gd_phasor_boxcar
+    unsigned int n_gd_boxcar, n_pd_boxcar
+    // Set n_gd_boxcar and zero gd_phasor_boxcar
     void set_gd_boxcar(unsigned int n) {
         n_gd_boxcar = n;
-        ix_gd_boxcar = 0;
         for (unsigned int i = 0; i < MAX_N_GD_BOXCAR; i++) {
             gd_phasor_boxcar[i].setZero();
         }
@@ -253,7 +252,7 @@ extern std::atomic<bool> zero_offload;
 extern bool keep_offloading;
 extern std::string delay_line_type;
 extern Eigen::Vector4d search_offset;
-extern Eigen::Vector4d last_offload;
+extern Eigen::Vector4d next_offload;
 
 // ForwardFt class
 class ForwardFt {   
