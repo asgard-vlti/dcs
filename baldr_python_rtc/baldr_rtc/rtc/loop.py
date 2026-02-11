@@ -95,6 +95,7 @@ class RTCThread(threading.Thread):
         usr_input = input('before resuming put mask back in (later this will be automatic..).\npress enter when ready to start loop')
         self._apply_command({'type':"RESUME"})
 
+
     def update_I0_runtime(self):
         # from telemetry buffer store N samples (while loop is runnin) 
         # of performance metric (opd_metric) dark subtracted image
@@ -156,7 +157,7 @@ class RTCThread(threading.Thread):
 
         # flatten 
         i_norm_samples = np.array([item[0] for item in i_norm_samples]) 
-        perf_metric_samples = np.array([item[0] for item in perf_metric_samples])
+        #perf_metric_samples = np.array([item[0] for item in perf_metric_samples])
 
         # this is hard coded for now so fragile!
         model_param_tmp = {
@@ -251,6 +252,142 @@ class RTCThread(threading.Thread):
         fits.HDUList([phdu, hdu_prior, hdu_post]).writeto(fname, overwrite=True)
         return str(fname)
 
+
+    def update_KL(self, N_dumps=5, k_use=40, savefits=True):
+
+
+        # Build a KL/PCA rotation in the *current HO modal subspace* using telemetry in signal space (s).
+        # User is responsible for putting the system in a sensible state before calling this.
+        #
+        # We use: e_HO[t] = I2M_HO @ s[t]
+        # Then PCA on e_HO telemetry gives an orthonormal rotation V such that:
+        #   m_KL = V^T m_old
+        # and we update matrices consistently:
+        #   I2M_HO <- V^T @ I2M_HO
+        #   M2C_HO <- M2C_HO @ V
+        #
+        # Optional command fields:
+        #   n_samples : number of most recent samples to use (default: all available in ring)
+        #   k_modes   : number of KL modes to keep/rotate (default: current HO mode count)
+
+
+        sleep_between_dumps = 1.0
+        samp = 0 
+        signal_samples = []
+        perf_metric_samples = []
+        print(f"dumping telem ring every {sleep_between_dumps} second(s)\nto update ZWFS intensity setpoint\n-----------")
+        while samp < N_dumps:
+            print(f"...telem ring dump {samp}/{N_dumps}")
+            # could we just dump a few ring buffers (need to be synchronized the dumping)
+            # normalize so in the sasme normalized space as self.g.model.i_setpoint_runtime 
+
+            signal_samples.append( np.array(self.telem_ring.s,copy=True) )
+            # so we can filter 
+            perf_metric_samples.append( np.array(self.telem_ring.opd_metric,copy=True) )  
+            time.sleep( sleep_between_dumps )
+            samp += 1
+
+        # filter for the best quality signals (to avoid regimes where sensor is non-linear)
+        signal_samples_flat = np.array([item[0] for item in signal_samples]) 
+        perf_metric_samples_flat = np.array([item[0] for item in perf_metric_samples])
+
+        perf_filt = perf_metric_samples_flat < np.quantile( perf_metric_samples_flat , 0.05) 
+
+        S = signal_samples_flat[ perf_filt ]
+
+        I2M_old = np.asarray(self.g.model.I2M_HO)
+        M2C_old = np.asarray(self.g.model.M2C_HO)
+
+        k_total = int(I2M_old.shape[0])
+
+        k_use = min(k_use, k_total) # clamp 
+
+        # --- build HO modal telemetry from signal telemetry ---
+        # e_HO[t] = I2M_old @ s[t]  =>  E = S @ I2M_old.T
+        E = S @ I2M_old.T  # (T, k_total)
+
+        # --- demean + covariance over chosen subset ---
+        E = E[:, :k_use]
+        E = E - np.mean(E, axis=0, keepdims=True)
+        C = (E.T @ E) / max(1, (E.shape[0] - 1))  # (k_use, k_use)
+
+        # --- eigen-decompose covariance (symmetric) ---
+        evals, evecs = np.linalg.eigh(C)          # ascending
+        order = np.argsort(evals)[::-1]           # descending
+        evals = evals[order]
+        V = evecs[:, order]                       # (k_use, k_use), columns are eigenvectors
+
+        # --- update matrices (explicit) ---
+        I2M_new = I2M_old.copy()
+        M2C_new = M2C_old.copy()
+
+        # rotate the first k_use modes; leave the rest unchanged
+        I2M_new[:k_use, :] = V.T @ I2M_old[:k_use, :]
+        M2C_new[:, :k_use] = M2C_old[:, :k_use] @ V
+
+        self.g.model.I2M_HO = I2M_new
+        self.g.model.M2C_HO = M2C_new
+
+        print(f"BUILD_KL: updated HO basis using {E.shape[0]} samples, k_use={k_use}/{k_total}")
+        print(f"BUILD_KL: top eigenvalues (variance) = {evals[:min(8, len(evals))]}")
+
+
+        tstamp_rough = datetime.datetime.now().strftime("%Y-%m-%d")
+        outdir = f"/home/asg/ben_feb2026_bld_telem/{tstamp_rough}/beam{self.g.beam}/"#getattr(self.g, "telem_dir", None) or getattr(self.g, "log_dir", None) or "/tmp"
+        outdir = Path(outdir)
+        outdir.mkdir(parents=True, exist_ok=True)
+
+        beam_id = self.g.beam #getattr(self, "beam_id", getattr(self.g, "beam_id", None))
+        phasemask = self.g.phasemask
+
+        ts = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # File name 
+        fname = outdir / f"I0_runtime_update_beam{beam_id}__mask-{phasemask}_BUILD_KL_{ts.replace(':','-')}.fits"
+
+        # ---- primary header metadata ----
+        hdr = fits.Header()
+        hdr["DATE-OBS"] = (ts, "UTC timestamp of update")
+        if beam_id is not None:
+            hdr["BEAM"] = (int(beam_id), "Baldr beam id")
+        hdr["SRC"] = ("update_KL", "Source routine")
+
+        # Optional camera/system settings (only if available)
+        # (Safely fill if your object has these fields)
+        #fps  = getattr(self.g, "fps", None) or getattr(getattr(self.g, "model", None), "fps", None)
+        #gain = getattr(self.g, "gain", None) or getattr(getattr(self.g, "model", None), "gain", None)
+
+        #if fps is not None:  hdr["FPS"]  = (float(fps),  "Camera FPS")
+        #if gain is not None: hdr["GAIN"] = (float(gain), "Camera gain")
+
+        # hdr["NAXPRIOR"] = (int(prior.ndim), "Dims of PRIOR array")
+        # hdr["NAXPOST"]  = (int(post.ndim),  "Dims of POST array")
+        # hdr["NPRIOR"]   = (int(prior.size), "Number of elements in PRIOR")
+        # hdr["NPOST"]    = (int(post.size),  "Number of elements in POST")
+
+        phdu = fits.PrimaryHDU(header=hdr)
+
+        things_2_write = {
+            "S":S,
+            "C":C,
+            "V":V,
+            "M2C_old":M2C_old,
+            "M2C_new":M2C_new,
+            "I2M_old":I2M_old,
+            "I2M_new":I2M_new,
+        }
+
+        fits_list = [fits.PrimaryHDU(header=hdr)]
+        for name,thing in things_2_write.items():
+            fits_list.append( fits.ImageHDU(data=thing, name=f"{name}") )
+
+
+        fits.HDUList(fits_list).writeto(fname, overwrite=True)
+        return str(fname)
+
+
+
+
     def _apply_command(self, cmd: dict) -> None:
         t = cmd.get("type", "")
         if t == "PAUSE":
@@ -329,7 +466,6 @@ class RTCThread(threading.Thread):
             self.g.number_frames_2_avg = int(cmd['value'])
 
         elif t == "SET_LO_GAIN":
-            #print(cmd)
             _apply_gain(self.g.model.ctrl_LO, cmd["param"], cmd["idx"], float(cmd["value"]))
 
         elif t == "SET_HO_GAIN":
@@ -346,6 +482,10 @@ class RTCThread(threading.Thread):
         elif t == "WRITE_DM_FLAT":
             self.g.write_to_flat = True
 
+
+        elif t== "UPDATE_RECON_KL":
+            fname = self.update_KL( n_use = 1000,k_use=40 ,savefits = True)
+            print(f"saved telemetry from UPDATE_RECON_KL here:\n{fname}")
 
     def _drain_commands(self) -> None:
         for _ in range(100):
