@@ -22,7 +22,7 @@ def launch_in_xterm(title: str, argv: list[str]):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--phasemask", default="H3")
+    ap.add_argument("--phasemask", default="H4")
     ap.add_argument("--config-template", default="/usr/local/etc/baldr/baldr_config_{beam}.toml")
     ap.add_argument("--telem-root", default=str(Path.home() / "data" / "baldr_telem"))
     args = ap.parse_args()
@@ -31,7 +31,7 @@ def main():
 
     for b in BEAMS:
         argv = [
-            "/home/you/miniconda3/envs/dcs/bin/baldr-server",
+            "/home/asg/.conda/envs/asgard/bin/baldr-server",
             "--beam", str(b),
             "--phasemask", args.phasemask,
             "--config", args.config_template.format(beam=b),
