@@ -48,8 +48,6 @@ std::string encode(const char* input, unsigned int size)
 {
 	/* set up a destination buffer large enough to hold the encoded data */
     // print the size of the input
-    //std::cout << "Size of input: " << size << std::endl;
-	//char* output = (char*)malloc(size*4/3 + 4); /* large enough */
 	char* output = (char*)malloc(size*2); /* large enough */
 	/* keep track of our encoded position */
 	char* c = output;
@@ -645,8 +643,11 @@ int main(int argc, char* argv[]) {
 
     // Start the main fringe-tracking thread. 
     std::thread fringe_thread(fringe_tracker);
+
+    // Set a delay line, and start the offloading thread.
+    initialize_delay_line(config["servo"]["dl_type"].value_or("rmn"));
     std::thread offloading_thread(dl_offload);
-    
+
     // Initialize the commander server and run it
     commander::Server s(argc, argv);
     s.run();
@@ -658,7 +659,7 @@ int main(int argc, char* argv[]) {
     servo_mode = SERVO_STOP;
     fringe_thread.join();
 
-    // Join the FFTW threads. 
-    //K1ft->stop();
-    //K2ft->stop();
+    // Join the FFTW threads. !!! Doesn't seem to work.
+    K1ft->stop();
+    K2ft->stop();
 }

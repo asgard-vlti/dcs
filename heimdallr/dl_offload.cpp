@@ -8,8 +8,8 @@
 
 // Local globals.
 sem_t sem_offload;
-int controllinoSocket;
-Eigen::Vector4d next_offload;
+int controllinoSocket=-1;
+Eigen::Vector4d next_offload = Eigen::Vector4d::Zero(); // The next offload to send to the delay lines, in microns of OPD. This is set by the fringe tracker, and read by the offload thread.
 // This is non-zero to make sure if using the Piezos the DLs are centred.
 // It has a bad name - it is actually the sum of the next_offload
 // and the search_offset, i.e. it is a total offload.
@@ -37,7 +37,40 @@ zmq::socket_t wag_rmn_socket(wag_rmn_context, zmq::socket_type::req);
 const std::string wag_rmn_host_str = "tcp://192.168.100.1:7050";
 bool mds_zmq_initialized = false, controllino_initialized = false, wag_rmn_initialized = false;
 
+// A general function for initializing the delay line, called from the commander 
+// when setting the delay line type, and from the main function when starting the offload thread.
 bool initialize_delay_line(std::string type){
+    if (type == "piezo") {
+        init_controllino();
+        if (!controllino_initialized) {
+            std::cout << "Failed to initialize Controllino for piezo delay lines." << std::endl;
+            return false;
+        }
+    } else if (type == "hfo") {
+        init_mds_zmq();
+        if (!mds_zmq_initialized) {
+            std::cout << "Failed to initialize ZMQ for MDS HFO delay lines." << std::endl;
+            return false;
+        }
+        // Connect to MDS and find the delay line positions.
+        // These become our zero positions.
+        for (int i = 0; i < N_TEL; i++) {
+            std::string message = "read HFO" + std::to_string(i+1);
+            std::string reply = send_mds_cmd(message);
+            fmt::print(reply);
+            hfo_offsets[i] = std::stod(reply);
+            fmt::print("HFO{} offset: {}\n", i+1, hfo_offsets[i]);
+        }
+    } else if (type == "rmn") {
+        init_wag_rmn();
+        if (!wag_rmn_initialized) {
+            std::cout << "Failed to initialize ZMQ for WAG RMN delay lines." << std::endl;
+            return false;
+        }
+    } else {
+        std::cout << "Delay line type not recognised: " << type << std::endl;
+        return false;
+    } 
  return true;
 }
 
@@ -222,11 +255,11 @@ A good reply string is:
 */
 void move_main_dl()
 {
-    // Only execute if wag_rmn is initialized.
-    // (!!! following the method of other functions, we could initialize 
-    // here, but that risks repeated failed attempts)
+    // Only execute if wag_rmn is initialized. It can be 
+    // re-initializedby re-selecting the delay line type, which 
+    // calls initialize_delay_line.
     if (!wag_rmn_initialized) return;
-    //fmt::print("Here...\n");
+
     // Build the JSON message
     nlohmann::json j;
     j["command"]["name"] = "writermn";
@@ -272,19 +305,7 @@ int last_offload_mode=-1;
 void dl_offload(){
     // Initialize semaphore for offload timing
     sem_init(&sem_offload, 0, 0);
-
-    // Try to connect just once to WAG RMN.
-    init_wag_rmn();
-    // Connect to MDS and find the delay line positions.
-    for (int i = 0; i < N_TEL; i++) {
-        std::string message = "read HFO" + std::to_string(i+1);
-        std::string reply = send_mds_cmd(message);
-        fmt::print(reply);
-        hfo_offsets[i] = std::stod(reply);
-        fmt::print("HFO{} offset: {}\n", i+1, hfo_offsets[i]);
-    }
-    set_delay_lines(Eigen::Vector4d::Zero());
-
+    // Zero the delay lines.
     auto last_search_time = std::chrono::high_resolution_clock::now();
 
     while (keep_offloading) {
@@ -368,6 +389,8 @@ void dl_offload(){
 		        next_offload(0), next_offload(1), next_offload(2), next_offload(3));  
 		 }      
     }
-    close(controllinoSocket);
+    if (controllinoSocket != -1) {
+        close(controllinoSocket);
+    }
 }
 
