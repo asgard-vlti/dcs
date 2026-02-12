@@ -20,13 +20,13 @@ except Exception:  # pragma: no cover
 
 
 
-def _git_root() -> Path:
-    return Path(subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip())
+# def _git_root() -> Path:
+#     return Path(subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip())
 
 
 def _default_dm_shapes_dir() -> Path:
     # matches your old convention
-    return _git_root() / "DMShapes"
+    return Path("/usr/local/etc/DMShapes/") #_git_root() / "DMShapes"
 
 
 

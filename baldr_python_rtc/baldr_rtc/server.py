@@ -287,7 +287,9 @@ def main(
     g.dm_io = io.dm
     print("finished setting up camera and DM object\n---\n")
 
-    g.model = build_rtc_model(cfg) # all the rtc runtime goodies that gets used in loop
+    #12-feb phasemask updates
+    g.model = build_rtc_model(cfg, beam=beam, phasemask=phasemask)
+    #g.model = build_rtc_model(cfg) # all the rtc runtime goodies that gets used in loop
 
     _print_runtime_info(g=g, socket=socket)
     if debug:
