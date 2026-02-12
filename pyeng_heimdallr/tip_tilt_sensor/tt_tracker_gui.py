@@ -207,18 +207,18 @@ class MyMainWidget(QWidget):
         self.PINV1 = np.linalg.pinv(self.RESP1)
 
         # ==============================================
-        self.RESP2 = 0.2 * np.array(
+        self.RESP2 = 0.1 * np.array(
             [[ 0,  0,  0,  0,  1,  0,  0,  0],
              [ 0,  0,  0,  0,  0,  1,  0,  0],
              [ 0,  0,  1,  0,  0,  0,  0,  0],
              [ 0,  0,  0,  0,  0,  0,  0,  1],
              [-1,  0,  0,  0,  0,  0,  0,  0],
              [ 0, -1,  0,  0,  0,  0,  0,  0],
-             [ 0,  0,  0,  0,  0,  0, -1,  0],
+             [ 0,  0,  0,  0,  0,  0,  1,  0],
              [ 0,  0,  0, -1,  0,  0,  0,  0]])
 
         self.dev_list = ['HTTI1', 'HTTI2', 'HTTI3', 'HTTI4',
-                         'HTTP1', 'HTTP2', 'HTTP3', 'HTTP4']
+                         'HTPI1', 'HTPI2', 'HTPI3', 'HTPI4']
 
         self.PINV2 = np.linalg.pinv(self.RESP2)
         self.PINV = self.PINV1 if self.dm_mode else self.PINV2
@@ -390,6 +390,7 @@ class MyMainWidget(QWidget):
     # =========================================================================
     def iteration_hmd_mirrors(self):
         cmd = -self.PINV2.dot(np.append(self.ttx, self.tty))
+        cmd *= 0.5  # gain
         cmd = np.round(cmd).astype(int)
         for ii, device in enumerate(self.dev_list):
             if cmd[ii] != 0:

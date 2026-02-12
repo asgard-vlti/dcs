@@ -343,7 +343,7 @@ class MyMainWidget(QWidget):
         self.legend.setParentItem(self.gView_plot_vis_k1.graphicsItem())
         # self.legend.setStyle({'background': 'rgba(255,255,255,128)',
         #                       'border': 'rgba(0,0,0,255)'})
-        self.legend.setPos(50, 20)
+        self.legend.setPos(20, 20)
 
         for ii in range(self.wfs.nbl):
             self.logplot_vis_k2.append(self.gView_plot_vis_k2.plot(
