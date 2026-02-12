@@ -23,10 +23,12 @@ from hmd_tts import HMD_TTS
 
 myqt = 0   # myqt is a global variable
 
-os.environ["OPENBLAS_NUM_THREAD"] = "1"
-os.environ["OMP_NUM_THREADS"] = "1"
+ddir = os.getenv('HOME')+'/Data/tt_tracker/'
 
-logfile = "log_tt_tracker.log"
+if not os.path.exists(ddir):
+    os.makedirs(ddir)
+
+logfile = ddir+"log_tt_tracker.log"
 
 def log(message=""):
     ''' -----------------------------------------------------------------------
@@ -127,6 +129,7 @@ class MyMainWidget(QWidget):
         self.pB_setGain = QtWidgets.QPushButton("GAIN", self)
         self.pB_setWgt = QtWidgets.QPushButton("WEIGHT", self)
         self.pB_setNav = QtWidgets.QPushButton("NAV", self)
+        self.pB_hmdm_tweak = QtWidgets.QPushButton("HMD tweak", self)
 
         self.tracking = False
         self.close_loop_on = False
@@ -149,10 +152,10 @@ class MyMainWidget(QWidget):
         self.semid = 7
         self.dstream = shm("/dev/shm/hei_k2.im.shm", nosem=False)
 
-        # self.zmq_context = zmq.Context()
-        # self.socket = self.zmq_context.socket(zmq.REQ)
-        # self.socket.setsockopt(zmq.RCVTIMEO, 10000)
-        # self.socket.connect("tcp://192.168.100.2:5555")
+        self.zmq_context = zmq.Context()
+        self.socket = self.zmq_context.socket(zmq.REQ)
+        self.socket.setsockopt(zmq.RCVTIMEO, 10000)
+        self.socket.connect("tcp://192.168.100.2:5555")
         
         img = self.dstream.get_data() * 1.0
         self.img = np.zeros_like(img)
@@ -204,14 +207,14 @@ class MyMainWidget(QWidget):
         self.PINV1 = np.linalg.pinv(self.RESP1)
 
         # ==============================================
-        self.RESP2 = 0.1 * np.array(
+        self.RESP2 = 0.2 * np.array(
             [[ 0,  0,  0,  0,  1,  0,  0,  0],
              [ 0,  0,  0,  0,  0,  1,  0,  0],
              [ 0,  0,  1,  0,  0,  0,  0,  0],
              [ 0,  0,  0,  0,  0,  0,  0,  1],
              [-1,  0,  0,  0,  0,  0,  0,  0],
              [ 0, -1,  0,  0,  0,  0,  0,  0],
-             [ 0,  0,  0,  0,  0,  0,  1,  0],
+             [ 0,  0,  0,  0,  0,  0, -1,  0],
              [ 0,  0,  0, -1,  0,  0,  0,  0]])
 
         self.dev_list = ['HTTI1', 'HTTI2', 'HTTI3', 'HTTI4',
@@ -242,7 +245,9 @@ class MyMainWidget(QWidget):
         self.in_gain.setGeometry(QRect(btx, 270, 60, clh))
         self.in_wwf.setGeometry(QRect(btx, 300, 60, clh))
         self.in_nav.setGeometry(QRect(btx, 330, 60, clh))
-        
+
+        self.pB_hmdm_tweak.setGeometry(QRect(btx, 390, 100, clh))
+
         self.in_gain.setText(f"{self.gain}")
         self.in_wwf.setText(f"{self.wwf}")
         self.in_nav.setText(f"{self.nav}")
@@ -263,14 +268,18 @@ class MyMainWidget(QWidget):
         self.ttx_logplots = [] # handles on the individual line plots
         self.tty_logplots = [] # handles on the individual line plots
 
+        self.legend = pg.LegendItem(brush=pg.mkBrush(255,255,255,196))
         for ii in range(self.hmd.nbm):
             self.ttx_logplots.append(self.gView_plot_ttx.plot(
                 [0, self.log_len], [0.1 * ii, 0.1 * ii],
                 pen=pg.mkPen(palette6[ii], width=2), name=f"ttx{ii+1}"))
+            self.legend.addItem(self.ttx_logplots[ii], f"Beam #{ii+1}")
             self.tty_logplots.append(self.gView_plot_tty.plot(
                 [0, self.log_len], [0.1 * ii, 0.1 * ii],
                 pen=pg.mkPen(palette6[ii], width=2), name=f"tty{ii+1}"))
 
+        self.legend.setParentItem(self.gView_plot_ttx.graphicsItem())
+        self.legend.setPos(50, 20)
         self.pB_start.clicked.connect(self.tracker_start)
         self.pB_stop.clicked.connect(self.tracker_stop)
         self.pB_calibrate.clicked.connect(self.trigger_calibrate)
@@ -281,7 +290,7 @@ class MyMainWidget(QWidget):
         self.pB_setGain.clicked.connect(self.set_gain)
         self.pB_setWgt.clicked.connect(self.set_wwf)
         self.pB_setNav.clicked.connect(self.set_nav)
-
+        self.pB_hmdm_tweak.clicked.connect(self.iteration_hmd_mirrors)
     # =========================================================================
     def tracker_start(self):
         if self.tracking:
@@ -379,6 +388,18 @@ class MyMainWidget(QWidget):
             self.tty_logplots[ii].setData(self.tty_log[ii])
 
     # =========================================================================
+    def iteration_hmd_mirrors(self):
+        cmd = -self.PINV2.dot(np.append(self.ttx, self.tty))
+        cmd = np.round(cmd).astype(int)
+        for ii, device in enumerate(self.dev_list):
+            if cmd[ii] != 0:
+                msg = f"tt_step {device} {cmd[ii]}"
+                # print(msg)
+                self.socket.send_string(msg)
+                self.socket.recv_string()  # acknowledgement
+                time.sleep(0.01)
+
+    # =========================================================================
     def loop(self):
         # self.tracking = True
         self.dstream.catch_up_with_sem(self.semid)
@@ -386,8 +407,8 @@ class MyMainWidget(QWidget):
         while self.tracking:
             self.ttx, self.tty = self.get_signal()
             self.log_data()
+            cmd = self.PINV.dot(np.append(self.ttx, self.tty))
             if self.close_loop_on:
-                cmd = self.PINV.dot(np.append(self.ttx, self.tty))
                 self.dispatch(cmd)
 
     # =========================================================================
@@ -416,7 +437,7 @@ class MyMainWidget(QWidget):
                 self.ttx_w[ii] = np.min(np.append(self.wwf / varx, 1))
                 self.tty_w[ii] = np.min(np.append(self.wwf / vary, 1))
 
-        print(f"\r{np.round(self.ttx_w, 3)}", end='', flush=True)
+        # print(f"\r{np.round(self.ttx_w, 3)}", end='', flush=True)
 
     # =========================================================================
     def dispatch(self, cmd):
@@ -428,14 +449,6 @@ class MyMainWidget(QWidget):
             dm0 = self.dms[ii].get_data()
             self.dms[ii].set_data(0.999 * (dm0 - self.gain * correc))
             self.sems[ii].post_sems(1)
-
-    # =========================================================================
-    def dispatch_hmd_mirrors(self, cmd):
-        for ii, device in enumerate(self.dev_list):
-            socket.send_string(f"tt_step {device} cmd[ii]")
-            socket.recv_string()  # acknowledgement
-            time.sleep(0.01)
-        time.sleep(1)
 
     # =========================================================================
     def calibrate_dms(self, a0=0.01):
@@ -486,6 +499,7 @@ class MyMainWidget(QWidget):
         # called when using menu or ctrl-Q
         self.dstream.close(erase_file=False)
         log("TT tracker quit")
+        print()
         # self.wfs_stop()
         # try:
         #     self.wfs.close()
