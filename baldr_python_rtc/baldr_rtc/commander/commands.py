@@ -335,6 +335,13 @@ def build_commander_module(
         # update reconstructor on-sky with new pupil measurement
         command_queue.put(make_cmd("UPDATE_RECON_HO"))
         return {"ok": True}
+    
+
+    def update_recon_KL(args):
+        # update reconstructor on-sky with new pupil measurement
+        command_queue.put(make_cmd("UPDATE_RECON_KL"))
+        return {"ok": True}
+    
     ##################
     # STATUS
     # !!IMPORTANT!! - this format is to match the expected format for wag (see legacy get_status in https://github.com/mikeireland/dcs/blob/main/baldr/baldr.cpp)
@@ -404,6 +411,7 @@ def build_commander_module(
     
     m.def_command("update_recon_LO", update_recon_LO, description="Passive update of reconstructor matrix on-sky with new measured pupil", return_type="object") 
     m.def_command("update_recon_HO", update_recon_HO, description="Passive update of reconstructor matrix on-sky with new measured pupil", return_type="object") 
+    m.def_command("update_recon_KL", update_recon_KL, description="Passive update of reconstructor matrix on-sky with KL modes", return_type="object") 
 
     ##################
     # GAIN

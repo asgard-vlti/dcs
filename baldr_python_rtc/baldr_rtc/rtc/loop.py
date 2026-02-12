@@ -88,9 +88,9 @@ class RTCThread(threading.Thread):
         print('previous N0_runtime = ', self.g.model.N0_runtime)
         print('candidate N0_runtime = ', N0_runtime)
 
-        usr_input = input('type 1 to update N0_runtime? ')
-        if usr_input == '1':
-            self.g.model.N0_runtime = N0_runtime
+        #usr_input = input('type 1 to update N0_runtime? ')
+        #if usr_input == '1':
+        self.g.model.N0_runtime = N0_runtime
         
         usr_input = input('before resuming put mask back in (later this will be automatic..).\npress enter when ready to start loop')
         self._apply_command({'type':"RESUME"})
@@ -331,7 +331,7 @@ class RTCThread(threading.Thread):
         print(f"BUILD_KL: updated HO basis using {E.shape[0]} samples, k_use={k_use}/{k_total}")
         print(f"BUILD_KL: top eigenvalues (variance) = {evals[:min(8, len(evals))]}")
 
-
+        #if savefits:
         tstamp_rough = datetime.datetime.now().strftime("%Y-%m-%d")
         outdir = f"/home/asg/ben_feb2026_bld_telem/{tstamp_rough}/beam{self.g.beam}/"#getattr(self.g, "telem_dir", None) or getattr(self.g, "log_dir", None) or "/tmp"
         outdir = Path(outdir)
@@ -343,7 +343,7 @@ class RTCThread(threading.Thread):
         ts = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # File name 
-        fname = outdir / f"I0_runtime_update_beam{beam_id}__mask-{phasemask}_BUILD_KL_{ts.replace(':','-')}.fits"
+        fname = outdir / f"KL_runtime_update_beam{beam_id}__mask-{phasemask}_BUILD_KL_{ts.replace(':','-')}.fits"
 
         # ---- primary header metadata ----
         hdr = fits.Header()
@@ -484,7 +484,7 @@ class RTCThread(threading.Thread):
 
 
         elif t== "UPDATE_RECON_KL":
-            fname = self.update_KL( n_use = 1000,k_use=40 ,savefits = True)
+            fname = self.update_KL( N_dumps=5, k_use=40, savefits=True)
             print(f"saved telemetry from UPDATE_RECON_KL here:\n{fname}")
 
     def _drain_commands(self) -> None:
@@ -637,11 +637,9 @@ class RTCThread(threading.Thread):
 
                 # --- IO: write DM command (placeholder) ---
                 if self.g.dm_io is not None:
-                    #cmd = np.zeros(140)
-                    #cmd[65] = 0.2
-                    # replace with real computed command vector
+                    # comment out for mike
                     self.g.dm_io.write(dcmd)
-
+                    #555
 
                 # set flag to not iterate (until we average the next frames)
                 run_iteration = 0
