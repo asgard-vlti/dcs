@@ -224,6 +224,12 @@ def build_commander_module(
         return {"ok": True, "servo_mode": int(MainState.SERVO_STOP)}
 
 
+    def write_dm_flat(args):
+        # writes baldrs current command as an additional offset to DM flat (chn 0)
+        # zeros controller state
+        command_queue.put(make_cmd("WRITE_DM_FLAT") )
+        return {"ok": True}
+
     # DIONT USE #################
     # GAIN
     # def set_LO_gain(args):
@@ -369,6 +375,7 @@ def build_commander_module(
     m.def_command("pauseRTC", pause_rtc, description="Pause RTC loop.", return_type="object")
     m.def_command("resumeRTC", resume_rtc, description="Resume RTC loop.", return_type="object")
     m.def_command("stop_baldr", stop_baldr, description="Stop Baldr RTC loop.", return_type="object")
+    m.def_command("write_dm_flat", write_dm_flat, description="write current dm offset to DM flat on channel 0", return_type="object")
     ###################
     # CONTROLLER STATE
     m.def_command("close_all", close_all, description="Close LO+HO loops.", return_type="object")
