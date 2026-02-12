@@ -14,6 +14,8 @@ h-shutter = "dcs.cmd_scripts.h_shutterseq:main"
 save-ft-performance = "heimdallr.save_ft_performance:main"
 back-end-server = "back_end_server.back_end_server:main"
 mcs-client = "mcs_client.mcs_client:main"
+baldr-server = "baldr_python_rtc.scripts.baldr_server:main"
+baldr-start-all = "dcs.cmd_scripts.baldr_start_all:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["dcs"]
