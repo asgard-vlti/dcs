@@ -11,7 +11,8 @@ import datetime
 from xaosim.shmlib import shm
 from baldr_python_rtc.baldr_rtc.core.state import MainState, RuntimeGlobals, ServoState
 from baldr_python_rtc.baldr_rtc.telemetry.ring import TelemetryRingBuffer
-
+from baldr_python_rtc.baldr_rtc.core.config import readBDRConfig
+from baldr_python_rtc.baldr_rtc.server import build_rtc_model
 # global number of frames to average before correction
 #N0_2_AVG = 1
 
@@ -67,7 +68,7 @@ class RTCThread(threading.Thread):
         self.telem_ring = telem_ring
         self.stop_event = stop_event
         self._frame_id = 0
-
+        self._request_controller_reset = False
 
     def update_N0_runtime(self):
         self._apply_command({'type':"PAUSE"})
@@ -352,19 +353,6 @@ class RTCThread(threading.Thread):
             hdr["BEAM"] = (int(beam_id), "Baldr beam id")
         hdr["SRC"] = ("update_KL", "Source routine")
 
-        # Optional camera/system settings (only if available)
-        # (Safely fill if your object has these fields)
-        #fps  = getattr(self.g, "fps", None) or getattr(getattr(self.g, "model", None), "fps", None)
-        #gain = getattr(self.g, "gain", None) or getattr(getattr(self.g, "model", None), "gain", None)
-
-        #if fps is not None:  hdr["FPS"]  = (float(fps),  "Camera FPS")
-        #if gain is not None: hdr["GAIN"] = (float(gain), "Camera gain")
-
-        # hdr["NAXPRIOR"] = (int(prior.ndim), "Dims of PRIOR array")
-        # hdr["NAXPOST"]  = (int(post.ndim),  "Dims of POST array")
-        # hdr["NPRIOR"]   = (int(prior.size), "Number of elements in PRIOR")
-        # hdr["NPOST"]    = (int(post.size),  "Number of elements in POST")
-
         phdu = fits.PrimaryHDU(header=hdr)
 
         things_2_write = {
@@ -410,7 +398,45 @@ class RTCThread(threading.Thread):
             if new_cfg is not None:
                 self.g.rtc_config = new_cfg
                 self.g.active_config_filename = cmd.get("path", self.g.active_config_filename)
-        
+
+
+
+        elif t == "UPDATE_PHASEMASK":
+            new_pm = str(cmd["phasemask"]).strip()
+            print(f"RTC is Updating phasemask -> {new_pm}")
+
+            self.g.pause_rtc = True
+            print(" ...opening LO and HO baldr servos")
+            self.g.servo_mode_LO = 0
+            self.g.servo_mode_HO = 0
+
+            try:
+                print(" ...reading active config")
+                cfg = readBDRConfig(
+                    self.g.active_config_filename,
+                    beam=self.g.beam,
+                    phasemask=new_pm,
+                )
+
+                print(" ...setting new config")
+                new_model = build_rtc_model(cfg, beam=self.g.beam, phasemask=new_pm)
+
+                # (Optional but recommended) validate shapes before swap
+                # e.g. ensure new_model.signal_space matches expected
+
+                self.g.rtc_config = cfg
+                self.g.model = new_model
+                self.g.phasemask = new_pm
+
+                self._request_controller_reset = True
+                print(f"RTC Phasemask update to {new_pm} complete")
+
+            except Exception as e:
+                print(f"RTC Phasemask update FAILED: {e!r}")
+
+            finally:
+                self.g.pause_rtc = False
+
         elif t == "UPDATE_N0_RUNTIME":
             #print( 'here to' )
             self.update_N0_runtime()
@@ -430,7 +456,7 @@ class RTCThread(threading.Thread):
             I2M_LO_before = self.g.model.I2M_LO
             avg_i_space = np.mean(self.telem_ring.i_space, axis = 0)
             # normalize mask [0-1]
-            avg_i_space_norm = (avg_i_space-np.max( avg_i_space )) / (np.max(avg_i_space)-np.min(avg_i_space))
+            avg_i_space_norm = (avg_i_space-np.min( avg_i_space )) / (np.max(avg_i_space)-np.min(avg_i_space))
             self.g.model.I2M_LO = (I2M_LO_before * avg_i_space_norm)
 
 
@@ -505,7 +531,7 @@ class RTCThread(threading.Thread):
         dt = 1.0 / fps
         next_t = time.perf_counter()
         
-        
+
         # opd model (from exterior pixels of ZWFS )
         interc, slope_1, slope_2, x_knee = self.g.model.perf_param
         # g.rtc_config.filters.opd_m_interc
@@ -514,8 +540,12 @@ class RTCThread(threading.Thread):
         # g.rtc_config.filters.opd_m_x_knee
 
         # init controller feedback vectors 
-        u_LO = np.zeros_like(self.g.model.ctrl_LO.ki)
-        u_HO = np.zeros_like(self.g.model.ctrl_HO.ki)
+        self._u_LO = np.zeros_like(self.g.model.ctrl_LO.ki)
+        self._u_HO = np.zeros_like(self.g.model.ctrl_HO.ki)
+        #self._request_controller_reset = False
+
+        # u_LO = np.zeros_like(self.g.model.ctrl_LO.ki)
+        # u_HO = np.zeros_like(self.g.model.ctrl_HO.ki)
 
         # UPDATE N0
         # print('update N0_runtime before beginning. Put on clear pupil')
@@ -531,6 +561,11 @@ class RTCThread(threading.Thread):
 
             #
             self._drain_commands()
+
+            if self._request_controller_reset:
+                self._u_LO = np.zeros_like(self.g.model.ctrl_LO.ki)
+                self._u_HO = np.zeros_like(self.g.model.ctrl_HO.ki)
+                self._request_controller_reset = False
 
             if self.g.pause_rtc:
                 time.sleep(0.01)
@@ -602,33 +637,29 @@ class RTCThread(threading.Thread):
                     
                     #print('here')
                     #self.g.model.ctrl_LO.ki
-                    u_LO = self.g.model.ctrl_LO.rho * u_LO - self.g.model.ctrl_LO.ki * e_LO #lo_gain * e_LO #self.g.model.ctrl_LO.process( e_LO )
+                    self._u_LO = self.g.model.ctrl_LO.rho * self._u_LO - self.g.model.ctrl_LO.ki * e_LO #lo_gain * e_LO #self.g.model.ctrl_LO.process( e_LO )
                     
                 else:
-                    u_LO[:] = 0.0
+                    self._u_LO[:] = 0.0
 
                 if self.g.servo_mode_HO:
                     # implement close_HO later 
                     #np.array( [0.05 if ii < 10 else 0 for ii in range(len(e_HO))] )
-                    u_HO = self.g.model.ctrl_HO.rho * u_HO - self.g.model.ctrl_HO.ki*e_HO #self.g.model.ctrl_HO.process( e_HO )
+                    self._u_HO = self.g.model.ctrl_HO.rho * self._u_HO - self.g.model.ctrl_HO.ki*e_HO #self.g.model.ctrl_HO.process( e_HO )
                     #print( self.g.model.ctrl_LO.ki , self.g.model.ctrl_HO.rho)
                 else:
-                    u_HO[:] = 0.0
-                # except:
-                #     print('here')
-                #     u_LO = np.zeros_like(e_LO)
-                #     u_HO = np.zeros_like(e_HO)
+                    self._u_HO[:] = 0.0
+
                 # Project mode to DM commands 
-                c_LO = self.g.model.M2C_LO @ u_LO 
-                c_HO = self.g.model.M2C_HO @ u_HO
+                c_LO = self.g.model.M2C_LO @ self._u_LO
+                c_HO = self.g.model.M2C_HO @ self._u_HO
 
                 dcmd = c_LO + c_HO #+ c_LO_inj + c_HO_inj
 
-                # TODO: replace metrics with real computation
-                i_in_pup_tmp = np.mean( self.g.telem_ring.i_space[:,self.g.model.inner_pupil_filt] , axis=1) # used to calculate SNR
+                i_in_pup_tmp = np.mean( self.telem_ring.i_space[:,self.g.model.inner_pupil_filt] , axis=1) # used to calculate SNR
                 snr_metric = np.mean( i_in_pup_tmp  ) / np.std( i_in_pup_tmp ) if np.std( i_in_pup_tmp ) !=0 else 0
 
-                # if working (params are hard coding)
+
                 opd_sig_tmp  = np.mean( i_norm[ self.g.model.strehl_filt] ) 
                 opd_metric =  piecewise_continuous( opd_sig_tmp , interc, slope_1, slope_2, x_knee) 
                 # otherwise 
@@ -658,11 +689,11 @@ class RTCThread(threading.Thread):
                     #dm.set_data(current_flat + dcmd.reshape(12,12))
 
                     # need to reset controller state 
-                    u_LO = np.zeros_like(u_LO)
-                    u_HO = np.zeros_like(u_HO)
+                    self._request_controller_reset = True
+
                     # open loops 
                     self.g.servo_mode_LO = 0
-                    self.g.servo_mode_LO = 0
+                    self.g.servo_mode_HO = 0
                     # reset flag 
                     self.g.write_to_flat = False
                     dm.close(erase_file=False)
@@ -685,8 +716,8 @@ class RTCThread(threading.Thread):
 
                         e_lo=e_LO,
                         e_ho=e_HO,
-                        u_lo=u_LO,
-                        u_ho=u_HO,
+                        u_lo=self._u_LO,
+                        u_ho=self._u_HO,
                         c_lo=c_LO,
                         c_ho=c_HO,
                         cmd=dcmd,
@@ -699,94 +730,4 @@ class RTCThread(threading.Thread):
 
 
 
-
-
-            ## OLD SUDO CODE 
-
-            # # process (average or otherwise)
-            # # signal  (i_setpoint_runtime should always be in the right space, if change space (function) we must update it )
-            # if self.g.model.signal_space.lower().strip() == 'pix':
-            #     i_space = i_raw.reshape(-1)
-            # elif self.g.model.signal_space.lower().strip() == 'dm':
-            #     i_space = self.g.model.I2A @ i_raw.reshape(-1)
-            # else:
-            #     raise UserWarning("invalid signal_space. Must be 'pix' | 'dm'")
-            
-            # # use self.g.model.process_frame to take moving average or something 
-            # i = i_space #self.g.model.process_frame( i_space , fn = None) # this could be a simple moving average . In my sim I think i did this in error space - but should it be here? LPF straight up 
-
-            # # normalized intensity 
-            # i_norm = i / self.g.model.N0_runtime 
-
-            # # opd estimate 
-            # #opd_est = np.mean( i[ self.g.model.inner_pupil_filt.astype(bool) ] ) / self.g.model.N0_runtime#self.g.model.perf_model( i_norm , self.g.model.perf_param)
-             
-            # s = i_norm  - self.g.model.i_setpoint_runtime 
-
-            # # project intensity signal to error in modal space 
-            # e_LO = self.g.model.I2M_LO @ s 
-            # e_HO = self.g.model.I2M_HO @ s
-
-            # # control signals
-            # u_LO = self.g.model.ctrl_LO.process( e_LO )
-            # u_HO = self.g.model.ctrl_HO.process( e_HO )
-            
-            # # Project mode to DM commands 
-            # c_LO = self.g.model.M2C_LO @ u_LO 
-            # c_HO = self.g.model.M2C_HO @ u_HO
-
-            # dcmd = c_LO + c_HO #+ c_LO_inj + c_HO_inj
-
-            # # TODO: replace metrics with real computation
-            # i_in_pup_tmp = np.mean( self.g.telem_ring.i_space[:,self.g.model.inner_pupil_filt] , axis=1) # used to calculate SNR
-            # snr_metric = np.mean( i_in_pup_tmp  ) / np.std( i_in_pup_tmp ) if np.std( i_in_pup_tmp ) !=0 else 0
-
-            # # if working (params are hard coding)
-            # opd_sig_tmp  = np.mean( i[ self.g.model.strehl_filt] ) / self.g.model.N0_runtime 
-            # opd_metric = 0.03 * piecewise_continuous( opd_sig_tmp , interc, slope_1, slope_2, x_knee) 
-            # # otherwise 
-            # #opd_metric = np.mean( i[ self.g.model.inner_pupil_filt.astype(bool) ] ) / self.g.model.N0_runtime#self.g.model.perf_model( i_norm , self.g.model.perf_param)
-            # #self.g.model.perf_model(i_norm, self.g.model.perf_param) if self.g.model.perf_model is not None else 0.0 # g.perf_funct( )
-
-            # # --- IO: write DM command (placeholder) ---
-            # if self.g.dm_io is not None:
-            #     #cmd = np.zeros(140)
-            #     #cmd[65] = 0.2
-            #     # replace with real computed command vector
-            #     self.g.dm_io.write(dcmd)
-
-
-
-
-            # if self.telem_ring is not None and self.g.model is not None:
-            #     self.telem_ring.push(
-            #         frame_id=self._frame_id,
-            #         t_s=t_now,
-            #         lo_state=int(self.g.servo_mode_LO.value),
-            #         ho_state=int(self.g.servo_mode_HO.value),
-            #         paused=bool(self.g.pause_rtc),
-
-            #         snr_metric = snr_metric,
-            #         opd_metric = opd_metric, 
-
-            #         i_raw=i_raw.reshape(-1),
-            #         i_space=i_space.reshape(-1),
-            #         s=s.reshape(-1),
-
-            #         e_lo=e_LO,
-            #         e_ho=e_HO,
-            #         u_lo=u_LO,
-            #         u_ho=u_HO,
-            #         c_lo=c_LO,
-            #         c_ho=c_HO,
-            #         cmd=dcmd,
-
-            #         ctrl_state_lo=getattr(self.g.model.ctrl_LO, "state", None),
-            #         ctrl_state_ho=getattr(self.g.model.ctrl_HO, "state", None),
-            #     )
-
-            # next_t += dt
-            # sleep = next_t - time.perf_counter()
-            # if sleep > 0:
-            #     time.sleep(sleep)
 

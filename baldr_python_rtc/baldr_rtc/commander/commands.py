@@ -45,6 +45,23 @@ def build_commander_module(
         configured = 1 if (len(cfg.matrices.I2M_LO) > 0 or len(cfg.matrices.I2M_HO) > 0) else 0
         return {"ok": True, "config_file": path, "configured": configured, "frequency": cfg.fps}
 
+
+    def update_phasemask_cmd(args):
+        # usage: update_phasemask <name>
+        if not args:
+            return {"ok": False, "error": "usage: update_phasemask <phasemask_name>"}
+
+        pm = str(args[0]).strip()
+        if not pm:
+            return {"ok": False, "error": "empty phasemask name"}
+
+        command_queue.put(make_cmd("UPDATE_PHASEMASK", phasemask=pm))
+
+        # Optional: reflect intent immediately in status (actual swap happens in RTC thread)
+        globals_.phasemask = pm
+
+        return {"ok": True, "queued": True, "phasemask": pm}
+
     ##################
     # TELEMETRY
     def telem_on(args):
@@ -373,6 +390,13 @@ def build_commander_module(
     ##################
     # CONFIG
     m.def_command("readBDRConfig", read_bdr, description="Load/parse config.", arguments=[ArgumentSpec("config_file", "string")], return_type="object")
+    m.def_command(
+        "update_phasemask",
+        update_phasemask_cmd,
+        description="swap phasemask config (can run while main rtc loop is hot baby): update_phasemask <name>",
+        arguments=[ArgumentSpec("phasemask", "string")],
+        return_type="object",
+    )
     ##################
     # TELEMETRY
     m.def_command("telem_on", telem_on, description="Enable telemetry writing.", return_type="object")
