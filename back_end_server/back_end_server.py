@@ -167,8 +167,11 @@ import subprocess
 import logging
 
 # from rts_base import AbstractRTSTask, RTSContext, RTSState, RTSErr
-#from back_end_server.handlers.baldr_rts_handlers import register as register_baldr_rts
-from handlers.baldr_rts_handlers import register as register_baldr_rts
+# !!!ADAM please educate Mike on this path bit for editable installs.
+try:
+   from back_end_server.handlers.baldr_rts_handlers import register as register_baldr_rts
+except:
+   from handlers.baldr_rts_handlers import register as register_baldr_rts
 
 
 # --- Logging setup: file and console ---

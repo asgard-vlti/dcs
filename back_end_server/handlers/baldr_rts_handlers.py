@@ -4,8 +4,11 @@ import datetime
 from typing import Any, Dict, List
 import zmq
 
-#from back_end_server.rts_base import AbstractRTSTask, RTSState, RTSErr
-from rts_base import AbstractRTSTask, RTSState, RTSErr
+#!!!ADAM Again try to explain to me editable installs.
+try:
+  from back_end_server.rts_base import AbstractRTSTask, RTSState, RTSErr
+except:
+  from rts_base import AbstractRTSTask, RTSState, RTSErr
 
 # Baldr RTC ports per beam
 BALDR_PORTS = {1: 6662, 2: 6663, 3: 6664, 4: 6665}
