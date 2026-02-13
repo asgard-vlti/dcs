@@ -38,7 +38,7 @@ def build_commander_module(
     # CONFIG
     def read_bdr(args):
         path = str(args[0]) if args else ""
-        cfg = readBDRConfig(path)
+        cfg = readBDRConfig(path, beam = globals_.beam, phasemask = globals_.phasemask) #<--- need to add these in
         command_queue.put(make_cmd("LOAD_CONFIG", rtc_config=cfg, path=path))
         globals_.active_config_filename = path
 
@@ -57,7 +57,7 @@ def build_commander_module(
 
         command_queue.put(make_cmd("UPDATE_PHASEMASK", phasemask=pm))
 
-        # Optional: reflect intent immediately in status (actual swap happens in RTC thread)
+        # reflect intent immediately in status (actual swap happens in RTC thread)
         globals_.phasemask = pm
 
         return {"ok": True, "queued": True, "phasemask": pm}
@@ -390,6 +390,7 @@ def build_commander_module(
     ##################
     # CONFIG
     m.def_command("readBDRConfig", read_bdr, description="Load/parse config.", arguments=[ArgumentSpec("config_file", "string")], return_type="object")
+    
     m.def_command(
         "update_phasemask",
         update_phasemask_cmd,

@@ -19,7 +19,7 @@ import asgard_alignment.controllino as co
 # pupil geometry design
 hcoords = np.loadtxt("N1_hole_coordinates.txt")
 
-ddir = os.getenv('HOME') + '/fringe_monitor/'
+ddir = os.getenv('HOME') + '/Data/fringe_monitor/'
 if not os.path.exists(ddir):
     os.makedirs(ddir)
 

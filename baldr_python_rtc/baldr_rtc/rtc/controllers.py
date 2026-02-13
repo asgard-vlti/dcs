@@ -105,10 +105,10 @@ class LeakyIntegrator:
     rho: np.ndarray          # leak factor in [0,1] typically
     ki: np.ndarray           # integral gain (per element)
     kp: Optional[np.ndarray] = None  # optional proportional term
+    dt: float = 1
     u_min: Optional[np.ndarray] = None
     u_max: Optional[np.ndarray] = None
     setpoint: Optional[np.ndarray] = None
-
     _state: np.ndarray = None
 
     def __post_init__(self) -> None:
@@ -202,6 +202,7 @@ def build_controller(
             rho=_as_vec(rho, n, 0.98),
             ki=_as_vec(ki, n, 0.1),
             kp=_as_vec(kp, n, 0.0) if kp is not None else None,
+            dt=float(dt),
             u_min=_as_vec(u_min, n) if u_min is not None else None,
             u_max=_as_vec(u_max, n) if u_max is not None else None,
             setpoint=_as_vec(setpoint, n) if setpoint is not None else None,

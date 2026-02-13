@@ -15,6 +15,7 @@ from baldr_python_rtc.baldr_rtc.rtc.loop import RTCThread
 from baldr_python_rtc.baldr_rtc.commander.server import CommanderServer
 from baldr_python_rtc.baldr_rtc.commander.commands import build_commander_module
 from baldr_python_rtc.baldr_rtc.rtc.controllers import build_controller
+from baldr_python_rtc.baldr_rtc.core.model_factory import build_rtc_model
 
 def _print_banner(*, beam: int, socket: str, cfg_path: str, cfg) -> None:
     # Keep this pure printing: no side effects beyond stdout.
@@ -152,84 +153,84 @@ def inspect_rtc_model(model: Any, *, name: str = "g.model") -> None:
         print(f"  repr={r}")
 
 
+# now in baldr_python_rtc/baldr_rtc/core/model_factory.py
+# def build_rtc_model(cfg) -> RTCModel:
+#     st = cfg.state
+#     space = (st.signal_space or "pix").strip().lower()
 
-def build_rtc_model(cfg) -> RTCModel:
-    st = cfg.state
-    space = (st.signal_space or "pix").strip().lower()
+#     I2A = np.asarray(cfg.matrices.I2A, dtype=float) # if space == "dm" else None
 
-    I2A = np.asarray(cfg.matrices.I2A, dtype=float) # if space == "dm" else None
+#     I2M_LO = np.asarray(cfg.matrices.I2M_LO, dtype=float)
+#     I2M_HO = np.asarray(cfg.matrices.I2M_HO, dtype=float)
+#     M2C_LO = np.asarray(cfg.matrices.M2C_LO, dtype=float)
+#     M2C_HO = np.asarray(cfg.matrices.M2C_HO, dtype=float)
 
-    I2M_LO = np.asarray(cfg.matrices.I2M_LO, dtype=float)
-    I2M_HO = np.asarray(cfg.matrices.I2M_HO, dtype=float)
-    M2C_LO = np.asarray(cfg.matrices.M2C_LO, dtype=float)
-    M2C_HO = np.asarray(cfg.matrices.M2C_HO, dtype=float)
-
-    # filters 
-    inner_pupil_filt = np.asarray( cfg.filters.inner_pupil_filt, dtype=bool).reshape(-1) 
+#     # filters 
+#     inner_pupil_filt = np.asarray( cfg.filters.inner_pupil_filt, dtype=bool).reshape(-1) 
     
-    # NEW (NOT LEGACY)
-    strehl_filt =  np.asarray( cfg.filters.strehl_filt, dtype=bool).reshape(-1) 
+#     # NEW (NOT LEGACY)
+#     strehl_filt =  np.asarray( cfg.filters.strehl_filt, dtype=bool).reshape(-1) 
 
-    interc = float( cfg.filters.opd_m_interc)
-    slope_1 = float( cfg.filters.opd_m_slope_1)
-    slope_2 = float( cfg.filters.opd_m_slope_2)
-    x_knee =  float(  cfg.filters.opd_m_x_knee )
+#     interc = float( cfg.filters.opd_m_interc)
+#     slope_1 = float( cfg.filters.opd_m_slope_1)
+#     slope_2 = float( cfg.filters.opd_m_slope_2)
+#     x_knee =  float(  cfg.filters.opd_m_x_knee )
 
 
-    # reduction 
-    #dark = np.asarray(cfg.matrices.M2C_HO, dtype=float)
-    # references from legacy toml
-    I0 = np.asarray(cfg.reference_pupils.I0, dtype=float).reshape(-1)
-    N0 = np.asarray(cfg.reference_pupils.N0, dtype=float).reshape(-1)
-    dark = np.asarray(cfg.reference_pupils.dark, dtype=float).reshape(-1)
-    if space == "dm":
-        # NOTE: assumes I0/N0 are already in the SAME reduced pixel vector space as I2A expects
-        I0 = I2A @ I0
-        N0 = I2A @ N0
-        inner_pupil_filt = (I2A @ inner_pupil_filt).astype(bool)
-        strehl_filt = (I2A @ strehl_filt).astype(bool)
-    i_setpoint_runtime = I0 / np.mean( N0[inner_pupil_filt]  ) 
-    N0_runtime = np.mean( N0[inner_pupil_filt]  ) #N0
+#     # reduction 
+#     #dark = np.asarray(cfg.matrices.M2C_HO, dtype=float)
+#     # references from legacy toml
+#     I0 = np.asarray(cfg.reference_pupils.I0, dtype=float).reshape(-1)
+#     N0 = np.asarray(cfg.reference_pupils.N0, dtype=float).reshape(-1)
+#     dark = np.asarray(cfg.reference_pupils.dark, dtype=float).reshape(-1)
+#     if space == "dm":
+#         # NOTE: assumes I0/N0 are already in the SAME reduced pixel vector space as I2A expects
+#         I0 = I2A @ I0
+#         N0 = I2A @ N0
+#         inner_pupil_filt = (I2A @ inner_pupil_filt).astype(bool)
+#         strehl_filt = (I2A @ strehl_filt).astype(bool)
+#     i_setpoint_runtime = I0 / np.mean( N0[inner_pupil_filt]  ) 
+#     N0_runtime = np.mean( N0[inner_pupil_filt]  ) #N0
     
 
 
 
-    # controllers
-    n_LO = int(I2M_LO.shape[0])
-    n_HO = int(I2M_HO.shape[0])
-    dt = 1/1000 # WE SHOULD NOT USE dt IN CONTROLLERS! 
+#     # controllers
+#     n_LO = int(I2M_LO.shape[0])
+#     n_HO = int(I2M_HO.shape[0])
+#     dt = 1/1000 # WE SHOULD NOT USE dt IN CONTROLLERS! 
 
-    # dont worry about PID for now
-    ct = "leaky"  #cfg.state.controller_type.strip().lower()
-    if ct == "pid":
-        ctrl_LO = build_controller("pid", n_LO, dt=dt, kp=0, ki=0, kd=0, u_min=None, u_max=None)
-        ctrl_HO = build_controller("pid", n_HO, dt=dt, kp=0, ki=0, kd=0, u_min=None, u_max=None)
-    elif ct == "leaky":
-        ctrl_LO = build_controller("leaky", n_LO, rho=0.98, ki=0.05, kp=0, u_min=None, u_max=None)
-        ctrl_HO = build_controller("leaky", n_HO, rho=0.97, ki=0.0, kp=0, u_min=None, u_max=None)
-    else:
-        print(f"controller_type {ct} is not implemented\n!!!!!!!!!! JUT CONTINUE WITH Leaky , FIX THIS LATER")
-        ctrl_LO = build_controller("leaky", n_LO, rho=0.98, ki=0.05, kp=0, u_min=None, u_max=None)
-        ctrl_HO = build_controller("leaky", n_HO, rho=0.97, ki=0.0, kp=0, u_min=None, u_max=None)
+#     # dont worry about PID for now
+#     ct = "leaky"  #cfg.state.controller_type.strip().lower()
+#     if ct == "pid":
+#         ctrl_LO = build_controller("pid", n_LO, dt=dt, kp=0, ki=0, kd=0, u_min=None, u_max=None)
+#         ctrl_HO = build_controller("pid", n_HO, dt=dt, kp=0, ki=0, kd=0, u_min=None, u_max=None)
+#     elif ct == "leaky":
+#         ctrl_LO = build_controller("leaky", n_LO, rho=0.98, ki=0.05, kp=0, u_min=None, u_max=None)
+#         ctrl_HO = build_controller("leaky", n_HO, rho=0.97, ki=0.0, kp=0, u_min=None, u_max=None)
+#     else:
+#         print(f"controller_type {ct} is not implemented\n!!!!!!!!!! JUT CONTINUE WITH Leaky , FIX THIS LATER")
+#         ctrl_LO = build_controller("leaky", n_LO, rho=0.98, ki=0.05, kp=0, u_min=None, u_max=None)
+#         ctrl_HO = build_controller("leaky", n_HO, rho=0.97, ki=0.0, kp=0, u_min=None, u_max=None)
     
-    return RTCModel(
-        signal_space=space,
-        I2A=I2A,
-        I2M_LO=I2M_LO,
-        I2M_HO=I2M_HO,
-        M2C_LO=M2C_LO,
-        M2C_HO=M2C_HO,
-        N0_runtime=N0_runtime,
-        dark=dark.reshape(32,32),
-        inner_pupil_filt=inner_pupil_filt,
-        strehl_filt = strehl_filt,
-        i_setpoint_runtime=i_setpoint_runtime,
-        ctrl_LO=ctrl_LO,   # or g.ctrl_LO if you store controllers in globals
-        ctrl_HO=ctrl_HO,
-        process_frame=None,
-        perf_model=None,
-        perf_param=(interc, slope_1, slope_2, x_knee),
-    )
+#     return RTCModel(
+#         signal_space=space,
+#         I2A=I2A,
+#         I2M_LO=I2M_LO,
+#         I2M_HO=I2M_HO,
+#         M2C_LO=M2C_LO,
+#         M2C_HO=M2C_HO,
+#         N0_runtime=N0_runtime,
+#         dark=dark.reshape(32,32),
+#         inner_pupil_filt=inner_pupil_filt,
+#         strehl_filt = strehl_filt,
+#         i_setpoint_runtime=i_setpoint_runtime,
+#         ctrl_LO=ctrl_LO,   # or g.ctrl_LO if you store controllers in globals
+#         ctrl_HO=ctrl_HO,
+#         process_frame=None,
+#         perf_model=None,
+#         perf_param=(interc, slope_1, slope_2, x_knee),
+#     )
 
 
 
@@ -248,8 +249,8 @@ def _print_runtime_info(*, g: RuntimeGlobals, socket: str) -> None:
     print(f"  io_mode:        {getattr(cfg, 'io_mode', 'unknown')}")
     print(f"  camera_io:      {cam_name}")
     print(f"  dm_io:          {dm_name}")
-    print(f"  fps:            {cfg.fps}")
-    print(f"  controller:     ")#{cfg.state.controller_type}")
+    print(f"  fps:            {1/g.model.ctrl_LO.dt}")
+    print(f"  controller:     {cfg.state.controller_type}")
     print(f"  telemetry:      {'ON' if cfg.state.take_telemetry else 'OFF'}")
     print(f"  servo:          {g.servo_mode.name}")
     print(f"  LO:             {g.servo_mode_LO.name}")
@@ -287,9 +288,8 @@ def main(
     g.dm_io = io.dm
     print("finished setting up camera and DM object\n---\n")
 
-    #12-feb phasemask updates
-    g.model = build_rtc_model(cfg, beam=beam, phasemask=phasemask)
-    #g.model = build_rtc_model(cfg) # all the rtc runtime goodies that gets used in loop
+
+    g.model = build_rtc_model(cfg) # all the rtc runtime goodies that gets used in loop
 
     _print_runtime_info(g=g, socket=socket)
     if debug:

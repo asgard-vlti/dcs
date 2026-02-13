@@ -660,7 +660,7 @@ void* fetch_imgs(void *arg) {
   unsigned short *seq_img_ptr; // pointer used to build the "live" ROI
   int *liveroi_ptr;            // pointer to the "live" ROI
 
-  int numbufs = 4; // was reduced from initial 256. To be further tested
+  int numbufs = 16; // was reduced from initial 256. To be further tested
   bool timeoutrecovery = false;
   int timeouts;
   long int liveindex = 0;
@@ -674,7 +674,9 @@ void* fetch_imgs(void *arg) {
   long nbpix_roi_tosave = ROI[0].npx * ROI[0].nbs / 2;
 
   int ii, jj, ri;  // ii,jj pixel indices, ri: ROI index
-  int tsig[9] = {4,3,2,1,0,-1,-2,-3,-4};  // {2,-1,-1} 1to be dynamically allocated from the JSON. !!! If changing this, also change ROI[ii].nrs = 3; on line 230.
+  int tsig[9] = {4,3,2,1,0,-1,-2,-3,-4};  // {2,-1,-1} To be dynamically allocated from the JSON.
+  // !!! If changing this, also change ROI[ii].nrs = 3; on line 230.
+
   int seq_indices[9] = {0};   // frame indices part of current time sequence
   // int prev_liveindex = 0;     // frame index of previous image
 
@@ -688,36 +690,37 @@ void* fetch_imgs(void *arg) {
   pdv_flush_fifo(pdv_p);
   pdv_multibuf(pdv_p, numbufs);
   pdv_start_images(pdv_p, 0); // start a continuous acquisition
-
+  // pdv_start_images(pdv_p, numbufs);
   
   while (keepgoing > 0) {
     timeoutrecovery = false;
 
-	while (!timeoutrecovery) {
-	  // ===================================================
+    while (!timeoutrecovery) {
+      // ===================================================
       // before re-writing the circular buffer: save dark ?
       // ===================================================
       if (camconf->save_dark == 1) {
       	// save the entire circular buffer as a "dark"
-	    memcpy(svdark, (unsigned short *) shm_img->array.UI16,
-		  2 * nbpix_cub * sizeof(unsigned short));
-	    pthread_create(&tid_save_dark, NULL, save_dark, NULL);
-	    camconf->save_dark = 0;
-	    if (camconf->ndmr_mode == 1) {
-	      dark_reset_index = shm_img->md->size[2] - reset_cntr;
-	      printf("Dark reset index = %d\n", dark_reset_index);
-		}
-		else {
-	  	  dark_reset_index = 0;
-	  	  printf("Filled the non-NDMR mode buffer.\n");
-	  	  fflush(stdout);
-		}
+	memcpy(svdark, (unsigned short *) shm_img->array.UI16,
+	       2 * nbpix_cub * sizeof(unsigned short));
+	pthread_create(&tid_save_dark, NULL, save_dark, NULL);
+	camconf->save_dark = 0;
+	if (camconf->ndmr_mode == 1) {
+	  dark_reset_index = shm_img->md->size[2] - reset_cntr;
+	  printf("Dark reset index = %d\n", dark_reset_index);
+	}
+	else {
+	  dark_reset_index = 0;
+	  printf("Filled the non-NDMR mode buffer.\n");
+	  fflush(stdout);
+	}
       }
 
 #ifdef DEBUG_TIMING
       clock_gettime(CLOCK_REALTIME, &tstart);  // start time
 #endif
       image_p = pdv_wait_images(pdv_p, 1); // read the image
+      // image_p = pdv_wait_last_image(pdv_p, NULL); // read the image
 
       // ===================================================
       // read the reset marker in raw NDMR image
@@ -741,7 +744,6 @@ void* fetch_imgs(void *arg) {
       dtim = (tend.tv_sec - tstart.tv_sec) + (tend.tv_nsec - tstart.tv_nsec) / 1e9;
       tstart = tend;
 #endif
-      pdv_start_images(pdv_p, numbufs);
 
       shm_img->md->write = 1;              // signaling about to write
       memcpy(liveimg_ptr,                  // copy image to shared memory
@@ -811,19 +813,20 @@ void* fetch_imgs(void *arg) {
             }
 	    // ----- CLEAR of RESET -------
             else {*/
-              for (jj = 0; jj < ROI[ri].ysz; jj++) {
-                for (ii = 0; ii < ROI[ri].xsz; ii++) {
-                  liveroi_ptr[jj*roi_xsz+ii] = camconf->offset;
-                  for (int kk = 0; kk < ROI[ri].nrs; kk++) {
-                    seq_img_ptr = shm_img->array.UI16 + seq_indices[kk] * nbpix_frm;  // live pointer
-                    liveroi_ptr[jj*roi_xsz+ii] += tsig[kk] * (int)seq_img_ptr[(jj+y0) * cam_xsz + ii+x0];
-                    // Mike's DEBUGing to see why liveindex was wrong !!! 
-                    //if ((ri==4) && (jj==16) && (ii==16))
-                    //	printf("liveindex %ld. kk %d seq_index %d pixel value %d\n", liveindex, kk, seq_indices[kk], (int)seq_img_ptr[(jj+y0) * cam_xsz + ii+x0]);
-                  }
-                }
-              }
-	      //}
+	    for (jj = 0; jj < ROI[ri].ysz; jj++) {
+	      for (ii = 0; ii < ROI[ri].xsz; ii++) {
+		liveroi_ptr[jj*roi_xsz+ii] = camconf->offset;
+		for (int kk = 0; kk < ROI[ri].nrs; kk++) {
+		  seq_img_ptr = shm_img->array.UI16 + seq_indices[kk] * nbpix_frm;  // live pointer
+		  liveroi_ptr[jj*roi_xsz+ii] += tsig[kk] * (int)seq_img_ptr[(jj+y0) * cam_xsz + ii+x0];
+		  // Mike's DEBUGing to see why liveindex was wrong !!! 
+		  //if ((ri==4) && (jj==16) && (ii==16))
+		  //	printf("liveindex %ld. kk %d seq_index %d pixel value %d\n", liveindex, kk, seq_indices[kk], (int)seq_img_ptr[(jj+y0) * cam_xsz + ii+x0]);
+		}
+	      }
+	    }
+	    //}
+	    liveroi_ptr[0] = reset_cntr;
 	  }
           // ---------------- SHM house keeping ------------------
           shm_ROI_live[ri].md->write = 0;
@@ -885,6 +888,8 @@ void* fetch_imgs(void *arg) {
     // end of while loop
     // =================
   }
+  pdv_start_images(pdv_p, 1);  // stop the freerun mode
+  image_p = pdv_wait_images(pdv_p, 1); // read the final image
   return NULL;
 }
 

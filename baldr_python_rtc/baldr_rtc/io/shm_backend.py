@@ -18,6 +18,18 @@ try:
 except Exception:  # pragma: no cover
     shm = None
 
+"""
+
+------ CONGRATULATIONS 
+if you made it here you're probably wondering why i set up the shm backend like this and not just use the
+standard shmlib get_data, set_data methods in the main code. The reason is that my mac cannot properly run the shared memory like 
+linux, so i wanted an agnostic backend (with standard DMIO amd CameraIO classes) that could run shm on the real system (mimir) 
+in either operational or simulation mode, but also have a simulation mode that is more compatible across different OS that i 
+can run at home on a mac  
+
+have fun.
+
+"""
 
 
 # def _git_root() -> Path:
@@ -132,10 +144,10 @@ class ShmCameraIO(CameraIO):
     
 
     def close(self) -> None:
-        print('dodnt close shm')
-        # keep erase_file False for safety
-        #self._shm.close(erase_file=False)
-        #something seems to be deleting /dev/shm/files 
+        print('closing camera shm')
+        # keep erase_file False !!
+        self._shm.close(erase_file=False)
+
 
 ############## DM 
 @dataclass(frozen=True)
@@ -327,10 +339,10 @@ class ShmDMIO(DMIO):
         self._post()
 
     def close(self) -> None:
-        print('dodnt close shm')
-        # for ss in self.shms:
-        #     ss.close(erase_file=False)
-        # self.shms.clear()
-        # if getattr(self, "shm0", None) is not None:
-        #     self.shm0.close(erase_file=False)
-        #     self.shm0 = None
+        print("closing DM shm's") #print('dodnt close shm')
+        for ss in self.shms:
+            ss.close(erase_file=False)
+        self.shms.clear()
+        if getattr(self, "shm0", None) is not None:
+            self.shm0.close(erase_file=False)
+            self.shm0 = None

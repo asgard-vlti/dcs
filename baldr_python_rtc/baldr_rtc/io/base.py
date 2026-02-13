@@ -3,7 +3,18 @@ from dataclasses import dataclass
 import numpy as np
 from typing import Optional, Protocol
 
+"""
 
+------ CONGRATULATIONS 
+if you made it here you're probably wondering why i set up the shm backend like this and not just use the
+standard shmlib get_data, set_data methods in the main code. The reason is that my mac cannot properly run the shared memory like 
+linux, so i wanted an agnostic backend (with standard DMIO amd CameraIO classes) that could run shm on the real system (mimir) 
+in either operational or simulation mode, but also have a simulation mode that is more compatible across different OS that i 
+can run at home on a mac  
+
+have fun.
+
+"""
 
 @dataclass(frozen=True)
 class Frame:

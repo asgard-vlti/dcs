@@ -12,7 +12,9 @@ from xaosim.shmlib import shm
 from baldr_python_rtc.baldr_rtc.core.state import MainState, RuntimeGlobals, ServoState
 from baldr_python_rtc.baldr_rtc.telemetry.ring import TelemetryRingBuffer
 from baldr_python_rtc.baldr_rtc.core.config import readBDRConfig
-from baldr_python_rtc.baldr_rtc.server import build_rtc_model
+
+from baldr_python_rtc.baldr_rtc.core.model_factory import build_rtc_model
+#from baldr_python_rtc.baldr_rtc.server import build_rtc_model
 # global number of frames to average before correction
 #N0_2_AVG = 1
 
@@ -419,12 +421,14 @@ class RTCThread(threading.Thread):
                 )
 
                 print(" ...setting new config")
-                new_model = build_rtc_model(cfg, beam=self.g.beam, phasemask=new_pm)
+                new_model = build_rtc_model(cfg) # cfg contains phasemask and beam infor from readBDRConfig
 
                 # (Optional but recommended) validate shapes before swap
                 # e.g. ensure new_model.signal_space matches expected
 
                 self.g.rtc_config = cfg
+
+
                 self.g.model = new_model
                 self.g.phasemask = new_pm
 

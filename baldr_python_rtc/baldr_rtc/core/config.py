@@ -79,7 +79,7 @@ def readBDRConfig_legacy(config_path: str, *, beam: int, phasemask: str) -> BDRC
 
     phase_tbl = beam_tbl.get(phasemask)
     if not isinstance(phase_tbl, dict):
-        raise RuntimeError(f'Phase mask "{phasemask}" not found under {beam_key}')
+        raise RuntimeError(f'Phase mask "{phasemask}" not found under {beam_key} in config file {config_path}')
 
     ctrl_tbl = phase_tbl.get("ctrl_model")
     if not isinstance(ctrl_tbl, dict):
