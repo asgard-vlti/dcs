@@ -185,6 +185,7 @@ void servo_loop(){
         // Based on where we are in the modulation, set the high-order modes to be 
         // either positive or negative - relevant for the next image.
         control_u.ho_ix = (control_u.ho_ix + 1) % HO_CYCLE;
+        int last_ho_sign = control_u.ho_sign;
         if (control_u.ho_ix == HO_CYCLE - 1) {
             control_u.ho_sign *= -1;
         }
@@ -211,11 +212,15 @@ void servo_loop(){
 
         im_mutex.lock();
         if (control_u.ho_ix > 0) {
-            if (control_u.ho_sign > 0) {
+            if (last_ho_sign > 0) {
                 // Clear the plus image at the start of the plus phase.
                 if (control_u.ho_ix==1) for (int j=0;j<width*width;j++) im_plus[j]=0; 
                 for (int j=0;j<width*width;j++) {
                     im_plus[j] += subim[j];
+                }
+                // Save if at the end of cycle
+                if (control_u.ho_ix == (HO_CYCLE-1)) {
+                    for (int j=0;j<width*width;j++) im_plus_sum[j] += im_plus[j];
                 }
             } else {
                 // Clear the minus image at the start of the minus phase.
@@ -223,15 +228,12 @@ void servo_loop(){
                 for (int j=0;j<width*width;j++) {
                     im_minus[j] += subim[j];
                 }
+                // Save if at the end of cycle
+                if (control_u.ho_ix == (HO_CYCLE-1)) {
+                    for (int j=0;j<width*width;j++) im_minus_sum[j] += im_minus[j];
+                }
             }
-        } else {
-            // Update the plus or minus sum.
-            if (control_u.ho_sign > 0) {
-                for (int j=0;j<width*width;j++) im_plus_sum[j] += im_plus[j];
-            } else {
-                for (int j=0;j<width*width;j++) im_minus_sum[j] += im_minus[j];
-            }
-        }
+        } 
         im_mutex.unlock();
 
         // Are we ready for the high order loop? If so, subtract
