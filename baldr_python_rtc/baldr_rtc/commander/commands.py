@@ -45,6 +45,23 @@ def build_commander_module(
         configured = 1 if (len(cfg.matrices.I2M_LO) > 0 or len(cfg.matrices.I2M_HO) > 0) else 0
         return {"ok": True, "config_file": path, "configured": configured, "frequency": cfg.fps}
 
+
+    def update_phasemask_cmd(args):
+        # usage: update_phasemask <name>
+        if not args:
+            return {"ok": False, "error": "usage: update_phasemask <phasemask_name>"}
+
+        pm = str(args[0]).strip()
+        if not pm:
+            return {"ok": False, "error": "empty phasemask name"}
+
+        command_queue.put(make_cmd("UPDATE_PHASEMASK", phasemask=pm))
+
+        # Optional: reflect intent immediately in status (actual swap happens in RTC thread)
+        globals_.phasemask = pm
+
+        return {"ok": True, "queued": True, "phasemask": pm}
+
     ##################
     # TELEMETRY
     def telem_on(args):
@@ -335,6 +352,13 @@ def build_commander_module(
         # update reconstructor on-sky with new pupil measurement
         command_queue.put(make_cmd("UPDATE_RECON_HO"))
         return {"ok": True}
+    
+
+    def update_recon_KL(args):
+        # update reconstructor on-sky with new pupil measurement
+        command_queue.put(make_cmd("UPDATE_RECON_KL"))
+        return {"ok": True}
+    
     ##################
     # STATUS
     # !!IMPORTANT!! - this format is to match the expected format for wag (see legacy get_status in https://github.com/mikeireland/dcs/blob/main/baldr/baldr.cpp)
@@ -366,6 +390,13 @@ def build_commander_module(
     ##################
     # CONFIG
     m.def_command("readBDRConfig", read_bdr, description="Load/parse config.", arguments=[ArgumentSpec("config_file", "string")], return_type="object")
+    m.def_command(
+        "update_phasemask",
+        update_phasemask_cmd,
+        description="swap phasemask config (can run while main rtc loop is hot baby): update_phasemask <name>",
+        arguments=[ArgumentSpec("phasemask", "string")],
+        return_type="object",
+    )
     ##################
     # TELEMETRY
     m.def_command("telem_on", telem_on, description="Enable telemetry writing.", return_type="object")
@@ -404,6 +435,7 @@ def build_commander_module(
     
     m.def_command("update_recon_LO", update_recon_LO, description="Passive update of reconstructor matrix on-sky with new measured pupil", return_type="object") 
     m.def_command("update_recon_HO", update_recon_HO, description="Passive update of reconstructor matrix on-sky with new measured pupil", return_type="object") 
+    m.def_command("update_recon_KL", update_recon_KL, description="Passive update of reconstructor matrix on-sky with KL modes", return_type="object") 
 
     ##################
     # GAIN

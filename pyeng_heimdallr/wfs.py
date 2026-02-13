@@ -19,7 +19,11 @@ import asgard_alignment.controllino as co
 # pupil geometry design
 hcoords = np.loadtxt("N1_hole_coordinates.txt")
 
-default_log = "log_fringe_monitor.log"
+ddir = os.getenv('HOME') + '/fringe_monitor/'
+if not os.path.exists(ddir):
+    os.makedirs(ddir)
+
+default_log = ddir + "log_fringe_monitor.log"
 # ----------------------------------------
 # piston mode design
 dms = 12
@@ -154,6 +158,11 @@ class Heimdallr():
 
         self.gain = 0.2
 
+        self.bl_lbls = []
+        for ii in range(self.nbl):
+            bm1_id = np.argmax(self.hdlr1.kpi.BLM[ii]) + 1
+            bm2_id = np.argmin(self.hdlr1.kpi.BLM[ii]) + 1
+            self.bl_lbls.append(f"(B{bm1_id}-B{bm2_id})")
     # =========================================================================
     def init_logs(self):
         self.opds = [[], [], []]  # the log of the measured OPDs
@@ -490,7 +499,7 @@ class Heimdallr():
 
         utcnow = datetime.utcnow()
         tstamp = utcnow.strftime("%Y%m%d_%H:%M:%S")
-        logname = f"log_{tstamp}_HPOL{beamid}_scan.log"
+        logname = ddir + f"log_{tstamp}_HPOL{beamid}_scan.log"
         
         log(f"---- HPOL{beamid} SCAN sequence starting ----")
         x0_hpol = self.get_hpol_pos(beamid)  # initial position

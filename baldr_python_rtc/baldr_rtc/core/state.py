@@ -285,7 +285,7 @@ class RuntimeGlobals:
     servo_mode_LO: ServoState = ServoState.SERVO_OPEN
     servo_mode_HO: ServoState = ServoState.SERVO_OPEN
     pause_rtc: bool = False
-    number_frames_2_avg: int = 100
+    number_frames_2_avg: int = 1
     write_to_flat: bool = False
     # IO handles (wired by server at startup)
     camera_io: Optional[CameraIO] = None

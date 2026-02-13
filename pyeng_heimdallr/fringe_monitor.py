@@ -333,10 +333,17 @@ class MyMainWidget(QWidget):
         palette6 = [(38, 70, 83), (42,157,143), (138,177,125),
                     (233,196,106), (244,162,97), (231,111,81)]
 
+        self.legend = pg.LegendItem(brush=pg.mkBrush(255,255,255,196))
         for ii in range(self.wfs.nbl):
             self.logplot_vis_k1.append(self.gView_plot_vis_k1.plot(
                 [0, self.wfs.log_len], [ii, ii],
                 pen=pg.mkPen(palette6[ii], width=2), name=f"v2 #{ii+1}"))
+            self.legend.addItem(self.logplot_vis_k1[ii], self.wfs.bl_lbls[ii])
+
+        self.legend.setParentItem(self.gView_plot_vis_k1.graphicsItem())
+        # self.legend.setStyle({'background': 'rgba(255,255,255,128)',
+        #                       'border': 'rgba(0,0,0,255)'})
+        self.legend.setPos(20, 20)
 
         for ii in range(self.wfs.nbl):
             self.logplot_vis_k2.append(self.gView_plot_vis_k2.plot(

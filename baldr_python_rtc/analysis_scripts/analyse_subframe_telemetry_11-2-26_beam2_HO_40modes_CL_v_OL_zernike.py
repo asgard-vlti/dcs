@@ -1,3 +1,37 @@
+
+
+from astropy.io import fits
+import numpy as np
+import matplotlib.pyplot as plt
+
+pth = "/data/fullframe/"
+close_list = ["closed_b2", "b2_locked_2"]
+open_list = ["unlocked_b2", "unlocked_b2_2"]
+
+i=1
+dcl = fits.open( pth + close_list[i])
+dol = fits.open( pth + open_list[i])
+
+
+dx = 15
+i0=32;i1=29
+j0=25;j1=30
+fig,ax = plt.subplots(2,1)
+ax[0].imshow( np.mean( dcl[0].data[:,i0-dx:i0+dx,i1-dx:i1+dx] ,axis=0)-1000, vmin=0, vmax=100)
+ax[1].imshow( np.mean( dol[0].data[:,j0-dx:j1+dx,j0-dx:j1+dx] ,axis=0)-1000, vmin=0, vmax=100)
+plt.show()
+
+
+fig,ax = plt.subplots(2,1)
+ax[0].imshow( np.median( dcl[0].data[:,i0-dx:i0+dx,i1-dx:i1+dx] ,axis=0)-1000, vmin=0, vmax=100)
+ax[1].imshow( np.median( dol[0].data[:,j0-dx:j1+dx,j0-dx:j1+dx] ,axis=0)-1000, vmin=0, vmax=100)
+plt.show()
+
+
+
+######################################################
+# copied from the 10th below (could be useful here too)
+
 from __future__ import annotations
 
 from astropy.io import fits
