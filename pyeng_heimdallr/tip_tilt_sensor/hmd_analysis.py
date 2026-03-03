@@ -66,6 +66,35 @@ def unwrap(val, prev):
     else:
         return val + 2*np.pi
 
+def closes(mat, row):
+    ''' Identifies a matrix row that cancels the second argument '''
+    for ii, trow in enumerate(mat):
+        if (trow - row).dot(trow - row) == 0:
+            return ii, -1
+        if (trow + row).dot(trow + row) == 0:
+            return ii, 1
+    return 0, 0
+
+def closure_matrix(blm):
+    ''' Build the closure-phase matrix for the provided BLM '''
+    cpm = []
+    nbr = blm.shape[0]  # number of rows
+    for ii, row in enumerate(blm):
+        for jj in range(ii+1, nbr):
+            prod = row.dot(blm[jj])
+            if prod != 0:
+                sign2 = -np.sign(prod)
+                combo = row + sign2 * blm[jj]
+                kk, sign3 = closes(blm, combo)
+                if sign3 != 0:
+                    cp1, cp2 = [0] * nbr, [0] * nbr
+                    cp1[ii], cp2[ii] = 1.0, -1.0
+                    cp1[jj], cp2[jj] = 1.0 * sign2, -1.0 * sign2
+                    cp1[kk], cp2[kk] = 1.0 * sign3, -1.0 * sign3
+                    if (cp1 not in cpm) and (cp2 not in cpm):
+                        cpm.append(cp1)
+    return np.array(cpm).astype(int)
+
 # =============================================================================
 
 class HMDA:
@@ -171,10 +200,7 @@ class HMDA:
 
         # kernel-phase and closure-phase matrices
         self.KPM = self.sparse.kpi.KPM
-        self.CPM = np.array([[ 0,  0,  0,  1, -1, -1], # hard-coded for now
-                             [ 1, -1,  0,  0,  0, -1],
-                             [ 1,  0, -1, -1,  0,  0],
-                             [ 1,  0, -1,  1,  0,  0]])
+        self.CPM = closure_matrix(self.BLM)
 
         self.nkp = self.KPM.shape[0]  # contains 3 KPs
         self.ncp = self.CPM.shape[0]  # contains 1 additional CP
@@ -290,6 +316,29 @@ class HMDA:
                     (np.abs(uu1-uu0[ii]) < frad0) * \
                     (np.abs(vv1-vv0[ii]) < frad0))[:,0])
         return spl_ii
+
+    def calc_cp(self, phi, coff=1.0):
+        '''--------------------------------------------------------------------
+        Calculates closure phases of the provided (nb x nim) phase data phi
+
+        Parameters:
+        ----------
+        - phi: the (nbl x nbim) phase dataset
+        - coff: a CP unwrapping trick (default value = 1.0)
+        --------------------------------------------------------------------'''
+        res = self.CPM.dot(phi.T)
+        for ii in range(self.ncp):
+            res[ii] = (res[ii] + coff) % (2*np.pi) - coff
+        return res
+
+    def make_img_cube(self, fnames):
+        """--------------------------------------------------------------------
+        Build a single data cubes out of a (sorted) list of fits file names
+        --------------------------------------------------------------------"""
+        dcube = []
+        for fname in fnames:
+            dcube.append(pf.getdata(fname).astype(float))
+        return np.concatenate(dcube, axis=0)
 
     def compute_Fourier_slope_aux_data(self):
         """--------------------------------------------------------------------
@@ -491,7 +540,7 @@ class HMDA:
         return fig, ax
 
     def plot_histograms(self, vis2, bins=20, title=r"V$^2$ histograms",
-                        alpha=0.7):
+                        alpha=0.7, hrange=None):
         """--------------------------------------------------------------------
         Produces a figure with histograms of the provided |V|^2 for
         all six baselines.
@@ -512,6 +561,8 @@ class HMDA:
                                        bins=bins, label=lbl)
             ax[ii % 3, ii // 3].set_title(self.bl_lbls[ii])
             ax[ii % 3, ii // 3].legend(loc=1)
+            if hrange is not None:
+                ax[ii % 3, ii // 3].set_xlim(hrange)
         fig.set_tight_layout(True)
         fig.set_size_inches(8, 8, forward=True)
         fig.suptitle(title)
@@ -536,7 +587,7 @@ class HMDA:
             tax = ax[ii % self.ncp, 0]  # this ax
             tax.hist(
                 cp1[ii], color=palette6[ii], range=[-cmax, cmax],
-                alpha=0.5, bins=20, label=lbl)
+                alpha=0.5, bins=bins, label=lbl)
             tax.set_title(self.cp_lbls[ii])
             tax.legend(loc=1)
             tax.grid(True, axis='x')
@@ -545,7 +596,7 @@ class HMDA:
             tax = ax[ii % self.ncp, 1]
             tax.hist(
                 cp2[ii], color=palette6[ii], range=[-cmax, cmax],
-                alpha=0.5, bins=20, label=lbl)
+                alpha=0.5, bins=bins, label=lbl)
             tax.set_title(self.cp_lbls[ii])
             tax.legend(loc=1)
             tax.grid(True, axis='x')
@@ -555,7 +606,8 @@ class HMDA:
         fig.suptitle(title)
         return fig, ax
 
-    def plot_line_plots(self, data, title="Fourier Phase", alpha=1.0):
+    def plot_line_plots(self, data, title="Fourier Phase",
+                        alpha=1.0, vrange=None):
         """--------------------------------------------------------------------
         Produces a figure with plots of the provided *data* for all baselines.
 
@@ -573,6 +625,8 @@ class HMDA:
             ax[ii % 3, ii // 3].set_title(self.bl_lbls[ii])
             print(self.bl_lbls[ii],
                   f"{np.mean(data[:, ii]):+5.2f} +/- {np.std(data[:,ii]):.3f}")
+            if vrange is not None:
+                ax[ii % 3, ii // 3].set_ylim(vrange)
         fig.set_tight_layout(True)
         fig.set_size_inches(8, 8, forward=True)
         fig.suptitle(title)
@@ -587,6 +641,15 @@ class HMDA:
         for ii in range(nim):
             cvis[ii] = self.get_raw_cvis(model, dcube[ii])
         return cvis
+
+    def get_v2_uphi(self, cvis):
+        """--------------------------------------------------------------------
+        Nothing too fancy here:
+        take cvis array (nim x 2-nbl) and return v2 and the unwrapped phase
+        --------------------------------------------------------------------"""
+        v2 = np.abs(cvis[:,:self.nbl])**2
+        phi = np.unwrap(np.angle(cvis[:,:self.nbl]), axis=0)
+        return v2, phi
 
     def fit_phase_slope(self, phi, xyc):
         """--------------------------------------------------------------------
