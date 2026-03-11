@@ -211,9 +211,19 @@ class HMDA:
             isz=self.isz, wl=self.K2_wl, pscale=self.pscale)
         self.K1DM.update_img_properties(
             isz=self.isz, wl=self.K1_wl, pscale=self.pscale)
-
+                
         self.spl_ii = self.sort_full_model(self.K1DM, self.K1SM, self.frad)
-        self.compute_Fourier_slope_aux_data()
+
+        # uu1, vv1 = self.K1DM.kpi.UVC[self.spl_ii[0]].T
+        uu1, vv1 = self.K1DM.kpi.UVC.T
+        uu1, vv1 = np.append(uu1, -uu1), np.append(vv1, -vv1)
+        self.spl0_ii = np.argwhere(
+            np.sqrt(uu1**2 + vv1**2) < 0.5)[:,0]
+        self.suu = uu1[self.spl_ii[0]] - uu1[self.spl_ii[0]].mean()
+        self.svv = vv1[self.spl_ii[0]] - vv1[self.spl_ii[0]].mean()
+
+        # self.suu0, self.svv0 = self.K1DM.kpi.UVC[self.spl0_ii].T
+        self.suu0, self.svv0 = uu1[self.spl0_ii], vv1[self.spl0_ii]
         self.bl_lbls = self.make_bl_labels()
         self.cp_lbls = self.make_cp_labels()
 
@@ -340,52 +350,6 @@ class HMDA:
             dcube.append(pf.getdata(fname).astype(float))
         return np.concatenate(dcube, axis=0)
 
-    def compute_Fourier_slope_aux_data(self):
-        """--------------------------------------------------------------------
-        Compute reusable auxilliary data useful to estimate phase slope across
-        a Fourier splodge.
-        --------------------------------------------------------------------"""
-        uu1, vv1 = self.K1DM.kpi.UVC.T
-        uu1, vv1 = np.append(uu1, -uu1), np.append(vv1, -vv1)
-
-        # use the first Fourier splodge as a template
-        iis = self.spl_ii[0]
-        self.uusl0, self.vvsl0 = uu1[iis], vv1[iis]
-        self.uusl0 -= self.uusl0.mean()
-        self.vvsl0 -= self.vvsl0.mean()
-        self.uusl0 /= self.uusl0.dot(self.uusl0)
-        self.vvsl0 /= self.vvsl0.dot(self.vvsl0)
-
-    def get_splodge_slope(self, phase):
-        """--------------------------------------------------------------------
-        Returns the (u,v) slope of the Fourier phase values across a sploge
-        --------------------------------------------------------------------"""
-        du = phase.dot(self.uusl0)
-        dv = phase.dot(self.vvsl0)
-        return np.array([du, dv])
-
-    def get_splodge_slopes(self, phase):
-        """--------------------------------------------------------------------
-        Returns the (u,v) slopes of all Fourier splodges
-        --------------------------------------------------------------------"""
-        nbuv = self.nbl
-        duv = np.zeros((nbuv, 2))
-        for ii in range(nbuv):
-            duv[ii] = self.get_splodge_slope(phase[self.spl_ii[ii]])
-        return duv
-
-    def get_global_slope(self, phase):
-        """--------------------------------------------------------------------
-        Returns the (u,v) slopes of all Fourier splodges.
-
-        !!! TBD !!!
-        --------------------------------------------------------------------"""
-        uu1, vv1 = self.K1DM.kpi.UVC.T
-        uu1, vv1 = np.append(uu1, -uu1), np.append(vv1, -vv1)
-        nbuv = self.nbl
-        # for ii in range(nbuv):
-        pass
-
     def get_splodge_pos(self, v2, coarse=False):
         """--------------------------------------------------------------------
         Returns the (u,v) v2 center of gravity of the splodges
@@ -432,7 +396,39 @@ class HMDA:
         xy0 -= xy0[2,:]  # beam #3 is our reference
         return xy0
 
-    def get_pupil_wft(self, img, pfilter=True):
+    def unwrapped_dense_fourier_phase(self, img, filtered=False):
+        """--------------------------------------------------------------------
+        Returns a Fourier phase vector using the dense pupil model
+
+        Parameters:
+        ----------
+        - img: a 32x32 interferogram image
+        --------------------------------------------------------------------"""
+        phi = np.angle(self.get_raw_cvis(self.dense, img, full=True))
+        phi0 = np.angle(self.get_raw_cvis(self.sparse, img, full=True))
+
+        for ii in [0, 1, 2, 3, 4, 5, 11]: # range(2 * self.nbl):
+            sii = self.spl_ii[ii] # this splodge's indices
+            phi[sii] -= phi0[ii]
+            phi[sii] = (phi[sii] + 1.6) % (2*np.pi) - 1.6
+
+            if filtered:
+                slx, bx = np.polyfit(self.suu, phi[sii], 1)
+                sly, by = np.polyfit(self.svv, phi[sii], 1)
+                # print(f"slx = {slx:+.3f}, sly = {sly:+.3f}")
+                phi[sii] = slx * self.suu + sly * self.svv
+
+        sii = self.spl0_ii
+        phi[sii] = (phi[sii] + 1.6) % (2*np.pi) - 1.6
+        if filtered:
+            slx, bx = np.polyfit(self.suu0, phi[sii], 1)
+            sly, by = np.polyfit(self.svv0, phi[sii], 1)
+            phi[sii] = slx * self.suu0 + sly * self.svv0
+            # print(f"slx = {slx:+.3f}, sly = {sly:+.3f}")
+
+        return phi[:396]
+
+    def get_pupil_wft(self, img, filtered=False):
         """--------------------------------------------------------------------
         Analyzes an image and returns a wavefront, according to the dense model
 
@@ -440,19 +436,8 @@ class HMDA:
         ----------
         - img: a 32x32 interferogram image
         --------------------------------------------------------------------"""
-
-        if pfilter:
-            phi = np.angle(self.get_raw_cvis(self.dense, img, full=True))
-            phi0 = np.angle(self.get_raw_cvis(self.sparse, img, full=True))
-
-            for ii in range(2 * self.nbl):
-                phi[self.spl_ii[ii]] -= phi0[ii]
-                phi[self.spl_ii[ii]] = (phi[self.spl_ii[ii]] + 1.6) % (2*np.pi) - 1.6
-            wft = np.append(0, self.dense.PINV.dot(phi[:396]))
-        else:
-            cvis = self.get_raw_cvis(self.dense, img, full=False)
-            phi = np.angle(cvis)
-            wft = np.append(0, self.dense.PINV.dot(phi))
+        phi = self.unwrapped_dense_fourier_phase(img, filtered=filtered)
+        wft = np.append(0, self.dense.PINV.dot(phi[:396]))
         return wft
 
     def wft_to_ttxy(self, wft):
@@ -503,7 +488,7 @@ class HMDA:
         return cvis
 
     def plot_fourier_splodges(self, data, phase=False, cmap=cm.rainbow,
-                              vmin=None, vmax=None):
+                              vmin=None, vmax=None, central=False):
         """--------------------------------------------------------------------
         Produces a 2D plot of the distribution of *data* according to the model.
 
@@ -530,6 +515,10 @@ class HMDA:
             iis = self.spl_ii[ii]
             ax.scatter(uu1[iis], vv1[iis], c=data[iis],
                        vmin=vmin, vmax=vmax, cmap=cmap)
+        if central:
+            ax.scatter(self.suu0, self.svv0, c=data[self.spl0_ii],
+                       vmin=vmin, vmax=vmax, cmap=cmap)
+
         for ii in range(self.nbl):
             circ = plt.Circle((uu0[ii], vv0[ii]), radius=self.frad,
                               color=palette6[ii], fill=False, lw=4)
