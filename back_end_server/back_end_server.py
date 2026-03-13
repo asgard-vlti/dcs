@@ -215,6 +215,7 @@ class BackEndServer:
             "cam_server": 6667,
             "DM_server": 6666,
         },
+        baldr_mode = "FAINT",
     ):
         self.port = port
         # self.baldr_commands = baldr_back_end_server.BaldrCommands() #This is the Ben way.
@@ -645,6 +646,32 @@ class BackEndServer:
                 _log_subprocess_output(process, prefix=f"{command_name}-beam{beam}")
                 logging.info(f"Started s_b-autoalign script for beam {beam}.")
                 time.sleep(0.8)
+        elif command_name == "s_b-mode":
+            script = Path("/home/asg/Progs/repos/dcs/dcs/cmd_scripts/b_mode.py")
+            if _param_value(command.get("parameters", []), "mode") is None:
+                return self.create_response("ERROR: mode parameter is required")
+            mode = _param_value(command.get("parameters", []), "mode")
+            if mode.upper() not in ["FAINT", "STANDARD"]:
+                return self.create_response("ERROR: mode parameter must be FAINT or STANDARD")
+            if self.baldr_mode.upper() == mode.upper():
+                logging.info(f"Mode is already set to {mode.upper()}. No action taken.")
+                pass
+            else:
+                self.baldr_mode = mode.upper()
+                cmd = [
+                    sys.executable,
+                    str(script),
+                    mode.upper(),
+                ]
+                process = subprocess.Popen(
+                    cmd,
+                    cwd=str(script.parent),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )          
+                _log_subprocess_output(process, prefix=f"{command_name}-{mode}")
+                logging.info(f"Started s_b-mode script with mode {mode}.")
+                time.sleep(0.8)   
         else:
             logging.error(f"Unknown script command '{command_name}'")
             return self.create_response(
