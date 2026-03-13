@@ -208,6 +208,10 @@ class BackEndServer:
             "baldr2": 6663,
             "baldr3": 6664,
             "baldr4": 6665,
+            "baldrtt1": 6671,
+            "baldrtt1": 6672,
+            "baldrtt1": 6673,
+            "baldrtt1": 6674,
             "cam_server": 6667,
             "DM_server": 6666,
         },
@@ -303,8 +307,6 @@ class BackEndServer:
             return self.abort()
         elif command_name == "expstatus":
             return self.expstatus(command)
-        elif command_name == "foreground":
-            return self.foreground(command)
         elif command_name.startswith("bld_"):
             # Fire-and-forget RTS
             return self.handle_bld_rts(command)
@@ -769,7 +771,6 @@ class BackEndServer:
 
         return self.create_response(res)
 
-    # def foreground(self, command):
 
 def main():
     server = BackEndServer()
