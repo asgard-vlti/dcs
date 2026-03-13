@@ -7,11 +7,12 @@ import zmq
 import json
 import base64
 
-server_port = 6660
+server_port = 4190#6660
 context = zmq.Context()
 socket = context.socket(zmq.REQ)
 #socket.connect(f"tcp://192.168.100.2:{server_port}")
-socket.connect(f"tcp://localhost:{server_port}")
+#socket.connect(f"tcp://localhost:{server_port}")
+socket.connect(f"tcp://pyxis:{server_port}")
 
 print(f"ZMQ shell interface to talk to the heimdallr server on port {server_port}")
 
