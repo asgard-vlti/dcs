@@ -217,6 +217,7 @@ class BackEndServer:
         },
         baldr_mode = "FAINT",
     ):
+        self.baldr_mode = baldr_mode
         self.port = port
         # self.baldr_commands = baldr_back_end_server.BaldrCommands() #This is the Ben way.
         self.context = zmq.Context()

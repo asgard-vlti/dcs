@@ -3,12 +3,13 @@ import argparse
 import subprocess
 from pathlib import Path
 import shlex
+import os
 
 # to start all the Baldr RTCs
 BEAMS = [1, 2, 3, 4]
 
 
-def launch_in_xterm(title: str, argv: list[str]):
+def launch_in_xterm(title: str, argv: list[str], env):
     # Build the command string safely
     cmd_str = " ".join(shlex.quote(x) for x in argv)
 
@@ -18,9 +19,11 @@ def launch_in_xterm(title: str, argv: list[str]):
         "-T", title,
         "-hold",
         "-e", cmd_str,
-    ])
+    ], env=env)
 
 def main():
+    my_env = os.environ.copy()
+    my_env["OPENBLAS_NUM_THREADS"] = "1"
     ap = argparse.ArgumentParser()
     ap.add_argument("--phasemask", default="H4")
     ap.add_argument("--config-template", default="/usr/local/etc/baldr/baldr_config_{beam}.toml")
@@ -37,6 +40,6 @@ def main():
             "--config", args.config_template.format(beam=b),
         ]
 
-        launch_in_xterm(f"Baldr RTC beam {b}", argv)
+        launch_in_xterm(f"Baldr RTC beam {b}", argv, my_env)
 
     return 0
