@@ -144,7 +144,7 @@ void set_delay_lines(Eigen::Vector4d dl) {
 
 void add_to_delay_lines(Eigen::Vector4d dl) {
     // First, decide if we are ignoring this command
-    if (delay_line_type =="hfo"){
+    if (settings.s.delay_line_type =="hfo"){
         // Only send if more than 0.5 since last offset
         auto now = std::chrono::high_resolution_clock::now();
         double seconds_since_last = std::chrono::duration<double>(now - last_hfo_offset).count();
@@ -274,7 +274,7 @@ void move_main_dl()
     nlohmann::json params = nlohmann::json::array();
     params.push_back({{"name", "opd_offset"}, {"value", {-next_offload(0), -next_offload(1), -next_offload(2), -next_offload(3)}}});
     // Example: offset_valid and fringe_detect can be filled with dummy or real values as needed
-    if ((offload_mode == OFFLOAD_OFF))
+    if ((settings.s.offload_mode == OFFLOAD_OFF))
     	params.push_back({{"name", "offset_valid"}, {"value", {0, 0, 0, 0}}});
     else
     	params.push_back({{"name", "offset_valid"}, {"value", {1, 1, 1, 1}}});
@@ -315,7 +315,7 @@ void dl_offload(){
 
         // Check if we need to zero the dl_offload
         if (zero_offload) {
-            if (delay_line_type == "hfo") {
+            if (settings.s.delay_line_type == "hfo") {
                 // Read the current HFO positions and set the offsets to these values
                 for (int i = 0; i < N_TEL; i++) {
                     std::string message = "read HFO" + std::to_string(i+1);
@@ -363,17 +363,17 @@ void dl_offload(){
         for (int i=0;i<N_TEL;i++)
     	  if (last_offload(i) != next_offload(i) + search_offset(i))
     		offload_changed=true;
-    	if ((offload_changed) || (offload_mode != last_offload_mode)){
+    	if ((offload_changed) || (settings.s.offload_mode != last_offload_mode)){
 		    // Do the offload! It is up to the specific function to check if the offload
 		    // is significant enough to do - only if so, it will move and 
 		    // update last_offload.
-		    if (delay_line_type == "piezo") {
+		    if (settings.s.delay_line_type == "piezo") {
 		        // Move the piezo delay line to the next position
 		        move_piezos();
-		    } else if (delay_line_type == "hfo") {
+		    } else if (settings.s.delay_line_type == "hfo") {
 		        // Move the delay line to the next position
 		        move_hfo();
-		    } else if (delay_line_type == "rmn") {
+		    } else if (settings.s.delay_line_type == "rmn") {
 		        move_main_dl();
 		    } else {
 		        std::cout << "Delay line type not recognised" << std::endl;
@@ -385,7 +385,7 @@ void dl_offload(){
 		    double timestamp = ms / 1000.0;
 		    log_file << fmt::format("{:.3f} {} {:.6f} {:.6f} {:.6f} {:.6f}\n",
 		        timestamp,
-		        delay_line_type,
+		        settings.s.delay_line_type,
 		        next_offload(0), next_offload(1), next_offload(2), next_offload(3));  
 		 }      
     }
