@@ -249,12 +249,14 @@ void servo_loop(){
             // Here we could compute the high-order modes based on norm_imsub
             //!!! needs a reconstrutor.
 
-            // Multiply the high-order modes by the influence functions to get the DM shape.
-            control_u.DM = control_a.influence_functions * control_a.modes;
-             // Update the DM image with the new high-order shape.
-            for (int i=0; i<N_ACTUATORS; i++) 
-                DM_high.array.D[i] = control_u.DM(i);
-            ImageStreamIO_sempost(&master_DM, 1);
+            if (servo_mode != SERVO_OFF){
+                // Multiply the high-order modes by the influence functions to get the DM shape.
+                control_u.DM = control_a.influence_functions * control_a.modes;
+                // Update the DM image with the new high-order shape.
+                for (int i=0; i<N_ACTUATORS; i++) 
+                    DM_high.array.D[i] = control_u.DM(i);
+                ImageStreamIO_sempost(&master_DM, 1);
+            }
         }
 
         // Done with critical parts. Update the boxcar average
