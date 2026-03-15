@@ -336,13 +336,21 @@ class BackEndServer:
         """
 
         # Map WAG verbs -> Commander command strings
-        cmd_map = {
-            "bld_open_lo": 'open_baldr_LO ""',
-            "bld_open_ho": 'open_baldr_HO ""',
-            "bld_close_lo": 'close_baldr_LO ""',
-            "bld_close_ho": 'close_baldr_HO ""',
-            "bld_n0_update": 'N0_update ""',
-        }
+        if (self.baldr_mode=="STANDARD"):
+            cmd_map = {
+                "bld_open_lo": 'open_baldr_LO ""',
+                "bld_open_ho": 'open_baldr_HO ""',
+                "bld_close_lo": 'close_baldr_LO ""',
+                "bld_close_ho": 'close_baldr_HO ""',
+                "bld_n0_update": 'N0_update ""',
+            }
+        else:
+            cmd_map = {
+                "bld_open_lo": 'servo "off"',
+                "bld_open_ho": 'servo "tt"',
+                "bld_close_lo": 'servo "tt"',
+                "bld_close_ho": 'servo "ho"',
+            }
 
         name = (command.get("name") or "").lower()
         if name not in cmd_map:
@@ -381,7 +389,10 @@ class BackEndServer:
         errors = []
 
         for b in target_beams:
-            key = f"baldr{b}"
+            if (self.baldr_mode == "STANDARD"):
+                key = f"baldr{b}"
+            else:
+                key = f"baldrtt{b}"
             sock = self.servers.get(key)
             if sock is None:
                 errors.append(f"{key}: not connected")

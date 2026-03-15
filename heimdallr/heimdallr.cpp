@@ -146,16 +146,15 @@ void set_offload_time(uint time) {
 std::string set_offload_mode(std::string mode) {
     settings.mutex.lock();
     if (mode == "off") {
-        offload_mode = OFFLOAD_OFF;
+        settings.s.offload_mode = OFFLOAD_OFF;
     } else if ((mode == "nested") || (mode == "nest")) {
-        offload_mode = OFFLOAD_NESTED;
+        settings.s.offload_mode = OFFLOAD_NESTED;
         // Reset the offload to zero.
         control_u.dl_offload.setZero();
-    } else if (mode == "gd") {
-        offload_mode = OFFLOAD_GD;
-        servo_mode = SERVO_OFF;
+        settings.s.offload_mode = OFFLOAD_GD;
+        settings.s.servo_mode = SERVO_OFF;
     } else if ((mode == "man") || (mode =="manual")) {
-        offload_mode = OFFLOAD_MANUAL;
+        settings.s.offload_mode = OFFLOAD_MANUAL;
     } else {
         std::cout << "Offload mode not recognised" << std::endl;
         settings.mutex.unlock();
@@ -258,7 +257,7 @@ void set_delay_line_type(std::string type) {
 
 // A wrapper for set_delay_lines that takes 4 doubles as input.
 std::string set_delay_lines_wrapper(double delay1=0.0, double delay2=0.0, double delay3=0.0, double delay4=0.0) {
-    if (offload_mode == OFFLOAD_OFF) return "ERROR: Offloads off. Set to manual to use the dls command.";
+    if (settings.s.offload_mode == OFFLOAD_OFF) return "ERROR: Offloads off. Set to manual to use the dls command.";
     Eigen::Vector4d delays = Eigen::Vector4d::Zero();
     delays(0) = delay1;
     delays(1) = delay2;
@@ -413,13 +412,12 @@ bool foreground_in_place = false;
 void set_foreground(int state) {
     static const Eigen::Vector4d fg_offset(-600.0, -200.0, 200.0, 600.0);
     if (state == 1 && !foreground_in_place) {
-        if (offload_mode == OFFLOAD_OFF) offload_mode=OFFLOAD_MANUAL;
+        if (settings.s.offload_mode == OFFLOAD_OFF) settings.s.offload_mode=OFFLOAD_MANUAL;
         add_to_delay_lines(fg_offset);
         foreground_in_place = true;
         
     } else if (state == 0 && foreground_in_place) {
-    	if (offload_mode == OFFLOAD_MANUAL) offload_mode=OFFLOAD_OFF;
-        add_to_delay_lines(-fg_offset);
+    	if (settings.s.offload_mode == OFFLOAD_MANUAL) settings.s.offload_mode=OFFLOAD_OFF;
         foreground_in_place = false;
     }
 }
@@ -509,9 +507,9 @@ std::string set_gd_boxcar(int n){
     baselines.set_gd_boxcar(n);
     baseline_mutex.unlock();
     // Update the gd_gain to keep the same overall gain.
-    pid_settings.mutex.lock();
-    pid_settings.gd_gain = pid_settings.gd_gain * (double)baselines.n_gd_boxcar / (double)n;
-    pid_settings.mutex.unlock();
+    settings.mutex.lock();
+    settings.s.gd_gain = settings.s.gd_gain * (double)baselines.n_gd_boxcar / (double)n;
+    settings.mutex.unlock();
     return "OK";
 }
 
@@ -634,7 +632,7 @@ int main(int argc, char* argv[]) {
     settings.s.pd_threshold = 4.5;
     settings.s.gd_search_reset = 6.0;
     settings.s.kp = 0.5;
-    settings.s.gd_gain = settings.s.kp / INIT_GD_BOXCAR;
+    settings.s.gd_gain = settings.s.kp / INIT_N_GD_BOXCAR;
     settings.s.offload_gd_gain = 1.0;
     settings.s.servo_mode=SERVO_OFF;
     settings.s.offload_mode=OFFLOAD_OFF;
