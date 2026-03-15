@@ -45,6 +45,7 @@
 // Group delay has naturally an SNR that is 2.5 times lower, so the SNR ratio is 0.2/0.04*2.5 = 12.5
 // ... this means we need 12.5^2 = ~150 times more frames to average for group delay than for
 // phase delay.
+#define INIT_N_GD_BOXCAR 128
 #define MAX_N_GD_BOXCAR 512 
 #define MAX_N_PD_BOXCAR 256  // Maximum number of frames to keep for phase delay history (phasor and phase)
 #define MAX_N_BS_BOXCAR 256   // Maximum number of frames to average for bispectrum
@@ -169,18 +170,6 @@ struct Bispectrum{
     int n_bs_boxcar, ix_bs_boxcar;
 };
 
-struct PIDSettings{
-    std::mutex mutex;
-    double kp;
-    double ki;
-    double kd;
-    double integral;
-    double dl_feedback_gain;
-    double gd_gain;
-    // Gain when operating GD only in steps - strictly not part of PID.
-    double offload_gd_gain; 
-};
-
 //-------Commander structs-------------
 // An encoded 2D image in row-major form.
 struct EncodedImage
@@ -223,8 +212,12 @@ struct Settings {
     int offload_mode, servo_mode;
 };
 
-
 //-------End of Commander structs------
+
+struct LocalSettings {
+    Settings s;
+    std::mutex mutex;
+};
 
 // -------- Extern global definitions ------------
 extern IMAGE DMs[N_TEL];
@@ -233,9 +226,7 @@ extern IMAGE master_DMs[N_TEL];
 extern toml::table config;
 
 // Servo parameters. These are the parameters that will be adjusted by the commander
-extern int servo_mode, offload_mode;
-extern uint offload_time_ms;
-extern PIDSettings pid_settings;
+extern LocalSettings settings;
 extern ControlU control_u;
 extern ControlA control_a;
 extern Baselines baselines;
@@ -250,7 +241,6 @@ extern std::mutex baseline_mutex, beam_mutex;
 extern std::atomic<bool> zero_offload;
 // DL offload variables
 extern bool keep_offloading;
-extern std::string delay_line_type;
 extern Eigen::Vector4d search_offset;
 extern Eigen::Vector4d next_offload;
 
@@ -328,7 +318,3 @@ void set_delay_line(int dl, double value);
 void dl_offload();
 void start_search(uint search_dl_in, double start, double stop, double rate, uint dt_ms, double threshold);
 
-// Thresholds for fringe tracking (now variables)
-extern double gd_threshold;
-extern double pd_threshold;
-extern double gd_search_reset;
