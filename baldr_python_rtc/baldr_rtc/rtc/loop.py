@@ -670,12 +670,13 @@ class RTCThread(threading.Thread):
                 #opd_metric = np.mean( i[ self.g.model.inner_pupil_filt.astype(bool) ] ) / self.g.model.N0_runtime#self.g.model.perf_model( i_norm , self.g.model.perf_param)
                 #self.g.model.perf_model(i_norm, self.g.model.perf_param) if self.g.model.perf_model is not None else 0.0 # g.perf_funct( )
 
-                # --- IO: write DM command (placeholder) ---
-                if self.g.dm_io is not None:
-                    # comment out for mike
+                # ---  write DM command ---
+                if (self.g.dm_io is not None) and (int(self.g.servo_mode_LO) != 0 or int(self.g.servo_mode_HO) != 0):
                     self.g.dm_io.write(dcmd)
-                    #555
+                elif self.g.dm_io is None:
+                    print('no DM object to write to (self.g.dm_io is None!). This means the DM wont be actuating from the RTC and is probably a bug!')
 
+                    
                 # set flag to not iterate (until we average the next frames)
                 run_iteration = 0
 
