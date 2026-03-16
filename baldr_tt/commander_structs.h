@@ -47,6 +47,7 @@ template <> struct adl_serializer<Settings> {
         j["focus_offset"] = p.focus_offset;
         j["px"] = p.px;
         j["py"] = p.py;
+        j["servo_mode"] = p.servo_mode;
     }
     static void from_json(const json& j, Settings& p) {
         p = Settings();
@@ -62,6 +63,7 @@ template <> struct adl_serializer<Settings> {
         j.at("focus_offset").get_to(p.focus_offset);
         j.at("px").get_to(p.px);
         j.at("py").get_to(p.py);
+        j.at("servo_mode").get_to(p.servo_mode);
     }
    };
 template <> struct adl_serializer<TTMet> {

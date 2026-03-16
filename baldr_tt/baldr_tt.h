@@ -6,6 +6,7 @@
 #include <ImageStreamIO.h>
 #include <stdlib.h>
 #include <iostream>
+#include <fstream>
 #include <atomic>
 #define TOML_HEADER_ONLY 0
 #include <toml.hpp>
@@ -87,6 +88,7 @@ struct Settings
     double gauss_hwidth;
     double ttxo, ttyo, focus_offset;
     int px, py;
+    int servo_mode;
 };
 
 struct TTMet
@@ -128,7 +130,6 @@ extern toml::table config;
 extern int beam, width, sz;
 
 // Servo parameters. These are the parameters that will be adjusted by the commander
-extern int servo_mode;
 extern PIDSettings settings;
 extern RTStatus rt_status;
 extern ControlU control_u;

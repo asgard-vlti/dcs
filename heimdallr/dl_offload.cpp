@@ -130,7 +130,7 @@ bool initialize_delay_line(std::string type){
             std::cout << "Failed to initialize ZMQ for WAG RMN delay lines." << std::endl;
             return false;
         }
-    } else {
+    } else if (type != "off") {
         std::cout << "Delay line type not recognised: " << type << std::endl;
         return false;
     } 

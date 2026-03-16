@@ -120,7 +120,7 @@ void servo_loop(){
     initialise_servo();
     cnt = subarray.md->cnt0;
     catch_up_with_sem(&subarray, 2);
-    while(servo_mode != SERVO_STOP){
+    while(settings.s.servo_mode != SERVO_STOP){
         cnt_since_init++; //This should "never" wrap around, as a long int is big.
         // See if there was a semaphore signalled for the next frame to be ready in K1 and K2
         ImageStreamIO_semwait(&subarray, 2);
@@ -191,7 +191,7 @@ void servo_loop(){
         }
         
         // Set the DM if we are in the appropriate mode.
-        if ((servo_mode == SERVO_HO) || (servo_mode == SERVO_TT)) 
+        if ((settings.s.servo_mode == SERVO_HO) || (settings.s.servo_mode == SERVO_TT)) 
             set_dm_tilt_foc(control_u.tx, control_u.ty, settings.s.focus_offset + settings.s.focus_amp * control_u.ho_sign);
         else
             set_dm_tilt_foc(settings.s.ttxo, settings.s.ttyo, settings.s.focus_offset);
@@ -249,7 +249,7 @@ void servo_loop(){
             // Here we could compute the high-order modes based on norm_imsub
             //!!! needs a reconstrutor.
 
-            if (servo_mode != SERVO_OFF){
+            if (settings.s.servo_mode != SERVO_OFF){
                 // Multiply the high-order modes by the influence functions to get the DM shape.
                 control_u.DM = control_a.influence_functions * control_a.modes;
                 // Update the DM image with the new high-order shape.

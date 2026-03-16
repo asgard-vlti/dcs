@@ -14,7 +14,6 @@ extern "C" {
 toml::table config;
 
 // Servo parameters. These are the parameters that will be adjusted by the commander
-int servo_mode=SERVO_OFF;
 int beam=1, width=21;
 PIDSettings settings;
 RTStatus rt_status;
@@ -122,18 +121,22 @@ bool load_reconstructor(std::string filename){
 
 // Set the servo mode
 void set_servo_mode(std::string mode) {
+    int new_mode;
     if (mode == "off") {
-        servo_mode = SERVO_OFF;
+        new_mode = SERVO_OFF;
     } else if (mode == "tt") {
-        servo_mode = SERVO_TT;
+        new_mode = SERVO_TT;
     } else if (mode == "ho") {
-        servo_mode = SERVO_HO;
+        new_mode = SERVO_HO;
     } else {
         std::cout << "Servo mode not recognised" << std::endl;
         return;
     }
+    settings.mutex.lock();
+    settings.s.servo_mode = new_mode;
+    settings.mutex.unlock();
     // Reset the control_u parameters !!! TODO
-    std::cout << "Servo mode updated to " << servo_mode << std::endl;
+    std::cout << "Servo mode updated to " << new_mode << std::endl;
     return;
 }
 
@@ -250,6 +253,14 @@ void zero_tt(){
     }
     // Set the new px and py. Error checking is done in set_pxy.
     set_pxy(px_new, py_new);
+    // Log the new px and py to /usr/local/etc/ttN.txt
+    std::string tt_file = "/usr/local/etc/tt" + std::to_string(beam) + ".txt";
+    std::ofstream ofs(tt_file, std::ofstream::trunc);
+    if (ofs.is_open()) {
+        ofs << px_new << " " << py_new << std::endl;
+    } else {
+        std::cerr << "Warning: could not write to " << tt_file << std::endl;
+    }
 }
 
 TTMet get_ttmet(unsigned int last_cnt){
@@ -345,6 +356,19 @@ int main(int argc, char* argv[]) {
     beam = config["beam"].value_or(1);
     settings.s.px = config["px"].value_or(15);
     settings.s.py = config["py"].value_or(15);
+    // If /usr/local/etc/ttN.txt exists, override px and py with its values.
+    {
+        std::string tt_file = "/usr/local/etc/tt" + std::to_string(beam) + ".txt";
+        std::ifstream ifs(tt_file);
+        if (ifs.is_open()) {
+            int px_file, py_file;
+            if (ifs >> px_file >> py_file) {
+                settings.s.px = px_file;
+                settings.s.py = py_file;
+                std::cout << "Loaded px=" << px_file << " py=" << py_file << " from " << tt_file << std::endl;
+            }
+        }
+    }
     width = config["width"].value_or(15);
     settings.s.gauss_hwidth = config["gauss_hwidth"].value_or(3.0);
     settings.s.ttg = config["ttg"].value_or(0.01);
@@ -354,6 +378,7 @@ int main(int argc, char* argv[]) {
     settings.s.focus_amp = config["focus_amp"].value_or(0.02);
     settings.s.focus_offset = config["focus_offset"].value_or(0.0);
     settings.s.flux_threshold = config["flux_threshold"].value_or(100.0);
+    settings.s.servo_mode = SERVO_OFF;
     // Read in the influence functions from the "modefile" fits file.
     std::string modefile = config["modefile"].value_or("modes.fits");
     if (!read_modes(modefile, control_a.influence_functions)) {
@@ -389,6 +414,6 @@ int main(int argc, char* argv[]) {
     s.run();
 
     // Join the fringe-tracking thread
-    servo_mode = SERVO_STOP;
+    settings.s.servo_mode = SERVO_STOP;
     servo_thread.join();
 }
