@@ -366,7 +366,9 @@ void dl_offload(){
     	if ((offload_changed) || (settings.s.offload_mode != last_offload_mode)){
 		    // Do the offload! It is up to the specific function to check if the offload
 		    // is significant enough to do - only if so, it will move and 
-		    // update last_offload.
+		    // update last_offload. The "last offload mode" here refers
+            // to the last mode actually used to offload.
+            last_offload_mode = settings.s.offload_mode;
 		    if (settings.s.delay_line_type == "piezo") {
 		        // Move the piezo delay line to the next position
 		        move_piezos();
@@ -375,6 +377,9 @@ void dl_offload(){
 		        move_hfo();
 		    } else if (settings.s.delay_line_type == "rmn") {
 		        move_main_dl();
+            } else if (settings.s.delay_line_type == "off") {
+                // Do nothing, but update last_offload to avoid repeated logging.
+                last_offload = next_offload + search_offset;
 		    } else {
 		        std::cout << "Delay line type not recognised" << std::endl;
 		    }

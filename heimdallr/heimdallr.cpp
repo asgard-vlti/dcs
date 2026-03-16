@@ -244,7 +244,7 @@ void set_offload_gd_gain(double gain) {
 
 // Set the delay line type (doesn't have to be the main delay lines via RMN)
 void set_delay_line_type(std::string type) {
-    static const std::set<std::string> valid_types = {"piezo", "hfo", "rmn"};
+    static const std::set<std::string> valid_types = {"piezo", "hfo", "rmn", "off"};
     if (valid_types.count(type)) {
         settings.mutex.lock();
         settings.s.delay_line_type = type;
