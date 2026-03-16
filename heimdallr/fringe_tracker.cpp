@@ -576,7 +576,7 @@ void fringe_tracker(){
             // based on determining if we confidently have fringes with all telescopes.
             Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, N_TEL, N_TEL>> eig_solver(cov_gd_tel);
             double worst_gd_var = eig_solver.eigenvalues().maxCoeff();
-            double gd_var_threshold = gd_to_K1*gd_to_K1/settings.s.gd_gain/settings.s.gd_search_reset;
+            double gd_var_threshold = gd_to_K1*gd_to_K1/settings.s.gd_search_reset/settings.s.gd_search_reset;
 
             // Find the nth smallest eigenvalue, where n=2 if all
             // telescopes are active, and n increases by 1 for each inactive telescope.

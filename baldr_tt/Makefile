@@ -30,5 +30,8 @@ mrproper: clean
 install:
 	install -D $(EXEC) $(PREFIX)/bin/
 	chmod +s $(PREFIX)/bin/$(EXEC)
-	cp def.toml $(PREFIX)/etc
-	
+	cp def1.toml $(PREFIX)/etc
+	cp def2.toml $(PREFIX)/etc
+	cp def3.toml $(PREFIX)/etc
+	cp def4.toml $(PREFIX)/etc
+	cp modes.fits $(PREFIX)/etc

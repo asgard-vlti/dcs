@@ -16,6 +16,7 @@ back-end-server = "back_end_server.back_end_server:main"
 mcs-client = "mcs_client.mcs_client:main"
 baldr-server = "baldr_python_rtc.scripts.baldr_server:main"
 baldr-start-all = "dcs.cmd_scripts.baldr_start_all:main"
+baldrtt-start-all = "dcs.cmd_scripts.baldrtt_start_all:main"
 b-mode = "dcs.cmd_scripts.b_mode:main"
 
 [tool.hatch.build.targets.wheel]

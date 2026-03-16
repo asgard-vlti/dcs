@@ -151,6 +151,7 @@ std::string set_offload_mode(std::string mode) {
         settings.s.offload_mode = OFFLOAD_NESTED;
         // Reset the offload to zero.
         control_u.dl_offload.setZero();
+    } else if (mode == "gd") {
         settings.s.offload_mode = OFFLOAD_GD;
         settings.s.servo_mode = SERVO_OFF;
     } else if ((mode == "man") || (mode =="manual")) {

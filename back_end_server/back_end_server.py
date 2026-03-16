@@ -209,9 +209,9 @@ class BackEndServer:
             "baldr3": 6664,
             "baldr4": 6665,
             "baldrtt1": 6671,
-            "baldrtt1": 6672,
-            "baldrtt1": 6673,
-            "baldrtt1": 6674,
+            "baldrtt2": 6672,
+            "baldrtt3": 6673,
+            "baldrtt4": 6674,
             "cam_server": 6667,
             "DM_server": 6666,
         },
@@ -602,7 +602,7 @@ class BackEndServer:
         # parameters = command.get("parameters", [])
         if command_name == "s_h-autoalign":
             process = subprocess.Popen(
-                ["h-autoalign", "-a", "ia", "-o", "mcs", "-b", "K1"],
+                ["/home/asg/.conda/envs/asgard/bin/h-autoalign", "-a", "ia", "-o", "mcs", "-b", "K1"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
@@ -616,7 +616,7 @@ class BackEndServer:
                 return self.create_response("ERROR: dark_time parameter is required")
 
             cmd = [
-                "h-shutter",
+                "/home/asg/.conda/envs/asgard/bin/h-shutter",
                 "--beam-time",
                 str(_param_value(command.get("parameters", []), "beam-time")),
                 "--dark-time",
@@ -667,7 +667,7 @@ class BackEndServer:
                 return self.create_response("ERROR: mode parameter must be FAINT or STANDARD")
             if self.baldr_mode.upper() == mode.upper():
                 logging.info(f"Mode is already set to {mode.upper()}. No action taken.")
-                pass
+                return self.create_response("OK")
             else:
                 self.baldr_mode = mode.upper()
                 cmd = [

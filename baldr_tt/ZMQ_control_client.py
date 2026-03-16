@@ -7,7 +7,7 @@ import zmq
 import json
 import base64
 
-server_port = 6672
+server_port = 6673 #was 6672 in Feb
 context = zmq.Context()
 socket = context.socket(zmq.REQ)
 #socket.connect(f"tcp://192.168.100.2:{server_port}")

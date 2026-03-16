@@ -37,43 +37,6 @@ zmq::socket_t wag_rmn_socket(wag_rmn_context, zmq::socket_type::req);
 const std::string wag_rmn_host_str = "tcp://192.168.100.1:7050";
 bool mds_zmq_initialized = false, controllino_initialized = false, wag_rmn_initialized = false;
 
-// A general function for initializing the delay line, called from the commander 
-// when setting the delay line type, and from the main function when starting the offload thread.
-bool initialize_delay_line(std::string type){
-    if (type == "piezo") {
-        init_controllino();
-        if (!controllino_initialized) {
-            std::cout << "Failed to initialize Controllino for piezo delay lines." << std::endl;
-            return false;
-        }
-    } else if (type == "hfo") {
-        init_mds_zmq();
-        if (!mds_zmq_initialized) {
-            std::cout << "Failed to initialize ZMQ for MDS HFO delay lines." << std::endl;
-            return false;
-        }
-        // Connect to MDS and find the delay line positions.
-        // These become our zero positions.
-        for (int i = 0; i < N_TEL; i++) {
-            std::string message = "read HFO" + std::to_string(i+1);
-            std::string reply = send_mds_cmd(message);
-            fmt::print(reply);
-            hfo_offsets[i] = std::stod(reply);
-            fmt::print("HFO{} offset: {}\n", i+1, hfo_offsets[i]);
-        }
-    } else if (type == "rmn") {
-        init_wag_rmn();
-        if (!wag_rmn_initialized) {
-            std::cout << "Failed to initialize ZMQ for WAG RMN delay lines." << std::endl;
-            return false;
-        }
-    } else {
-        std::cout << "Delay line type not recognised: " << type << std::endl;
-        return false;
-    } 
- return true;
-}
-
 // Initialize the connection to wag for the RMN relay
 void init_wag_rmn() {
     if (!wag_rmn_initialized) {
@@ -135,6 +98,43 @@ std::string send_mds_cmd(const std::string& message) {
         return "0.0";
     }
     return std::string(static_cast<char*>(reply.data()), reply.size());
+}
+
+// A general function for initializing the delay line, called from the commander 
+// when setting the delay line type, and from the main function when starting the offload thread.
+bool initialize_delay_line(std::string type){
+    if (type == "piezo") {
+        init_controllino();
+        if (!controllino_initialized) {
+            std::cout << "Failed to initialize Controllino for piezo delay lines." << std::endl;
+            return false;
+        }
+    } else if (type == "hfo") {
+        init_mds_zmq();
+        if (!mds_zmq_initialized) {
+            std::cout << "Failed to initialize ZMQ for MDS HFO delay lines." << std::endl;
+            return false;
+        }
+        // Connect to MDS and find the delay line positions.
+        // These become our zero positions.
+        for (int i = 0; i < N_TEL; i++) {
+            std::string message = "read HFO" + std::to_string(i+1);
+            std::string reply = send_mds_cmd(message);
+            fmt::print(reply);
+            hfo_offsets[i] = std::stod(reply);
+            fmt::print("HFO{} offset: {}\n", i+1, hfo_offsets[i]);
+        }
+    } else if (type == "rmn") {
+        init_wag_rmn();
+        if (!wag_rmn_initialized) {
+            std::cout << "Failed to initialize ZMQ for WAG RMN delay lines." << std::endl;
+            return false;
+        }
+    } else {
+        std::cout << "Delay line type not recognised: " << type << std::endl;
+        return false;
+    } 
+ return true;
 }
 
 // Set the delay line offsets (from the servo loop). Units are microns of OPD.

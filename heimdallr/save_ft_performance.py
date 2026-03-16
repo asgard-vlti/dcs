@@ -85,7 +85,7 @@ def log_ft_performance(log_path="ft_performance_log.txt", rate_hz=1000):
                         continue
                     last_cnt = cnt
                 # Timestamp to ms precision
-                timestamp = "{:.3f}".format(t0)
+                timestamp = "{:.4f}".format(t0)
                 # Flatten all key values into a single line, 3 decimal places
                 values = []
                 for k in keys_of_interest:
