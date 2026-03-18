@@ -272,7 +272,7 @@ void move_main_dl()
 
     // Fill parameters
     nlohmann::json params = nlohmann::json::array();
-    params.push_back({{"name", "opd_offset"}, {"value", {-next_offload(0), -next_offload(1), -next_offload(2), -next_offload(3)}}});
+    params.push_back({{"name", "opd_offset"}, {"value", {-next_offload(0)-search_offset(0), -next_offload(1)-search_offset(1), -next_offload(2)-search_offset(2), -next_offload(3)-search_offset(3)}}});
     // Example: offset_valid and fringe_detect can be filled with dummy or real values as needed
     if ((settings.s.offload_mode == OFFLOAD_OFF))
     	params.push_back({{"name", "offset_valid"}, {"value", {0, 0, 0, 0}}});

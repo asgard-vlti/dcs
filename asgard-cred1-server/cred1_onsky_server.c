@@ -727,9 +727,8 @@ void* fetch_imgs(void *arg) {
       // ===================================================
       if (camconf->ndmr_mode == 1) {
       	memcpy(&reset_cntr, image_p + 4, sizeof(unsigned int));
-	if (reset_cntr - prev_reset_cntr > 1)
-	  skipped_frames++;
-	prev_reset_cntr = reset_cntr;
+	      if (reset_cntr - prev_reset_cntr > 1) skipped_frames++;
+	      prev_reset_cntr = reset_cntr;
       	// printf("\rreset counter = %3d", reset_cntr);
       	// fflush(stdout);
       }
@@ -747,24 +746,24 @@ void* fetch_imgs(void *arg) {
 
       shm_img->md->write = 1;              // signaling about to write
       memcpy(liveimg_ptr,                  // copy image to shared memory
-	     (unsigned short *) image_p,
-	     sizeof(unsigned short) * nbpix_frm);
+	      (unsigned short *) image_p,
+	      sizeof(unsigned short) * nbpix_frm);
 
       // ===================================================
       //          are we subtracting a dark ?
       // ===================================================
       if (camconf->rt_dark_sub == 1) {
-	if (camconf->ndmr_mode == 0)
-	  livedrk_ptr = shm_img_dark->array.UI16 + liveindex * nbpix_frm;
-	else {
-	  // adapt index here. reset_cntr is the number of frames since the last reset,
-	  // and dark_reset_index is the first index of the reset in the dark cube.
-	  matching_dark_index = liveindex - reset_cntr + dark_reset_index;
-	  matching_dark_index = matching_dark_index % shm_img->md->size[2];
-	  livedrk_ptr = shm_img_dark->array.UI16 + matching_dark_index * nbpix_frm;
-	}
-	for (ii = 0; ii < nbpix_frm; ii++) // subtracting dark here
-	  liveimg_ptr[ii] -= livedrk_ptr[ii] - camconf->offset;
+        if (camconf->ndmr_mode == 0)
+          livedrk_ptr = shm_img_dark->array.UI16 + liveindex * nbpix_frm;
+        else {
+          // adapt index here. reset_cntr is the number of frames since the last reset,
+          // and dark_reset_index is the first index of the reset in the dark cube.
+          matching_dark_index = liveindex - reset_cntr + dark_reset_index;
+          matching_dark_index = matching_dark_index % shm_img->md->size[2];
+          livedrk_ptr = shm_img_dark->array.UI16 + matching_dark_index * nbpix_frm;
+        }
+        for (ii = 0; ii < nbpix_frm; ii++) // subtracting dark here
+          liveimg_ptr[ii] -= livedrk_ptr[ii] - camconf->offset;
       }
 
       // =============================
@@ -779,27 +778,27 @@ void* fetch_imgs(void *arg) {
       //   split into multiple ROIs
       // =============================      
       if (splitmode == 1) {
-	for (ri = 0; ri < nroi; ri++) {
-	  liveroi_ptr = shm_ROI_live[ri].array.SI32; // live ROI data pointer
-	  roi_xsz = ROI[ri].xsz;
-	  x0 = ROI[ri].x0;
-	  y0 = ROI[ri].y0;
-	  
-	  shm_ROI_live[ri].md->write = 1;
-	  // ------------ the "engineering" readout mode -------------
-	  if (camconf->ndmr_mode == 0) {
-	    for (jj = 0; jj < ROI[ri].ysz; jj++) {
-	      for (ii = 0; ii < ROI[ri].xsz; ii++) {
-		liveroi_ptr[jj*roi_xsz+ii] = liveimg_ptr[(jj+y0) * cam_xsz + ii+x0];
-	      }
-	    }
-	  }
-          // ------------- the "science" readout mode ----------------
-          else {
+        for (ri = 0; ri < nroi; ri++) {
+          liveroi_ptr = shm_ROI_live[ri].array.SI32; // live ROI data pointer
+          roi_xsz = ROI[ri].xsz;
+          x0 = ROI[ri].x0;
+          y0 = ROI[ri].y0;
+          
+          shm_ROI_live[ri].md->write = 1;
+          // ------------ the "engineering" readout mode -------------------------
+          if (camconf->ndmr_mode == 0) {
+            for (jj = 0; jj < ROI[ri].ysz; jj++) {
+              for (ii = 0; ii < ROI[ri].xsz; ii++) {
+                liveroi_ptr[jj*roi_xsz+ii] = liveimg_ptr[(jj+y0) * cam_xsz + ii+x0];
+              }
+	          }
+          }
+    // ------------- the "science" readout mode needing NDMR ----------------
+    else {
 	    // update frame indices from current sequence + previous index
-            for (int kk = 0; kk < ROI[ri].nrs; kk++) {
-              seq_indices[kk] = (shm_img->md->size[2] + liveindex - kk) % shm_img->md->size[2];
-            }
+      for (int kk = 0; kk < ROI[ri].nrs; kk++) {
+        seq_indices[kk] = (shm_img->md->size[2] + liveindex - kk) % shm_img->md->size[2];
+      }
 	    // prev_liveindex = (seq_indices[0] - 1) % shm_img->md->size[2];
 	    // ----- DETECTOR RESET -------
 	    /*if (reset_cntr == 0) {
@@ -815,24 +814,24 @@ void* fetch_imgs(void *arg) {
             else {*/
 	    for (jj = 0; jj < ROI[ri].ysz; jj++) {
 	      for (ii = 0; ii < ROI[ri].xsz; ii++) {
-		liveroi_ptr[jj*roi_xsz+ii] = camconf->offset;
-		for (int kk = 0; kk < ROI[ri].nrs; kk++) {
-		  seq_img_ptr = shm_img->array.UI16 + seq_indices[kk] * nbpix_frm;  // live pointer
-		  liveroi_ptr[jj*roi_xsz+ii] += tsig[kk] * (int)seq_img_ptr[(jj+y0) * cam_xsz + ii+x0];
+		      liveroi_ptr[jj*roi_xsz+ii] = camconf->offset;
+		      for (int kk = 0; kk < ROI[ri].nrs; kk++) {
+		        seq_img_ptr = shm_img->array.UI16 + seq_indices[kk] * nbpix_frm;  // live pointer
+		        liveroi_ptr[jj*roi_xsz+ii] += tsig[kk] * (int)seq_img_ptr[(jj+y0) * cam_xsz + ii+x0];
 		  // Mike's DEBUGing to see why liveindex was wrong !!! 
 		  //if ((ri==4) && (jj==16) && (ii==16))
 		  //	printf("liveindex %ld. kk %d seq_index %d pixel value %d\n", liveindex, kk, seq_indices[kk], (int)seq_img_ptr[(jj+y0) * cam_xsz + ii+x0]);
-		}
+		      }
 	      }
 	    }
 	    //}
 	    liveroi_ptr[0] = reset_cntr;
 	  }
-          // ---------------- SHM house keeping ------------------
-          shm_ROI_live[ri].md->write = 0;
-          ImageStreamIO_sempost(&shm_ROI_live[ri], -1);
-          shm_ROI_live[ri].md->cnt0++;
-          shm_ROI_live[ri].md->cnt1++;
+    // ---------------- SHM house keeping ------------------
+    shm_ROI_live[ri].md->write = 0;
+    ImageStreamIO_sempost(&shm_ROI_live[ri], -1);
+    shm_ROI_live[ri].md->cnt0++;
+    shm_ROI_live[ri].md->cnt1++;
 
 	  // -------------- writing to ROI cubes ----------------
 	  liveroi_index = shm_img->md->cnt0 % ROI[ri].nbs;
