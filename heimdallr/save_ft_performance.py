@@ -174,6 +174,8 @@ def main():
     fname = f"ft_performance_{cur_datetime}.log"
     year_month_day = time.strftime("%Y%m%d", time.gmtime())
     pth = f"/data/{year_month_day}"
+    # Make directories if they don't exist
+    os.makedirs(pth, exist_ok=True)
     full_pth = os.path.join(pth, fname)
     # Settings log file
     settings_fname = f"ft_settings_{cur_datetime}.log"
