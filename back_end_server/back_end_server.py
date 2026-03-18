@@ -347,7 +347,7 @@ class BackEndServer:
         else:
             cmd_map = {
                 "bld_open_lo": 'servo "off"',
-                "bld_open_ho": 'servo "tt"',
+                "bld_open_ho": 'servo "off"',
                 "bld_close_lo": 'servo "tt"',
                 "bld_close_ho": 'servo "ho"',
             }
