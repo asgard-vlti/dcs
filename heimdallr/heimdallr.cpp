@@ -351,6 +351,7 @@ Settings get_settings() {
     settings.mutex.lock();
     settings.s.n_gd_boxcar = baselines.n_gd_boxcar;
     settings.s.search_delta = control_u.search_delta;
+    settings.s.search_offset = {search_offset(0), search_offset(1), search_offset(2), search_offset(3)};
     settings.mutex.unlock();
     return settings.s;
 }
@@ -419,6 +420,7 @@ void set_foreground(int state) {
         
     } else if (state == 0 && foreground_in_place) {
     	if (settings.s.offload_mode == OFFLOAD_MANUAL) settings.s.offload_mode=OFFLOAD_OFF;
+        add_to_delay_lines(-fg_offset);
         foreground_in_place = false;
     }
 }
@@ -524,9 +526,9 @@ std::string default_gains(void){
     settings.s.offload_gd_gain = 0.7 * offloads_per_gd_boxcar;     
     settings.mutex.unlock();
     // Also set the search_delta so that in the gd_boxcar time,
-    // we move no more than the coherence length/12, with 
+    // we move no more than the coherence length/6, with 
     // the coherence length equal to ~20 microns.
-    set_search_params(20.0/12.0*offloads_per_gd_boxcar, control_u.steps_to_turnaround);
+    set_search_params(20.0/6.0*offloads_per_gd_boxcar, control_u.steps_to_turnaround);
 
     return "OK";
 }
@@ -562,6 +564,15 @@ std::string set_bad_pixels(std::vector<int> k1x, std::vector<int> k1y,
     return "OK";
 }
 
+std::string set_fixed_dl(int value) {
+    if (value < 0 || value > 4) 
+      return "ERROR: Fixed delay line value out of range (0 for none, or delay lines 1 to 4)";
+    settings.s.mutex.lock();
+    settings.s.fixed_dl = value;
+    settings.mutex.unlock();
+    return "OK";
+}
+
 COMMANDER_REGISTER(m)
 {
     using namespace commander::literals;
@@ -584,6 +595,7 @@ COMMANDER_REGISTER(m)
     m.def("dls", set_delay_lines_wrapper, "Set a delay line value in microns", 
         "dl1"_arg, "dl2"_arg, "dl3"_arg, "dl4"_arg);
         m.def("gain", set_gain, "Set the gain for the servo loop", "gain"_arg=0.0);
+    m.def("fixed_dl", set_fixed_dl, "Set the fixed delay line value", "value"_arg=0);
     m.def("ggain", set_ggain, "Set the gain for the GD servo loop", "gain"_arg=0.0);
     m.def("offload_gd_gain", set_offload_gd_gain, "Set the gain when operating GD only in steps", "gain"_arg=0.0);
     m.def("dl_type", set_delay_line_type, "Set the delay line type and initialize.", "type"_arg="piezo");
@@ -639,6 +651,8 @@ int main(int argc, char* argv[]) {
     settings.s.offload_mode=OFFLOAD_OFF;
     settings.s.delay_line_type="rmn";
     settings.s.offload_time_ms=10;
+    settings.s.fixed_dl=3;
+    settings.s.search_offset = {0.0, 0.0, 0.0, 0.0};
 
 #ifndef SIMULATE
     // Initialise the DMs

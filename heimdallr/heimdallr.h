@@ -209,7 +209,8 @@ struct Settings {
     double kp;
     double search_delta;
     std::string delay_line_type;
-    int offload_mode, servo_mode;
+    int offload_mode, servo_mode, fixed_dl;
+    std::vector<double> search_offset;
 };
 
 //-------End of Commander structs------

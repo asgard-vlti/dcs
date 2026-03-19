@@ -30,8 +30,10 @@ Eigen::Matrix<double, N_TEL, N_TEL> singularDiag = Eigen::Matrix<double, N_TEL, 
 // A 4x4 identity matrix.
 Eigen::Matrix4d I4 = Eigen::Matrix4d::Identity();
 
-// The search vector.
-Eigen::Vector4d search_vector_scale(-2.75,-1.75,1.25,3.25);
+// The search vector. There is no reason for this to have 
+// diferent frequencies for each baseline.
+//Eigen::Vector4d search_vector_scale(-2.75,-1.75,1.25,3.25);
+Eigen::Vector4d search_vector_scale(-1.5,-0.5,0.5,1.5);
 
 // Beams active as an Eigen vector (i.e. doubles rather than booleans)
 Eigen::Vector4d beams_active = Eigen::Vector4d::Ones();
