@@ -377,7 +377,7 @@ int main(int argc, char* argv[]) {
     settings.s.hol = config["hol"].value_or(0.01);
     settings.s.focus_amp = config["focus_amp"].value_or(0.02);
     settings.s.focus_offset = config["focus_offset"].value_or(0.0);
-    settings.s.flux_threshold = config["flux_threshold"].value_or(100.0);
+    settings.s.flux_threshold = config["flux_threshold"].value_or(10000.0);
     settings.s.servo_mode = SERVO_OFF;
     // Read in the influence functions from the "modefile" fits file.
     std::string modefile = config["modefile"].value_or("modes.fits");

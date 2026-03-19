@@ -137,9 +137,24 @@ bool initialize_delay_line(std::string type){
  return true;
 }
 
+// Center the delay lines values based on the fixed_dl setting.
+// 0 takes the mean and subtracts this from all values.
+// 1 to 4 subtracts that value.
+Eigen::Vector4d center_dls(Eigen::Vector4d dl) {
+    if (settings.s.fixed_dl == 0) {
+        double mean = dl.mean();
+        return dl - Eigen::Vector4d::Constant(mean);
+    } else if (settings.s.fixed_dl > 0 && settings.s.fixed_dl <= N_TEL) {
+        double value = dl(settings.s.fixed_dl - 1);
+        return dl - Eigen::Vector4d::Constant(value);
+    } else {    
+        return dl;
+    }
+}
+
 // Set the delay line offsets (from the servo loop). Units are microns of OPD.
 void set_delay_lines(Eigen::Vector4d dl) {
-    next_offload=dl;
+    next_offload = center_dls(dl);
 }
 
 void add_to_delay_lines(Eigen::Vector4d dl) {

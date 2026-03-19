@@ -6,11 +6,6 @@
 #define DARK_OFFSET 1000
 #define DM_MAX_R 5.0
 
-// Thresholds for fringe tracking (now variables)
-double flux_threshold = 1000.0;
-
-using namespace std::complex_literals;
-
 long unsigned int cnt=0, cnt_since_init=0;
 long unsigned int nerrors=0;
 int sz=0;
