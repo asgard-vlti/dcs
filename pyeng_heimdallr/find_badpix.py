@@ -26,10 +26,12 @@ K2 = shm("/dev/shm/hei_k2.im.shm", nosem=False)
 #Loop every 10ms (about the slowest we'd run this at) and 
 #accumulate the mean and square of the K1 and K2 subimages, 
 #so that we can compute the variance and identify bad pixels.
-sumK1 = np.zeros((K1.ny, K1.nx), dtype=np.float64)
-sumK2 = np.zeros((K2.ny, K2.nx), dtype=np.float64)
-sumK1sq = np.zeros((K1.ny, K1.nx), dtype=np.float64)
-sumK2sq = np.zeros((K2.ny, K2.nx), dtype=np.float64)
+imK1 = K1.get_latest_data() - 1000.0
+imK2 = K2.get_latest_data() - 1000.0
+sumK1 = np.zeros_like(imK1)
+sumK2 = np.zeros_like(imK2)
+sumK1sq = np.zeros_like(imK1)
+sumK2sq = np.zeros_like(imK2)
 for i in range(n_frames):
     imK1 = K1.get_latest_data() - 1000.0
     imK2 = K2.get_latest_data() - 1000.0
