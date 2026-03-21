@@ -13,7 +13,8 @@
 
 using namespace std::complex_literals;
 
-long unsigned int ft_cnt=0, cnt_since_init=0, mod_ix=0;
+long unsigned int ft_cnt=0, cnt_since_init=0;
+int mod_ix=0;
 long unsigned int nerrors=0;
 double gd_to_K1=1.0;
 
@@ -615,18 +616,18 @@ void fringe_tracker(){
             if (mod_ix==0){
                 // Now find the fringe peak. We iterate over baselines, 
                 // and accumulate the SNR for zero, plus and minus modulation.
-                Eigen::Matrix<int, N_BL, 1> delays;
+                Eigen::Matrix<double, N_BL, 1> delays;
                 delays.setZero();
-                Eigen::Matrix<int, N_BL, 1> valid;
+                Eigen::Matrix<double, N_BL, 1> valid;
                 valid.setZero();
                 for (int bl=0; bl<N_BL; bl++){
                     double snr_zero = 0;
                     double snr_plus = 0;
                     double snr_minus = 0;
                     for (int ix=0; ix<N_MOD; ix++){
-                        if (bl_modulation_map(bl,ix) == 0) snr_zero += gd_snr_during_mod(bl,ix);
-                        else if (bl_modulation_map(bl,ix) == 1) snr_plus += gd_snr_during_mod(bl,ix);
-                        else if (bl_modulation_map(bl,ix) == -1) snr_minus += gd_snr_during_mod(bl,ix);
+                        if (bl_modulation_matrix(bl,ix) == 0) snr_zero += gd_snr_during_mod(bl,ix);
+                        else if (bl_modulation_matrix(bl,ix) == 1) snr_plus += gd_snr_during_mod(bl,ix);
+                        else if (bl_modulation_matrix(bl,ix) == -1) snr_minus += gd_snr_during_mod(bl,ix);
                     }
                     snr_zero /= 6; //!!! Hardwired.
                     snr_plus /= 4;
@@ -640,8 +641,10 @@ void fringe_tracker(){
                     }
                 }
                 // Create a new pseudo-inverse matrix, and multiply the group delay 
-                // by this to find the new control signal.
-                control_u.dl_offload = make_pinv(valid, 0) * delays;
+                // by this to find the new control signal. There is regularisation just like
+                // the normal fringe tracking above.
+                I6gd = M_lacour * make_pinv(valid, 0) * M_lacour.transpose() * valid.asDiagonal();
+                control_u.dl_offload = M_lacour_dag * I6gd * delays;
                 add_to_delay_lines(control_u.search - control_u.dl_offload);
             }
         } else if (time_since_last_offload_ms > settings.s.offload_time_ms) {

@@ -401,7 +401,7 @@ void dl_offload(){
         } 
         // Has the offload changed? If so, consider doing it and log to file.
         bool offload_changed=false;
-        for (int i=0;i<N_TEL;i++)
+        for (int i=0;i<N_TEL;i++){
     	  if (last_offload(i) != next_offload(i) + search_offset(i) + mod_offload(i)) {
     		  offload_changed=true;
     	  }
@@ -435,6 +435,7 @@ void dl_offload(){
 		        settings.s.delay_line_type,
 		        next_offload(0), next_offload(1), next_offload(2), next_offload(3));  
 		 }      
+        }
     }
     if (controllinoSocket != -1) {
         close(controllinoSocket);

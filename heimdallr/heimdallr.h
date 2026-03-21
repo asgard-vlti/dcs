@@ -194,12 +194,13 @@ struct Status
     std::vector<double> gd_phasor_real, gd_phasor_imag;
     int test_ix, test_n;
     unsigned int cnt;
-    bool locked{false};
+    bool locked;
     double itime;
 };
 
 // Settings struct for commander
-struct Settings {
+struct Settings
+{
     unsigned int n_gd_boxcar;
     double gd_threshold;
     double pd_threshold;

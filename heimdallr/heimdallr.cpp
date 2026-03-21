@@ -145,7 +145,7 @@ void set_offload_time(uint time) {
 // Set the offload mode
 std::string set_offload_mode(std::string mode) {
     settings.mutex.lock();
-    if settings.s.offload_mode == OFFLOAD_MOD {
+    if (settings.s.offload_mode == OFFLOAD_MOD) {
         // If we are currently in modulation mode, zero 
         // the modulation.
         end_modulation();
@@ -579,7 +579,7 @@ std::string set_bad_pixels(std::vector<int> k1x, std::vector<int> k1y,
 std::string set_fixed_dl(int value) {
     if (value < 0 || value > 4) 
       return "ERROR: Fixed delay line value out of range (0 for none, or delay lines 1 to 4)";
-    settings.s.mutex.lock();
+    settings.mutex.lock();
     settings.s.fixed_dl = value;
     settings.mutex.unlock();
     return "OK";

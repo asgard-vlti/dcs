@@ -38,7 +38,7 @@ template <> struct adl_serializer<Status> {
         j["test_ix"] = p.test_ix;
         j["test_n"] = p.test_n;
         j["cnt"] = p.cnt;
-        j["locked{false}"] = p.locked{false};
+        j["locked"] = p.locked;
         j["itime"] = p.itime;
     }
     static void from_json(const json& j, Status& p) {
@@ -62,12 +62,12 @@ template <> struct adl_serializer<Status> {
         j.at("test_ix").get_to(p.test_ix);
         j.at("test_n").get_to(p.test_n);
         j.at("cnt").get_to(p.cnt);
-        j.at("locked{false}").get_to(p.locked{false});
+        j.at("locked").get_to(p.locked);
         j.at("itime").get_to(p.itime);
     }
    };
-template <> struct adl_serializer<Setting> {
-    static void to_json(json& j, const Setting& p) {
+template <> struct adl_serializer<Settings> {
+    static void to_json(json& j, const Settings& p) {
         j = json::object();
         j["n_gd_boxcar"] = p.n_gd_boxcar;
         j["gd_threshold"] = p.gd_threshold;
@@ -81,10 +81,11 @@ template <> struct adl_serializer<Setting> {
         j["delay_line_type"] = p.delay_line_type;
         j["offload_mode"] = p.offload_mode;
         j["servo_mode"] = p.servo_mode;
+        j["fixed_dl"] = p.fixed_dl;
         j["search_offset"] = p.search_offset;
     }
-    static void from_json(const json& j, Setting& p) {
-        p = Setting();
+    static void from_json(const json& j, Settings& p) {
+        p = Settings();
         j.at("n_gd_boxcar").get_to(p.n_gd_boxcar);
         j.at("gd_threshold").get_to(p.gd_threshold);
         j.at("pd_threshold").get_to(p.pd_threshold);
@@ -97,6 +98,7 @@ template <> struct adl_serializer<Setting> {
         j.at("delay_line_type").get_to(p.delay_line_type);
         j.at("offload_mode").get_to(p.offload_mode);
         j.at("servo_mode").get_to(p.servo_mode);
+        j.at("fixed_dl").get_to(p.fixed_dl);
         j.at("search_offset").get_to(p.search_offset);
     }
    };
