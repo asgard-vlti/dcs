@@ -145,6 +145,11 @@ void set_offload_time(uint time) {
 // Set the offload mode
 std::string set_offload_mode(std::string mode) {
     settings.mutex.lock();
+    if settings.s.offload_mode == OFFLOAD_MOD {
+        // If we are currently in modulation mode, zero 
+        // the modulation.
+        end_modulation();
+    }
     if (mode == "off") {
         settings.s.offload_mode = OFFLOAD_OFF;
     } else if ((mode == "nested") || (mode == "nest")) {
@@ -154,6 +159,10 @@ std::string set_offload_mode(std::string mode) {
     } else if (mode == "gd") {
         settings.s.offload_mode = OFFLOAD_GD;
         settings.s.servo_mode = SERVO_OFF;
+    } else if (mode == "mod") {
+        settings.s.offload_mode = OFFLOAD_MOD;
+        settings.s.servo_mode = SERVO_OFF;
+        start_modulation();
     } else if ((mode == "man") || (mode =="manual")) {
         settings.s.offload_mode = OFFLOAD_MANUAL;
     } else {
@@ -162,6 +171,9 @@ std::string set_offload_mode(std::string mode) {
         return "ERROR: Offload mode not recognised";
     }
     settings.mutex.unlock();
+    // Irrespective of the offload mode, we want to zero 
+    // the modulation offload.
+    mod_offload.setZero();
     control_u.search_Nsteps=0;
     return "OK";
 }

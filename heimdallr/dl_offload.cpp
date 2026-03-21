@@ -9,6 +9,7 @@
 // Local globals.
 sem_t sem_offload;
 int controllinoSocket=-1;
+Eigen::Vector4d mod_offload = Eigen::Vector4d::Zero(); // The modulation offload.
 Eigen::Vector4d next_offload = Eigen::Vector4d::Zero(); // The next offload to send to the delay lines, in microns of OPD. This is set by the fringe tracker, and read by the offload thread.
 // This is non-zero to make sure if using the Piezos the DLs are centred.
 // It has a bad name - it is actually the sum of the next_offload
@@ -152,9 +153,14 @@ Eigen::Vector4d center_dls(Eigen::Vector4d dl) {
     }
 }
 
-// Set the delay line offsets (from the servo loop). Units are microns of OPD.
+// Set the delay line offsets (from the servo loop). 
+// Units are microns of OPD.
 void set_delay_lines(Eigen::Vector4d dl) {
     next_offload = center_dls(dl);
+}
+
+void set_mod(Eigen::Vector4d dl) {
+    mod_offload = dl; // Nothing else" 
 }
 
 void add_to_delay_lines(Eigen::Vector4d dl) {
@@ -211,8 +217,8 @@ void move_piezos(){
     init_controllino();
     // This next loop should be turned into a single function for rapid movement.
     for (int i = 0; i < N_TEL; i++) {
-        if (last_offload(i) != next_offload(i) + search_offset(i)){
-            dl_value = 2048 + (int)( (next_offload(i) + search_offset(i)) / OPD_PER_PIEZO_UNIT);
+        if (last_offload(i) != next_offload(i) + search_offset(i) + mod_offload(i)) {
+            dl_value = 2048 + (int)( (next_offload(i) + search_offset(i) + mod_offload(i)) / OPD_PER_PIEZO_UNIT);
             sprintf(message, "a%d %d\n", i, dl_value);
             recv(controllinoSocket, buffer, sizeof(buffer), 0);
             if (strlen(buffer) > 0) std::cout << "Before starting, controllino: " << buffer << std::endl;
@@ -227,19 +233,19 @@ void move_piezos(){
             }
         }
     }
-    last_offload = next_offload + search_offset;
+    last_offload = next_offload + search_offset + mod_offload;
 }
 
 // This function sets the HFO actuators to the stored value.
 void move_hfo(){
     for (int i = 0; i < N_TEL; i++) {
-        if ( last_offload(i)  != next_offload(i) + search_offset(i) ) {
+        if ( last_offload(i)  != next_offload(i) + search_offset(i) + mod_offload(i)) {
             // Set the delay line value for the current telescope (value in mm of physical motion)
-            double dl_value = hfo_offsets[i] - (next_offload(i) + search_offset(i)) * 0.0005;
+            double dl_value = hfo_offsets[i] - (next_offload(i) + search_offset(i) + mod_offload(i)) * 0.0005;
             std::string message = "moveabs HFO" + std::to_string(i+1) + " " + std::to_string(dl_value);
             fmt::print(message + "\n");
             fmt::print(send_mds_cmd(message));
-            last_offload(i) = next_offload(i) + search_offset(i);
+            last_offload(i) = next_offload(i) + search_offset(i) + mod_offload(i);
         } 
     }
     last_hfo_offset = std::chrono::high_resolution_clock::now();
@@ -268,6 +274,8 @@ A good reply string is:
 	}
 }
 */
+bool no_fringes = false;
+std::chrono::high_resolution_clock::time_point last_fringe_time = std::chrono::high_resolution_clock::now();
 void move_main_dl()
 {
     // Only execute if wag_rmn is initialized. It can be 
@@ -287,16 +295,34 @@ void move_main_dl()
 
     // Fill parameters
     nlohmann::json params = nlohmann::json::array();
-    params.push_back({{"name", "opd_offset"}, {"value", {-next_offload(0)-search_offset(0), -next_offload(1)-search_offset(1), -next_offload(2)-search_offset(2), -next_offload(3)-search_offset(3)}}});
+    params.push_back({{"name", "opd_offset"}, {"value", {-next_offload(0)-search_offset(0)-mod_offload(0), -next_offload(1)-search_offset(1)-mod_offload(1), -next_offload(2)-search_offset(2)-mod_offload(2), -next_offload(3)-search_offset(3)-mod_offload(3)}}});
     // Example: offset_valid and fringe_detect can be filled with dummy or real values as needed
     if ((settings.s.offload_mode == OFFLOAD_OFF))
     	params.push_back({{"name", "offset_valid"}, {"value", {0, 0, 0, 0}}});
     else
     	params.push_back({{"name", "offset_valid"}, {"value", {1, 1, 1, 1}}});
-    if (control_u.fringe_found)
-      params.push_back({{"name", "fringe_det"}, {"value", {1, 1, 1, 1}}});
-    else
+    if (control_u.fringe_found){
+      // Reset the timer for the last fringe found, which is used to determine
+      // how often to change the fringe_det value.
+      if (no_fringes) {
+        std::chrono::high_resolution_clock::time_point current_time = std::chrono::high_resolution_clock::now();
+        if (std::chrono::duration<double>(current_time - last_fringe_time).count() > 10.0) {
+          // If it has been more than 10 seconds since we last indicated fringes, 
+          // reset the fringe_det value to 1.
+          params.push_back({{"name", "fringe_det"}, {"value", {1, 1, 1, 1}}});
+          no_fringes = false;
+          last_fringe_time = current_time;
+        } else {
+          params.push_back({{"name", "fringe_det"}, {"value", {0, 0, 0, 0}}});
+        }
+      } else {
+        params.push_back({{"name", "fringe_det"}, {"value", {1, 1, 1, 1}}});
+      }
+    }
+    else {
+      no_fringes = true;
       params.push_back({{"name", "fringe_det"}, {"value", {0, 0, 0, 0}}});
+    }
     j["command"]["parameter"] = params;
 
     std::string msg = j.dump(); // No newlines
@@ -312,7 +338,7 @@ void move_main_dl()
         wag_rmn_initialized=false;
         fmt::print("Timeout or error receiving reply from WAG RMN.\n");
     }
-    last_offload = next_offload + search_offset;
+    last_offload = next_offload + search_offset + mod_offload;
 }
 
 // The main thread function
@@ -376,9 +402,10 @@ void dl_offload(){
         // Has the offload changed? If so, consider doing it and log to file.
         bool offload_changed=false;
         for (int i=0;i<N_TEL;i++)
-    	  if (last_offload(i) != next_offload(i) + search_offset(i))
-    		offload_changed=true;
-    	if ((offload_changed) || (settings.s.offload_mode != last_offload_mode)){
+    	  if (last_offload(i) != next_offload(i) + search_offset(i) + mod_offload(i)) {
+    		  offload_changed=true;
+    	  }
+          if ((offload_changed) || (settings.s.offload_mode != last_offload_mode)){
 		    // Do the offload! It is up to the specific function to check if the offload
 		    // is significant enough to do - only if so, it will move and 
 		    // update last_offload. The "last offload mode" here refers
@@ -394,7 +421,7 @@ void dl_offload(){
 		        move_main_dl();
             } else if (settings.s.delay_line_type == "off") {
                 // Do nothing, but update last_offload to avoid repeated logging.
-                last_offload = next_offload + search_offset;
+                last_offload = next_offload + search_offset + mod_offload;
 		    } else {
 		        std::cout << "Delay line type not recognised" << std::endl;
 		    }

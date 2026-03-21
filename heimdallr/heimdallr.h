@@ -39,6 +39,7 @@
 #define OFFLOAD_GD 1
 #define OFFLOAD_OFF 2
 #define OFFLOAD_MANUAL 3
+#define OFFLOAD_MOD 4
 
 // The maximum number of frames to average for group delay. Delay error in wavelength from group
 // delay can be 0.4/which scales to a phasor error of 0.04, while phase error can only be 0.2
@@ -235,6 +236,7 @@ extern Bispectrum bispectra_K1[N_CP];
 extern Bispectrum bispectra_K2[N_CP];
 extern double gd_to_K1;
 extern long unsigned int ft_cnt;
+extern int mod_ix;
 extern bool foreground_in_place;
 
 // Generally, we either work with beams or baselines, so have a separate lock for each.
@@ -243,7 +245,7 @@ extern std::atomic<bool> zero_offload;
 // DL offload variables
 extern bool keep_offloading;
 extern Eigen::Vector4d search_offset;
-extern Eigen::Vector4d next_offload;
+extern Eigen::Vector4d next_offload, mod_offload;
 
 // ForwardFt class
 class ForwardFt {   
@@ -302,6 +304,8 @@ private:
 };
 
 // Main thread function for fringe tracking.
+void start_modulation();
+void end_modulation();
 void fringe_tracker();
 
 // Seeting the delay lines (needed form the main thread and from the commander)
@@ -314,6 +318,7 @@ extern ForwardFt *K1ft, *K2ft;
 extern sem_t sem_offload;
 bool initialize_delay_line(std::string type);
 void set_delay_lines(Eigen::Vector4d dl);
+void set_mod(Eigen::Vector4d dl);
 void add_to_delay_lines(Eigen::Vector4d dl);
 void set_delay_line(int dl, double value);
 void dl_offload();

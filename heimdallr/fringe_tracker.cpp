@@ -8,10 +8,12 @@
 // Group delay is in wavelengths at 2.05 microns. Need 0.5 waves to be 2.5 sigma.
 #define GD_MAX_VAR_FOR_JUMP 0.2*0.2
 #define GD_MIN_REAL_VAR 1E-6
+#define N_MOD 14
+#define MODULATION_AMPLITUDE 15.0 
 
 using namespace std::complex_literals;
 
-long unsigned int ft_cnt=0, cnt_since_init=0;
+long unsigned int ft_cnt=0, cnt_since_init=0, mod_ix=0;
 long unsigned int nerrors=0;
 double gd_to_K1=1.0;
 
@@ -29,6 +31,16 @@ Eigen::Matrix<double, N_TEL, N_TEL> singularDiag = Eigen::Matrix<double, N_TEL, 
 
 // A 4x4 identity matrix.
 Eigen::Matrix4d I4 = Eigen::Matrix4d::Identity();
+
+// A constant N_TEL x N_MOD matrix for modulation, and an equivalent for baselines.
+Eigen::Matrix<double, N_TEL, N_MOD> modulation_matrix = (Eigen::Matrix<double, N_TEL, N_MOD>() <<
+    1,0,0,1,1,0,0,0,1,0,1,1,1,0,
+    0,1,0,1,1,0,0,1,0,1,0,1,0,1,
+    0,0,1,0,1,0,1,0,0,1,1,0,1,1,    
+    1,1,1,1,0,1,0,0,0,1,1,0,0,0).finished();
+Eigen::Matrix<double, N_BL, N_MOD> bl_modulation_matrix = M_lacour * modulation_matrix;
+// Saving SNR during the modulation.
+Eigen::Matrix<double, N_BL, N_MOD> gd_snr_during_mod = Eigen::Matrix<double, N_BL, N_MOD>::Zero();
 
 // The search vector. There is no reason for this to have 
 // diferent frequencies for each baseline.
@@ -87,6 +99,18 @@ double sinc_normalized(double x) {
     } else {
         return std::sin(M_PI * x) / (M_PI * x);
     }
+}
+
+void start_modulation() {
+    // This function starts the modulation by setting the first modulation pattern.
+    mod_ix = 0;
+    set_mod(MODULATION_AMPLITUDE * modulation_matrix.col(mod_ix));
+}
+
+void end_modulation() {
+    // This function starts the modulation by setting the first modulation pattern.
+    mod_ix = 0;
+    set_mod(Eigen::Vector4d::Zero());
 }
 
 void set_dm_piston(Eigen::Vector4d dm_piston){
@@ -374,8 +398,16 @@ void fringe_tracker(){
 
             // Compute the group delay - units of wavelengths at K1
             baselines.gd_phasor(bl) -= baselines.gd_phasor_boxcar[gd_ix](bl);
-            baselines.gd_phasor_boxcar[gd_ix](bl) = 
-                K1_phasor[bl] * std::conj(K2_phasor[bl]);
+            if (settings.s.offload_mode == OFFLOAD_MOD){
+                // In mod mode, we skip the first frames of the boxcar.
+                int dit_per_offload = 0.001 * settings.s.offload_time_ms / control_u.dit;
+                if (gd_ix < dit_per_offload){
+                    baselines.gd_phasor_boxcar[gd_ix](bl) = 0;
+                }
+            } else {
+                baselines.gd_phasor_boxcar[gd_ix](bl) = 
+                    K1_phasor[bl] * std::conj(K2_phasor[bl]);
+            }
             baselines.gd_phasor(bl) += baselines.gd_phasor_boxcar[gd_ix](bl);  
             baselines.gd(bl) = std::arg(baselines.gd_phasor(bl)*baselines.gd_phasor_offset(bl)) * gd_to_K1;
 
@@ -573,7 +605,46 @@ void fringe_tracker(){
         double time_since_last_offload_ms = (now.tv_sec - last_dl_offload.tv_sec) * 1000.0 +
             (now.tv_nsec - last_dl_offload.tv_nsec) * 0.000001;
         // If it has been more than offload_time_ms, do the offload and the search step.
-        if (time_since_last_offload_ms > settings.s.offload_time_ms){
+        // The exception is if we are in OFFLOAD_MOD mode, which we will treat separately for 
+        // code readability.
+        if ((settings.s.offload_mode == OFFLOAD_MOD) && (gd_ix == baselines.n_gd_boxcar-1)){
+            // In mod mode, we fill the group delay SNR matrix.
+            gd_snr_during_mod.col(mod_ix) = baselines.gd_snr;
+            mod_ix = (mod_ix + 1) % N_MOD;
+            set_mod(MODULATION_AMPLITUDE * modulation_matrix.col(mod_ix));
+            if (mod_ix==0){
+                // Now find the fringe peak. We iterate over baselines, 
+                // and accumulate the SNR for zero, plus and minus modulation.
+                Eigen::Matrix<int, N_BL, 1> delays;
+                delays.setZero();
+                Eigen::Matrix<int, N_BL, 1> valid;
+                valid.setZero();
+                for (int bl=0; bl<N_BL; bl++){
+                    double snr_zero = 0;
+                    double snr_plus = 0;
+                    double snr_minus = 0;
+                    for (int ix=0; ix<N_MOD; ix++){
+                        if (bl_modulation_map(bl,ix) == 0) snr_zero += gd_snr_during_mod(bl,ix);
+                        else if (bl_modulation_map(bl,ix) == 1) snr_plus += gd_snr_during_mod(bl,ix);
+                        else if (bl_modulation_map(bl,ix) == -1) snr_minus += gd_snr_during_mod(bl,ix);
+                    }
+                    snr_zero /= 6; //!!! Hardwired.
+                    snr_plus /= 4;
+                    snr_minus /= 4;
+                    // Find max SNR and corresponding delay.
+                    double max_snr = std::max({snr_zero, snr_plus, snr_minus});
+                    if (max_snr > settings.s.gd_threshold){
+                        valid(bl) = 1;
+                        if (max_snr == snr_plus) delays(bl) = MODULATION_AMPLITUDE;
+                        else if (max_snr == snr_minus) delays(bl) = -MODULATION_AMPLITUDE;
+                    }
+                }
+                // Create a new pseudo-inverse matrix, and multiply the group delay 
+                // by this to find the new control signal.
+                control_u.dl_offload = make_pinv(valid, 0) * delays;
+                add_to_delay_lines(control_u.search - control_u.dl_offload);
+            }
+        } else if (time_since_last_offload_ms > settings.s.offload_time_ms) {
             // Irrespective of offload type, see if we need to reset the search, 
             // based on determining if we confidently have fringes with all telescopes.
             Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, N_TEL, N_TEL>> eig_solver(cov_gd_tel);
