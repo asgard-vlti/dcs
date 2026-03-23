@@ -746,9 +746,8 @@ void* fetch_imgs(void *arg) {
       // signaling about to write
       shm_img->md->write = 1;     
       // copy image to shared memory. If no dark subtraction, this is the final image!
-      memcpy(liveimg_ptr,                  
-	      (unsigned short *) image_p,
-	      sizeof(unsigned short) * nbpix_frm);
+      // Moved to "else" for now, to see if this fixes the flashy dark subtraction issue.
+      
 
       // ===================================================
       //          are we subtracting a dark ?
@@ -764,7 +763,10 @@ void* fetch_imgs(void *arg) {
           livedrk_ptr = shm_img_dark->array.UI16 + matching_dark_index * nbpix_frm;
         }
         for (ii = 0; ii < nbpix_frm; ii++) // subtracting dark here
-          liveimg_ptr[ii] -= livedrk_ptr[ii] - camconf->offset;
+          //liveimg_ptr[ii] -= livedrk_ptr[ii] - camconf->offset;
+          livedrk_ptr[ii] = image_p[ii] - livedrk_ptr[ii] + camconf->offset; // to save the dark-subtracted image in the dark SHM for now, to see if this fixes the flashing issue
+      } else {
+        memcpy(liveimg_ptr, image_p, nbpix_frm * sizeof(unsigned short));
       }
 
       // =============================
@@ -1053,6 +1055,13 @@ void skip_save_baldr_mode(int _mode) {
   }
 }
 
+/* ------------------------------------------------------------------------
+ * Find the number of skipped frames.
+ * ------------------------------------------------------------------------ */
+int query_skipped_frames() {
+  return skipped_frames;
+}
+
 /* -------------------------------------------------------------------------
  * Start or interrupt the FITS saving of data cubes acquired by the camera
  * 
@@ -1276,6 +1285,7 @@ COMMANDER_REGISTER(m)
   m.def("subtract_dark", set_dark_sub_mode, "Set/unset the dark subtraction.");
   m.def("cam_conf", show_cam_conf, "Summary of the current camera configuration");
   m.def("skip_save_baldr", skip_save_baldr_mode, "Skip saving BALDR data");
+  m.def("get_skipped", query_skipped, "How many frames have been skipped?");
 }
 
 /* =========================================================================
