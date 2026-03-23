@@ -181,7 +181,7 @@ void add_to_delay_lines(Eigen::Vector4d dl) {
         // If the total offload is less than the deadband of about  micron, do not send
         if (total_offload < HFO_DEADBAND) return;
     }
-    next_offload += dl;
+    next_offload = center_dls(dl + next_offload);
 }
 
 // Set one delay line value. 

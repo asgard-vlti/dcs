@@ -9,12 +9,12 @@
 #define GD_MAX_VAR_FOR_JUMP 0.2*0.2
 #define GD_MIN_REAL_VAR 1E-6
 #define N_MOD 14
-#define MODULATION_AMPLITUDE 15.0 
+#define MODULATION_AMPLITUDE 30.0 
 
 using namespace std::complex_literals;
 
 long unsigned int ft_cnt=0, cnt_since_init=0;
-int mod_ix=0;
+int mod_ix=0, gd_ix=0; //!!!This shouldn't be a local global.
 long unsigned int nerrors=0;
 double gd_to_K1=1.0;
 
@@ -39,6 +39,7 @@ Eigen::Matrix<double, N_TEL, N_MOD> modulation_matrix = (Eigen::Matrix<double, N
     0,1,0,1,1,0,0,1,0,1,0,1,0,1,
     0,0,1,0,1,0,1,0,0,1,1,0,1,1,    
     1,1,1,1,0,1,0,0,0,1,1,0,0,0).finished();
+
 Eigen::Matrix<double, N_BL, N_MOD> bl_modulation_matrix = M_lacour * modulation_matrix;
 // Saving SNR during the modulation.
 Eigen::Matrix<double, N_BL, N_MOD> gd_snr_during_mod = Eigen::Matrix<double, N_BL, N_MOD>::Zero();
@@ -105,6 +106,7 @@ double sinc_normalized(double x) {
 void start_modulation() {
     // This function starts the modulation by setting the first modulation pattern.
     mod_ix = 0;
+    gd_ix = 0;
     set_mod(MODULATION_AMPLITUDE * modulation_matrix.col(mod_ix));
 }
 
@@ -369,7 +371,7 @@ void fringe_tracker(){
 #endif
         // Extract the phases from the Fourier transforms, one baseline
         // at a time. This could in principle be vectorised. 
-        int gd_ix = ft_cnt % baselines.n_gd_boxcar;
+        gd_ix = ft_cnt % baselines.n_gd_boxcar;
         int pd_ix = ft_cnt % baselines.n_pd_boxcar;
         for (int bl=0; bl<N_BL; bl++){
             // Use the peak of the splodge to compute the phase
@@ -611,8 +613,11 @@ void fringe_tracker(){
         if ((settings.s.offload_mode == OFFLOAD_MOD) && (gd_ix == baselines.n_gd_boxcar-1)){
             // In mod mode, we fill the group delay SNR matrix.
             gd_snr_during_mod.col(mod_ix) = baselines.gd_snr;
+            std::cout << baselines.gd_snr.transpose() << std::endl;
             mod_ix = (mod_ix + 1) % N_MOD;
             set_mod(MODULATION_AMPLITUDE * modulation_matrix.col(mod_ix));
+            // DEBUG
+            std::cout << "Modulating: " << modulation_matrix.col(mod_ix).transpose() << std::endl;
             if (mod_ix==0){
                 // Now find the fringe peak. We iterate over baselines, 
                 // and accumulate the SNR for zero, plus and minus modulation.
@@ -632,6 +637,8 @@ void fringe_tracker(){
                     snr_zero /= 6; //!!! Hardwired.
                     snr_plus /= 4;
                     snr_minus /= 4;
+                    // DEBUG
+                    std::cout << std::fixed << std::setprecision(1) << snr_minus << " " << snr_zero << " " << snr_plus << std::endl;
                     // Find max SNR and corresponding delay.
                     double max_snr = std::max({snr_zero, snr_plus, snr_minus});
                     if (max_snr > settings.s.gd_threshold){
@@ -643,8 +650,13 @@ void fringe_tracker(){
                 // Create a new pseudo-inverse matrix, and multiply the group delay 
                 // by this to find the new control signal. There is regularisation just like
                 // the normal fringe tracking above.
+                //DEBUG 
+                std::cout << "Delays: " << delays.transpose() << std::endl;
+                std::cout << "Valid: " << valid.transpose() << std::endl;
                 I6gd = M_lacour * make_pinv(valid, 0) * M_lacour.transpose() * valid.asDiagonal();
                 control_u.dl_offload = M_lacour_dag * I6gd * delays;
+                std::cout << "Regularised: " << (I6gd * delays).transpose() << std::endl;
+                std::cout << "Telescope Space: " << control_u.dl_offload.transpose() << std::endl;
                 add_to_delay_lines(control_u.search - control_u.dl_offload);
             }
         } else if (time_since_last_offload_ms > settings.s.offload_time_ms) {
