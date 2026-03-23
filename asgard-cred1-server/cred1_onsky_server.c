@@ -88,6 +88,8 @@ typedef struct {
   // int *tsig;          // time signature (ex: [2, -1, -1])
 } subarray;
 
+int skipped_frames = 0; //!!! Shouldn't be a global.
+
 /* =========================================================================
  *                           function prototypes
  * ========================================================================= */
@@ -666,7 +668,7 @@ void* fetch_imgs(void *arg) {
   long int liveindex = 0;
   long int liveroi_index = 0;
 
-  int reset_cntr = 0, prev_reset_cntr = 0, skipped_frames = 0;
+  int reset_cntr = 0, prev_reset_cntr = 0;
   int dark_reset_index = 0, matching_dark_index = 0;
 
   long nbpix_frm = camconf->nbpix_frm;
@@ -764,7 +766,7 @@ void* fetch_imgs(void *arg) {
         }
         for (ii = 0; ii < nbpix_frm; ii++) // subtracting dark here
           //liveimg_ptr[ii] -= livedrk_ptr[ii] - camconf->offset;
-          livedrk_ptr[ii] = image_p[ii] - livedrk_ptr[ii] + camconf->offset; // to save the dark-subtracted image in the dark SHM for now, to see if this fixes the flashing issue
+          liveimg_ptr[ii] = ((unsigned short *)image_p)[ii] - livedrk_ptr[ii] + camconf->offset; // to save the dark-subtracted image in the dark SHM for now, to see if this fixes the flashing issue
       } else {
         memcpy(liveimg_ptr, image_p, nbpix_frm * sizeof(unsigned short));
       }
@@ -1058,7 +1060,7 @@ void skip_save_baldr_mode(int _mode) {
 /* ------------------------------------------------------------------------
  * Find the number of skipped frames.
  * ------------------------------------------------------------------------ */
-int query_skipped_frames() {
+int query_skipped() {
   return skipped_frames;
 }
 
