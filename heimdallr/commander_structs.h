@@ -78,6 +78,7 @@ template <> struct adl_serializer<Settings> {
         j["gd_gain"] = p.gd_gain;
         j["kp"] = p.kp;
         j["search_delta"] = p.search_delta;
+        j["target_itime"] = p.target_itime;
         j["delay_line_type"] = p.delay_line_type;
         j["offload_mode"] = p.offload_mode;
         j["servo_mode"] = p.servo_mode;
@@ -95,6 +96,7 @@ template <> struct adl_serializer<Settings> {
         j.at("gd_gain").get_to(p.gd_gain);
         j.at("kp").get_to(p.kp);
         j.at("search_delta").get_to(p.search_delta);
+        j.at("target_itime").get_to(p.target_itime);
         j.at("delay_line_type").get_to(p.delay_line_type);
         j.at("offload_mode").get_to(p.offload_mode);
         j.at("servo_mode").get_to(p.servo_mode);
