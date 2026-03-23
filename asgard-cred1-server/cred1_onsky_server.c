@@ -746,9 +746,8 @@ void* fetch_imgs(void *arg) {
       // signaling about to write
       shm_img->md->write = 1;     
       // copy image to shared memory. If no dark subtraction, this is the final image!
-      memcpy(liveimg_ptr,                  
-	      (unsigned short *) image_p,
-	      sizeof(unsigned short) * nbpix_frm);
+      // Moved to "else" for now, to see if this fixes the flashy dark subtraction issue.
+      
 
       // ===================================================
       //          are we subtracting a dark ?
@@ -764,7 +763,10 @@ void* fetch_imgs(void *arg) {
           livedrk_ptr = shm_img_dark->array.UI16 + matching_dark_index * nbpix_frm;
         }
         for (ii = 0; ii < nbpix_frm; ii++) // subtracting dark here
-          liveimg_ptr[ii] -= livedrk_ptr[ii] - camconf->offset;
+          //liveimg_ptr[ii] -= livedrk_ptr[ii] - camconf->offset;
+          livedrk_ptr[ii] = image_p[ii] - livedrk_ptr[ii] + camconf->offset; // to save the dark-subtracted image in the dark SHM for now, to see if this fixes the flashing issue
+      } else {
+        memcpy(liveimg_ptr, image_p, nbpix_frm * sizeof(unsigned short));
       }
 
       // =============================
