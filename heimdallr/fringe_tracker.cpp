@@ -237,7 +237,6 @@ void reset_search(){
     control_u.test_value=0.1;
     control_u.fringe_found = false;
     control_u.itime=0;
-    control_u.target_itime=0;
     beam_mutex.unlock();
 }
 

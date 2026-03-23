@@ -506,13 +506,15 @@ void set_itime(double itime) {
     }
     beam_mutex.lock();
     control_u.itime = 0;
-    control_u.target_itime=itime;
-    beam_mutex.unlock();   
+    beam_mutex.unlock();
+    settings.mutex.lock();
+    settings.s.target_itime=itime;
+    settings.mutex.unlock();
     fmt::print("New integration started for a total time of {}\n", itime);
 }
 
 std::string expstatus(void){
-    if (control_u.itime < control_u.target_itime) return "integrating";
+    if (control_u.itime < settings.s.target_itime) return "integrating";
     return "success";
 }
 
@@ -665,6 +667,7 @@ int main(int argc, char* argv[]) {
     settings.s.offload_time_ms=10;
     settings.s.fixed_dl=3;
     settings.s.search_offset = {0.0, 0.0, 0.0, 0.0};
+    settings.s.target_itime=0.0;
 
 #ifndef SIMULATE
     // Initialise the DMs

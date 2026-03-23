@@ -138,7 +138,7 @@ struct ControlU{
     int test_beam, test_n, test_ix;
     double test_value;
     bool fringe_found;
-    double itime, target_itime;
+    double itime;
     int beams_active[N_TEL]={1,1,1,1};
 };
 
@@ -210,6 +210,7 @@ struct Settings
     double gd_gain;
     double kp;
     double search_delta;
+    double target_itime;
     std::string delay_line_type;
     int offload_mode, servo_mode, fixed_dl;
     std::vector<double> search_offset;
