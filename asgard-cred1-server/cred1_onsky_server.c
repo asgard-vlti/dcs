@@ -1053,6 +1053,13 @@ void skip_save_baldr_mode(int _mode) {
   }
 }
 
+/* ------------------------------------------------------------------------
+ * Find the number of skipped frames.
+ * ------------------------------------------------------------------------ */
+int query_skipped_frames() {
+  return skipped_frames;
+}
+
 /* -------------------------------------------------------------------------
  * Start or interrupt the FITS saving of data cubes acquired by the camera
  * 
@@ -1276,6 +1283,7 @@ COMMANDER_REGISTER(m)
   m.def("subtract_dark", set_dark_sub_mode, "Set/unset the dark subtraction.");
   m.def("cam_conf", show_cam_conf, "Summary of the current camera configuration");
   m.def("skip_save_baldr", skip_save_baldr_mode, "Skip saving BALDR data");
+  m.def("get_skipped", query_skipped, "How many frames have been skipped?");
 }
 
 /* =========================================================================
