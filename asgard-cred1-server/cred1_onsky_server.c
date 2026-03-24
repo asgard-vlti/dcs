@@ -22,7 +22,6 @@
 //#define DEBUG_TIMING
 
 #include <commander/commander.h> // commander header
-#include "commander_structs.h"   // commander data structures
 #include <ImageStreamIO.h>       // libImageStreamIO header
 #include <edtinc.h>              // EDT-PCI board API
 #include <pthread.h>
@@ -91,16 +90,17 @@ typedef struct {
 
 //-------Commander structs-------------
 
-// The status.
+// The status. !!! No idea why I need to do typedef struct here.
 struct Status
 {
     std::string cam_status;
-    unsigned int skipped_frames, nbreads;
+    unsigned int skipped_frames=0, nbreads;
     bool shm_error;
     double fps;
 };
 
 //-------End of Commander structs------
+#include "commander_structs.h"   // commander data structures
 
 /* =========================================================================
  *                           function prototypes
@@ -176,7 +176,6 @@ pthread_t tid_save_dark;       // thread ID when saving a dark (triggered)
 sem_t sync_save;               // semaphore to signal it's time to save!
 
 Status status;                 // the status struct to share via commander
-status.skipped_frames = 0;     // initialize the skipped frames counter
 
 char status_cstr[16] = "idle"; // to answer ZMQ status queries
 
@@ -925,7 +924,6 @@ void fetch() {
 std::string cli(std::string cmd) {
   char out_cli[OUTSIZE];  // holder for CLI responses  
   
-  camera_command(ed, cmd.c_str());
   read_pdv_cli(ed, out_cli);
   return out_cli;
 }
@@ -933,7 +931,7 @@ std::string cli(std::string cmd) {
 /* -------------------------------------------------------------------------
  *                          Returns server status
  * ------------------------------------------------------------------------- */
-Status status() {
+Status get_status() {
   // Check on SHM errors
   int nbshm = 8;
   int counter = 8;
@@ -1297,7 +1295,7 @@ COMMANDER_REGISTER(m)
   using namespace co::literals;
   m.def("fetch", fetch, "Trigger fetching data from the camera.");
   m.def("cli", cli, "Direct interface to the camera Command Line Interface.");
-  m.def("status", status, "Get the current status of the camera.");
+  m.def("status", get_status, "Get the current status of the camera.");
   m.def("stop", stop, "Stop fetching data from the. camera.");
   m.def("quit", quit, "Stops and closes the server.");
   m.def("set_fps", update_fps, "Updates the camera FPS and syncs SHM.");
@@ -1370,7 +1368,7 @@ int main(int argc, char **argv) {
   refresh_image_splitting_configuration();
   set_crop_mode(1);  // now starting the CRED1 in crop mode
   update_fps(500.0); // engineering startup configuration
-  update_gain(10);   // engineering startup configuration
+  update_gain(1);   // engineering startup configuration
   show_cam_conf();
   shm_setup(1);  // setup everything, including the ROI SHMs
 

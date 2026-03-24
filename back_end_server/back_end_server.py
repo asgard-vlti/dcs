@@ -520,9 +520,10 @@ class BackEndServer:
                 server.send_string("offload_time 10")
                 server.recv_string()
                 time.sleep(0.1)
-                server.send_string("set_gd_boxcar 64")
-                server.recv_string()
-                time.sleep(0.1)
+                #!!! Let's allow the user to set this.
+                #server.send_string("set_gd_boxcar 64")
+                #server.recv_string()
+                #time.sleep(0.1)
                 server.send_string(f"default_gains")
                 server.recv_string()
                 time.sleep(0.1)
