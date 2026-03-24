@@ -95,7 +95,7 @@ typedef struct {
 struct Status
 {
     std::string cam_status;
-    unsigned int skipped_frames, nbreads;
+    unsigned int skipped_frames = 0, nbreads;
     bool shm_error;
     double fps;
 };
@@ -176,7 +176,6 @@ pthread_t tid_save_dark;       // thread ID when saving a dark (triggered)
 sem_t sync_save;               // semaphore to signal it's time to save!
 
 Status status;                 // the status struct to share via commander
-status.skipped_frames = 0;     // initialize the skipped frames counter
 
 char status_cstr[16] = "idle"; // to answer ZMQ status queries
 
@@ -752,7 +751,7 @@ void* fetch_imgs(void *arg) {
       // ===================================================
       if (camconf->ndmr_mode == 1) {
       	memcpy(&reset_cntr, image_p + 4, sizeof(unsigned int));
-	      if (reset_cntr - prev_reset_cntr > 1) status.skipped_frames++;
+	      if ((reset_cntr - prev_reset_cntr > 1) && prev_reset_cntr != 0) status.skipped_frames++;
 	      prev_reset_cntr = reset_cntr;
       	// printf("\rreset counter = %3d", reset_cntr);
       	// fflush(stdout);
@@ -1231,6 +1230,7 @@ void set_ndmr_mode(unsigned int _mode) {
     sprintf(cmd_cli, "set rawimages off");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
+    usleep(100000);
 
     sprintf(camconf->readmode, "GCDS");
   }
@@ -1250,10 +1250,15 @@ void set_ndmr_mode(unsigned int _mode) {
     sprintf(cmd_cli, "set nbreadworeset %d", _mode); // _mode + 1 ??
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
+    usleep(100000);
 
     sprintf(camconf->readmode, "NDMR");
     camconf->nfr_reset = 9; // to be made more adaptive !!!
   }
+  // Need to set the fps back to what it was.
+  sprintf(cmd_cli, "set fps %.2f", camconf->fps);
+  camera_command(ed, cmd_cli);
+  read_pdv_cli(ed, out_cli);
 
   update_dark();
   // back to prior business
