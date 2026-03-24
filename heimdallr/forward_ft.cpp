@@ -83,6 +83,8 @@ void ForwardFt::loop() {
     catch_up_with_sem(subarray, 2);
     while (mode != FT_STOPPING) {
         ImageStreamIO_semwait(subarray, 2);
+        // At this point, subarray->md->cnt0 has been incremented by the camera thread, 
+        // and the new frame is available in subarray->array.SI32. 
         if (subarray->md->cnt0 != cnt) {
             // Put this here just in case there is a re-start with a new size. Unlikely!
             szj = subim_sz/2 + 1;
