@@ -39,8 +39,10 @@ settings_keys = [
     "kp",
 ]
 
+# Global from the settings thread used for the status thread
+servo_mode = 4  # Default to "off" mode
 
-def log_ft_performance(log_path="ft_performance_log.txt", rate_hz=1000):
+def log_ft_performance(log_path="ft_performance_log.txt", rate_hz=1000, gd_rate_hz=10):
     # Each thread gets its own ZmqReq instance, with reconnection logic
     def get_zmq():
         while True:
@@ -105,7 +107,10 @@ def log_ft_performance(log_path="ft_performance_log.txt", rate_hz=1000):
                 line = "{} {}".format(timestamp, " ".join(values))
                 f.write(line + "\n")
                 f.flush()
-            time.sleep(max(0, (1.0 / rate_hz) - (time.time() - t0)))
+            if servo_mode == 4:  # If in "off" mode, we can log settings at a slower rate
+                time.sleep(max(0, (1.0 / gd_rate_hz) - (time.time() - t0)))
+            else:
+                time.sleep(max(0, (1.0 / rate_hz) - (time.time() - t0)))
 
 
 def log_ft_settings(log_path="ft_settings_log.txt", rate_hz=1):
@@ -150,6 +155,10 @@ def log_ft_settings(log_path="ft_settings_log.txt", rate_hz=1):
                 h_z = get_zmq()
                 continue
             if reply:
+                # Adjust gd rate
+                if "servo_mode" in reply:
+                    global servo_mode
+                    servo_mode = reply["servo_mode"]
                 timestamp = "{:.3f}".format(t0)
                 values = []
                 for k in settings_keys:
@@ -163,10 +172,9 @@ def log_ft_settings(log_path="ft_settings_log.txt", rate_hz=1):
                 f.flush()
             time.sleep(max(0, (1.0 / rate_hz) - (time.time() - t0)))
 
-
 def main():
     parser = argparse.ArgumentParser(description="FT performance data logging script")
-
+    parser.add_argument("--gdrate", type=int, default=10, help="Sample rate when group delay tracking in Hz")
     parser.add_argument("--rate", type=int, default=1000, help="Sample rate in Hz")
     args = parser.parse_args()
     # time in UTC
@@ -183,7 +191,7 @@ def main():
 
     # Start both logging functions in separate threads
     t1 = threading.Thread(
-        target=log_ft_performance, args=(full_pth, args.rate), daemon=True
+        target=log_ft_performance, args=(full_pth, args.rate, args.gdrate), daemon=True
     )
     t2 = threading.Thread(
         target=log_ft_settings, args=(settings_full_pth, 1), daemon=True

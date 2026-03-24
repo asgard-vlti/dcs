@@ -193,7 +193,7 @@ struct Status
     std::vector<double> pd_av, pd_av_filtered;
     std::vector<double> gd_phasor_real, gd_phasor_imag;
     int test_ix, test_n;
-    unsigned int cnt;
+    unsigned int cnt, num_ft_frames_missed;
     bool locked;
     double itime;
 };

@@ -22,6 +22,7 @@
 //#define DEBUG_TIMING
 
 #include <commander/commander.h> // commander header
+#include "commander_structs.h"   // commander data structures
 #include <ImageStreamIO.h>       // libImageStreamIO header
 #include <edtinc.h>              // EDT-PCI board API
 #include <pthread.h>
@@ -88,7 +89,18 @@ typedef struct {
   // int *tsig;          // time signature (ex: [2, -1, -1])
 } subarray;
 
-int skipped_frames = 0; //!!! Shouldn't be a global.
+//-------Commander structs-------------
+
+// The status.
+struct Status
+{
+    std::string cam_status;
+    unsigned int skipped_frames, nbreads;
+    bool shm_error;
+    double fps;
+};
+
+//-------End of Commander structs------
 
 /* =========================================================================
  *                           function prototypes
@@ -137,7 +149,7 @@ void show_cam_conf();
 #define CMDSIZE 50   // max ZMQ command size
 #define OUTSIZE 200  // not sure a dedicated constant is warranted, but...
 
-
+int fetch_thread_started = 0; // flag to track whether the fetch thread has been started
 int splitmode = 0;   // flag to check if split mode is activated
 int baud = 115200;   // serial connexion baud rate
 EdtDev ed = NULL;    // handle for the serial connexion to camera CLI
@@ -162,6 +174,10 @@ pthread_t tid_fetch;           // thread ID for the image fetching to SHM
 pthread_t tid_save;            // thread ID when saving data
 pthread_t tid_save_dark;       // thread ID when saving a dark (triggered)
 sem_t sync_save;               // semaphore to signal it's time to save!
+
+Status status;                 // the status struct to share via commander
+status.skipped_frames = 0;     // initialize the skipped frames counter
+
 char status_cstr[16] = "idle"; // to answer ZMQ status queries
 
 char dashline[80] =
@@ -651,6 +667,13 @@ void update_dark() {
  *                     Camera image fetching thread
  * ========================================================================= */
 void* fetch_imgs(void *arg) {
+  // check if the thread is already running - should not be the case, 
+  // but in principle this could occur (and did in the past!) 
+  if (fetch_thread_started == 1) {
+    printf("ERROR! The fetching thread is already running.\n");
+    return NULL;
+  }
+  fetch_thread_started = 1;
 #ifdef DEBUG_TIMING
   struct timespec tstart, tend;
   double dtim, dtother;
@@ -729,7 +752,7 @@ void* fetch_imgs(void *arg) {
       // ===================================================
       if (camconf->ndmr_mode == 1) {
       	memcpy(&reset_cntr, image_p + 4, sizeof(unsigned int));
-	      if (reset_cntr - prev_reset_cntr > 1) skipped_frames++;
+	      if (reset_cntr - prev_reset_cntr > 1) status.skipped_frames++;
 	      prev_reset_cntr = reset_cntr;
       	// printf("\rreset counter = %3d", reset_cntr);
       	// fflush(stdout);
@@ -876,6 +899,7 @@ void* fetch_imgs(void *arg) {
   }
   pdv_start_images(pdv_p, 1);  // stop the freerun mode
   image_p = pdv_wait_images(pdv_p, 1); // read the final image
+  fetch_thread_started = 0;
   return NULL;
 }
 
@@ -909,7 +933,8 @@ std::string cli(std::string cmd) {
 /* -------------------------------------------------------------------------
  *                          Returns server status
  * ------------------------------------------------------------------------- */
-std::string status() {
+Status status() {
+  // Check on SHM errors
   int nbshm = 8;
   int counter = 8;
 
@@ -921,11 +946,18 @@ std::string status() {
   if (access("/dev/shm/baldr4.im.shm", F_OK) != 0) counter -= 1;
   if (access("/dev/shm/hei_k1.im.shm", F_OK) != 0) counter -= 1;
   if (access("/dev/shm/hei_k2.im.shm", F_OK) != 0) counter -= 1;
-
+  
   if (counter != nbshm)
-      sprintf(status_cstr, "%s", "SHM PROBLEM!");
+    status.shm_error = true;
+  else
+    status.shm_error = false;
+  
+  // Fill with known values
+  status.cam_status = status_cstr;
+  status.fps = camconf->fps;
+  status.nbreads = camconf->nbreads;
 
-  return status_cstr;
+  return status;
 }
 
 /* -------------------------------------------------------------------------
@@ -944,7 +976,7 @@ void stop() {
 void quit() {
   if (keepgoing == 1) {
     keepgoing = 0;
-    sleep(0.5);
+    usleep(100000); // sleep for 100ms
   }
   free(ROI);
   free_shm(1); // erase everything, including ROI SHMs!
@@ -961,6 +993,7 @@ void update_fps(float fps) {
 
   if (keepgoing == 1) {
     keepgoing = 0; // to interrupt the fetching process
+    usleep(100000); // sleep for 100ms
     wasrunning = 1; //
   }
   sprintf(cmd_cli, "set fps %.2f", fps);
@@ -1057,12 +1090,6 @@ void skip_save_baldr_mode(int _mode) {
   }
 }
 
-/* ------------------------------------------------------------------------
- * Find the number of skipped frames.
- * ------------------------------------------------------------------------ */
-int query_skipped() {
-  return skipped_frames;
-}
 
 /* -------------------------------------------------------------------------
  * Start or interrupt the FITS saving of data cubes acquired by the camera
@@ -1074,10 +1101,10 @@ void trigger_save_dark() {
   // time of writing).
   double min_sleep_time = 2.0*camconf->nbr_hlf/camconf->fps; 
   printf("Sleeping this thread for %6.3lf seconds...\n", min_sleep_time);
-  sleep(min_sleep_time + 0.2);
+  usleep((int)((min_sleep_time + 0.5) * 1000000));
   camconf->save_dark = 1;
   printf("Because Frantz and Mike aren't smart enough, sleeping again for %6.3lf seconds...\n", min_sleep_time);
-  sleep(min_sleep_time + 0.2);
+  usleep((int)( (min_sleep_time + 0.5) * 1000000 ));
   fflush(stdout);
   set_dark_sub_mode(1);  
 }
@@ -1092,7 +1119,7 @@ void set_split_mode(int _mode) {
   if (keepgoing == 1) {
     keepgoing = 0;  // interrupt the acquisition
     wasrunning = 1; // keep that in mind
-    sleep(1);
+    usleep(100000); // sleep for 100ms
   }
   
   if (_mode <= 0) {
@@ -1148,7 +1175,7 @@ void set_crop_mode(int _mode) {
   if (keepgoing == 1) {
     keepgoing = 0;  // interrupt the acquisition
     wasrunning = 1; // keep that in mind
-    sleep(1);
+    usleep(100000); // sleep for 100ms
   }
 
   // update the cropmode internal flag according to the command
@@ -1163,7 +1190,7 @@ void set_crop_mode(int _mode) {
   update_dark();
   // back to prior business
   if (wasrunning == 1) {
-    sleep(1);
+    usleep(100000); // sleep for 100ms
     fetch();
   }
 }
@@ -1192,7 +1219,7 @@ void set_ndmr_mode(unsigned int _mode) {
   if (keepgoing == 1) {
     keepgoing = 0;  // interrupt the acquisition
     wasrunning = 1; // keep that in mind
-    sleep(0.2);
+    usleep(100000); // sleep for 100ms
   }
 
   if (_mode <= 2) {  // ------ engineering mode -----
@@ -1200,7 +1227,7 @@ void set_ndmr_mode(unsigned int _mode) {
     sprintf(cmd_cli, "set mode globalresetcds");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
-
+    usleep(100000);
     sprintf(cmd_cli, "set rawimages off");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
@@ -1212,12 +1239,12 @@ void set_ndmr_mode(unsigned int _mode) {
     sprintf(cmd_cli, "set rawimages on");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
-    sleep(0.1);
+    usleep(100000);
 
     sprintf(cmd_cli, "set mode globalresetbursts");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
-    sleep(0.1);
+    usleep(100000);
     
     camconf->nbreads = _mode;
     sprintf(cmd_cli, "set nbreadworeset %d", _mode); // _mode + 1 ??
@@ -1231,7 +1258,7 @@ void set_ndmr_mode(unsigned int _mode) {
   update_dark();
   // back to prior business
   if (wasrunning == 1) {
-    sleep(0.2);
+    usleep(100000); // sleep for 100ms
     fetch();
   }
 }
@@ -1287,7 +1314,6 @@ COMMANDER_REGISTER(m)
   m.def("subtract_dark", set_dark_sub_mode, "Set/unset the dark subtraction.");
   m.def("cam_conf", show_cam_conf, "Summary of the current camera configuration");
   m.def("skip_save_baldr", skip_save_baldr_mode, "Skip saving BALDR data");
-  m.def("get_skipped", query_skipped, "How many frames have been skipped?");
 }
 
 /* =========================================================================
@@ -1320,7 +1346,7 @@ int main(int argc, char **argv) {
   }
   pdv_flush_fifo(pdv_p);
 
-  sleep(1);
+  usleep(500000); // sleep for 500ms to let the camera settle after opening the data link
 
   // --------------------- set-up the prompt --------------------
   
@@ -1360,7 +1386,7 @@ int main(int argc, char **argv) {
   // ------------------------
   if (keepgoing == 1) {
     keepgoing = 0;
-    sleep(0.5);
+    usleep(100000); // sleep for 100ms  
   }
   sem_destroy(&sync_save);  // saving semaphore erased
   printf("%s\n", status_cstr);
