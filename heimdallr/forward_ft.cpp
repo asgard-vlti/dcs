@@ -95,7 +95,13 @@ void ForwardFt::loop() {
                 nerrors++;
             }
             mode = FT_RUNNING;
-
+            // Check the write parameter. It really shouldn't be active.
+            if (subarray->md->write) {
+                std::cout << "FT: Semaphore signalled but write flag is still set. Skipping frame." << std::endl;
+                continue;
+            }
+            // !!! Temp. As a quick test, lets print the first pixel value. 
+            std::cout << subarray->name << ": " << subarray->array.SI32[0] << std::endl;
             // Copy the data from the IMAGE subarray to the subimage
 #ifdef PRINT_TIMING
             clock_gettime(CLOCK_REALTIME, &then);

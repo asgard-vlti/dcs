@@ -736,24 +736,14 @@ class BackEndServer:
                     return self.create_response(
                         f"ERROR: NWORESET value must be an integer"
                     )
-                if value <= 2:
-                    self.servers["cam_server"].send_string(
-                        f'cli "set mode globalresetcds"'
-                    )
-                    logging.info(self.servers["cam_server"].recv().decode("ascii"))
-                elif value < 500:
-                    self.servers["cam_server"].send_string(
-                        f'cli "set mode globalresetbursts"'
-                    )
-                    logging.info(self.servers["cam_server"].recv().decode("ascii"))
-                    self.servers["cam_server"].send_string(
-                        f'cli "set nbreadworeset {value}"'
-                    )
-                    logging.info(self.servers["cam_server"].recv().decode("ascii"))
-                else:
+                # It is essential that the server deals with details including timing
+                # being correct. We only do basic error checking. cli commands
+                # are not for here.
+                if (value < 0) or (value > 500):
                     return self.create_response(
-                        f"ERROR: NWORESET value {value} is higher than the max (500)"
+                        f"ERROR: NWORESET value {value} is out of range (0-500)"
                     )
+                self.servers["cam_server"].send_string(f'ndmr_mode {value}"')
             elif name == "DET.GAIN":
                 try:
                     value = int(value)

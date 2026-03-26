@@ -133,7 +133,7 @@ struct ControlU{
     Eigen::Vector4d dm_piston;
     Eigen::Vector4d search;
     Eigen::Vector4d dl_offload;
-    double search_delta, dit;
+    double search_delta, dit, nbreads, tsig_len;
     unsigned int search_Nsteps, steps_to_turnaround;
     int test_beam, test_n, test_ix;
     double test_value;
@@ -315,6 +315,10 @@ void set_delay_lines(Eigen::Vector4d dl);
 
 //The forward Fourier transforms
 extern ForwardFt *K1ft, *K2ft;
+
+// Camera status polling client
+void start_camera_client();
+void stop_camera_client();
 
 // Delay line offloads
 extern sem_t sem_offload;
