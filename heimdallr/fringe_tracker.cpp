@@ -403,6 +403,8 @@ void fringe_tracker(){
             if (settings.s.offload_mode == OFFLOAD_MOD){
                 // In mod mode, we skip the first frames of the boxcar.
                 int dit_per_offload = 0.001 * settings.s.offload_time_ms / control_u.dit;
+                if (control_u.nbreads > 1)
+                	dit_per_offload += control_u.tsig_len;
                 if (gd_ix < dit_per_offload){
                     baselines.gd_phasor_boxcar[gd_ix](bl) = 0;
                 }

@@ -159,7 +159,7 @@ class MyMainWidget(QtWidgets.QWidget):
         self.averaging = False
         self.NDMR = False
         self.mycmap = cm.jet
-        self.pxi, self.pyi = 0.0, 0.0
+        self.pxi, self.pyi = 0, 0
         self.pxval = 0.0
 
         self.gView_live = pg.PlotWidget(self)
@@ -347,14 +347,14 @@ class MyMainWidget(QtWidgets.QWidget):
                 self.data_img = cube.mean(0)
             elif self.NDMR:
                 # Find the instances of 0 in the 1st pixels of each slice 
-                last_frames = np.where(cube[:, 0, 0] == 0)[0]
-                max_ix = np.max(cube[:, 0, 0])
-                first_frames = np.where(cube[:,0,0] == max_ix)[0]
-                navg = np.max([len(last_frames), len(first_frames)])
+                last_frames = np.where(cube[:, 0, 2] == 0)[0]
+                max_ix = np.max(cube[:, 0, 2])
+                first_frames = np.where(cube[:,0,2] == max_ix)[0]
+                navg = np.min([len(last_frames), len(first_frames)])
                 if navg > 0:
                     last_frames = last_frames[:navg]
                     first_frames = first_frames[:navg]
-                    self.data_img = np.mean(cube[last_frames], axis=0) - np.mean(cube[first_frames], axis=0)
+                    self.data_img = np.mean(cube[last_frames], axis=0) - np.mean(cube[first_frames], axis=0) + 1000
                 else:
                     self.data_img = cube[0]
         else:

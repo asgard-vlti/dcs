@@ -533,7 +533,8 @@ std::string set_gd_boxcar(int n){
 std::string default_gains(void){
     // Lets move maxmum of 70% of the way to the target in the maximum of
     // the gd_boxcar time and the offload_time.
-    double offloads_per_gd_boxcar = 0.001 * settings.s.offload_time_ms / (baselines.n_gd_boxcar * control_u.dit); 
+    double offloads_per_gd_boxcar = 0.001 * settings.s.offload_time_ms / (baselines.n_gd_boxcar * control_u.dit);
+    if (control_u.nbreads > 1) offloads_per_gd_boxcar /= control_u.tsig_len; 
     // Ensure not larger than 1
     offloads_per_gd_boxcar = std::min(offloads_per_gd_boxcar, 1.0);
     settings.mutex.lock();

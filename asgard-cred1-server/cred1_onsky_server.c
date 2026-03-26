@@ -90,7 +90,7 @@ typedef struct {
 
 //-------Commander structs-------------
 
-// The status. !!! No idea why I need to do typedef struct here.
+// The status. 
 struct Status
 {
     std::string cam_status;
@@ -953,7 +953,10 @@ Status get_status() {
   // Fill with known values
   status.cam_status = status_cstr;
   status.fps = camconf->fps;
-  status.nbreads = camconf->nbreads;
+  if (camconf->ndmr_mode==1)
+  	status.nbreads = camconf->nbreads;
+  else
+  	status.nbreads = 1;
   status.tsig_len = ROI[0].nrs;
 
   return status;
@@ -1239,18 +1242,18 @@ void set_ndmr_mode(unsigned int _mode) {
     sprintf(cmd_cli, "set rawimages on");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
-    usleep(100000);
+    usleep(200000);
 
     sprintf(cmd_cli, "set mode globalresetbursts");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
-    usleep(100000);
+    usleep(200000);
     
     camconf->nbreads = _mode;
     sprintf(cmd_cli, "set nbreadworeset %d", _mode); // _mode + 1 ??
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
-    usleep(100000);
+    usleep(200000);
 
     sprintf(camconf->readmode, "NDMR");
     camconf->nfr_reset = 9; // to be made more adaptive !!!
