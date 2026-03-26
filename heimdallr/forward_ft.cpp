@@ -106,18 +106,14 @@ void ForwardFt::loop() {
             // In NDMR mode, the first pixel of the image contains the frame counter. 
             // Data are not valid unless this is less than:
             // control_u.nbreads - 1 - control_u.tsig_len
-            if ( (control_u.nbreads > 1) && (subarray->array.SI32[0] > (int)(control_u.nbreads - 1 - control_u.tsig_len)) ) 
-                continue;
-            // !!! Testing. Print the first pixel value and the time between
-            // this frame and the last one that got this far, only if
-            // subarray->name is "hei_k1"
-            if (strcmp(subarray->name, "hei_k1") == 0) {
-                std::cout << "Counter: " << subarray->array.SI32[0] << std::endl;
-                clock_gettime(CLOCK_REALTIME, &now);
-                if (then.tv_sec == now.tv_sec)                    
-                    std::cout << "dT: " << (now.tv_nsec-then.tv_nsec)/1000 << std::endl;
-                then = now;
+            if ( (control_u.nbreads > 1) && (subarray->array.SI32[0] > (int)(control_u.nbreads - 1 - control_u.tsig_len)) ) {
+            	 bad_frame=true;
+                 cnt++;
+                 sem_post(&sem_new_frame);
+                 continue;
             }
+
+
             // Copy the data from the IMAGE subarray to the subimage
 #ifdef PRINT_TIMING
             clock_gettime(CLOCK_REALTIME, &then);
@@ -161,8 +157,9 @@ void ForwardFt::loop() {
             then = now;
 #endif
             // If the flux is negative, signal a bad frame.
-            if (ft[0][0] > 0)
+            if (ft[0][0] > 0){
                 bad_frame=false;
+            }
             else
                 {
                     bad_frame=true;

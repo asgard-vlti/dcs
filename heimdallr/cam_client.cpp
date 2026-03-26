@@ -5,16 +5,16 @@
 #include <thread>
 
 #define CAM_PORT 6667
-#define POLL_PERIOD_MS 100
+#define POLL_PERIOD_MS 500
 #define TIMEOUT_MS 2000
 
 namespace {
 
 std::atomic<bool> keep_cam_polling{false};
 std::thread cam_poll_thread;
-
+std::string status_string = "status";
 std::string cam_endpoint() {
-    return "tcp://127.0.0.1:" + std::to_string(CAM_PORT);
+    return "tcp://192.168.100.2:" + std::to_string(CAM_PORT);
 }
 
 void create_cam_socket(zmq::socket_t& socket) {
@@ -55,12 +55,11 @@ void camera_poll_loop() {
     zmq::context_t context(1);
     zmq::socket_t socket(context, zmq::socket_type::req);
     create_cam_socket(socket);
-
     while (keep_cam_polling.load()) {
         bool need_reconnect = false;
 
         try {
-            socket.send(zmq::buffer("status"), zmq::send_flags::none);
+            socket.send(zmq::buffer(status_string), zmq::send_flags::none);
             zmq::message_t reply;
             auto result = socket.recv(reply, zmq::recv_flags::none);
             if (!result.has_value()) {
@@ -79,9 +78,9 @@ void camera_poll_loop() {
         }
 
         if (need_reconnect && keep_cam_polling.load()) {
+        	std::cout << "Reconnecting" << std::endl;
             reconnect_cam_socket(socket, context);
         }
-
         std::this_thread::sleep_for(std::chrono::milliseconds(POLL_PERIOD_MS));
     }
 
