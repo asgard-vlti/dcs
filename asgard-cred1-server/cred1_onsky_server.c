@@ -94,7 +94,7 @@ typedef struct {
 struct Status
 {
     std::string cam_status;
-    unsigned int skipped_frames = 0, nbreads;
+    unsigned int skipped_frames = 0, nbreads, tsig_len=2;
     bool shm_error;
     double fps;
 };
@@ -246,7 +246,7 @@ void refresh_image_splitting_configuration() {
       ROI[ii].y0  = cJSON_GetObjectItem(item, "y0")->valueint;
       ROI[ii].xsz = cJSON_GetObjectItem(item, "xsz")->valueint;
       ROI[ii].ysz = cJSON_GetObjectItem(item, "ysz")->valueint;
-      ROI[ii].nrs = 9; // 3; // cJSON_GetObjectItem(item, "nrs")->valueint; // assumes 3
+      ROI[ii].nrs = 5; // 3; // cJSON_GetObjectItem(item, "nrs")->valueint; // assumes 3
       ROI[ii].npx = ROI[ii].xsz * ROI[ii].ysz;
       ROI[ii].nbs = 10000; // hardcoded here - should be fine
       ii++;
@@ -698,7 +698,7 @@ void* fetch_imgs(void *arg) {
   long nbpix_roi_tosave = ROI[0].npx * ROI[0].nbs / 2;
 
   int ii, jj, ri;  // ii,jj pixel indices, ri: ROI index
-  int tsig[9] = {4,3,2,1,0,-1,-2,-3,-4};  // {2,-1,-1} To be dynamically allocated from the JSON.
+  int tsig[5] = {2,1,0,-1,-2};  // {2,-1,-1} To be dynamically allocated from the JSON.
   // !!! If changing this, also change ROI[ii].nrs = 3; on line 230.
 
   int seq_indices[9] = {0};   // frame indices part of current time sequence
@@ -954,6 +954,7 @@ Status get_status() {
   status.cam_status = status_cstr;
   status.fps = camconf->fps;
   status.nbreads = camconf->nbreads;
+  status.tsig_len = ROI[0].nrs;
 
   return status;
 }

@@ -115,7 +115,7 @@ void ForwardFt::loop() {
                 std::cout << "Counter: " << subarray->array.SI32[0] << std::endl;
                 clock_gettime(CLOCK_REALTIME, &now);
                 if (then.tv_sec == now.tv_sec)                    
-                    std::cout << "dT: " << now.tv_nsec-then.tv_nsec << std::endl;
+                    std::cout << "dT: " << (now.tv_nsec-then.tv_nsec)/1000 << std::endl;
                 then = now;
             }
             // Copy the data from the IMAGE subarray to the subimage
