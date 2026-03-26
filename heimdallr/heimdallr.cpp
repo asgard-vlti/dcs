@@ -699,9 +699,14 @@ int main(int argc, char* argv[]) {
     initialize_delay_line(config["servo"]["dl_type"].value_or("rmn"));
     std::thread offloading_thread(dl_offload);
 
+    // Start camera status polling in a dedicated client thread.
+    start_camera_client();
+
     // Initialize the commander server and run it
     commander::Server s(argc, argv);
     s.run();
+
+    stop_camera_client();
     
     keep_offloading=false;
     offloading_thread.join();
