@@ -788,7 +788,9 @@ void* fetch_imgs(void *arg) {
         }
         for (ii = 0; ii < nbpix_frm; ii++) // subtracting dark here
           //liveimg_ptr[ii] -= livedrk_ptr[ii] - camconf->offset;
-          liveimg_ptr[ii] = ((unsigned short *)image_p)[ii] - livedrk_ptr[ii] + camconf->offset; // to save the dark-subtracted image in the dark SHM for now, to see if this fixes the flashing issue
+          // MJI: This next line (and not memcpy above) is needed to fix the flashing issue.
+          liveimg_ptr[ii] = ((unsigned short *)image_p)[ii] - livedrk_ptr[ii] + camconf->offset; 
+        liveimg_ptr[2] = reset_cntr; // to keep track of the resets in the live image (for display)
       } else {
         memcpy(liveimg_ptr, image_p, nbpix_frm * sizeof(unsigned short));
       }
