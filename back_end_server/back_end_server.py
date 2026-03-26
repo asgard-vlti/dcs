@@ -743,7 +743,8 @@ class BackEndServer:
                     return self.create_response(
                         f"ERROR: NWORESET value {value} is out of range (0-500)"
                     )
-                self.servers["cam_server"].send_string(f'ndmr_mode {value}"')
+                self.servers["cam_server"].send_string(f"ndmr_mode {value}")
+                logging.info(self.servers["cam_server"].recv().decode("ascii"))
             elif name == "DET.GAIN":
                 try:
                     value = int(value)
