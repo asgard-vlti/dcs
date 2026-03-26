@@ -47,8 +47,9 @@ void update_camera_status(const nlohmann::json& status) {
 
     std::lock_guard<std::mutex> lock(beam_mutex);
     control_u.dit = 1.0 / fps;
-    control_u.nbreads = status["nbreads"].get<double>();
-    control_u.tsig_len = status["tsig_len"].get<double>();
+    control_u.nbreads = status["nbreads"].get<int>();
+    control_u.tsig_len = status["tsig_len"].get<int>();
+    cout << "Camera status updated: fps=" << fps << ", nbreads=" << control_u.nbreads << ", tsig_len=" << control_u.tsig_len << endl;   
 }
 
 void camera_poll_loop() {
