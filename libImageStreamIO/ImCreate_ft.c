@@ -16,20 +16,20 @@
  *
  * Creates an image imtest00 in shared memory
  * Updates the image every ~ 10ms, forever...
- * A disk is rotating around the center of the image
  *
  */
 #define SZ 32
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <complex.h>
+#include <complex>
 #include <fftw3.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 #include "ImageStreamIO.h"
+using namespace std::complex_literals;
 
 /* [geometry] 
 hole_diameter   = 9e-3
@@ -41,21 +41,22 @@ pix = 24.0
 const float hole_radius = 1.65;      // Radius of the hole in pupil pixels
 //const float hole_x[4] = {-3.46*hole_radius, 0,0,3.46*hole_radius}; // Hole x center in pupil pixels
 //const float hole_y[4] = {-2*hole_radius, 4*hole_radius, 0 , -2*hole_radius}; // Hole y center in pupil pixels
-float phase=0.0;
+double phase=0.0;
 const float hole_x[4] = {-0.00792, -0.0085, 0.0,0.02130};
 const float hole_y[4] = {0.019,-0.01484, 0.0, -0.00015};
 const float s = SZ*24/2.1;
 
-int make_image(IMAGE *imarray, fftw_complex *pupil, fftw_complex *image, fftw_plan plan, float wavenum_scale, float flux_scale)
+int make_image(IMAGE *imarray, fftw_complex *pupil, fftw_complex *image, fftw_plan plan, double wavenum_scale, double flux_scale)
 {
-    float x,y, rnoise;                    // Image column and row indices
-    fftw_complex hole_phasors[4];              // Phasors for the holes
-
+    double x,y, rnoise;                    // Image column and row indices
+    std::complex<double> hole_phasors[4];              // Phasors for the holes
+    std::complex<double> val;              // Value of the Fourier transform at a given pixel
+    int ix;
     imarray->md->write = 1;         // Poor-man's mutex when writing
 
     // Make our hole phasors
     for (int kk=0; kk<4; kk++)
-        hole_phasors[kk] = cexp(1.2*I*kk*sin(phase)*wavenum_scale);
+        hole_phasors[kk] = std::exp(1.2i*static_cast<double>(kk)*sin(phase)*wavenum_scale);
 
     // Fill the pupil with the holes
     for(int jj=0; jj<SZ; jj++)            // loop rows
@@ -64,12 +65,14 @@ int make_image(IMAGE *imarray, fftw_complex *pupil, fftw_complex *image, fftw_pl
         for(int ii=0; ii<SZ; ii++)     // loop columns
         {
             x = (((ii + SZ/2) % SZ) - SZ/2.0);
-            pupil[jj*SZ + ii] = 0.0;
+            pupil[jj*SZ + ii][0] = 0.0;
+            pupil[jj*SZ + ii][1] = 0.0;
             for (int kk=0; kk<4; kk++)
             {
                 if (sqrt((x-s*hole_x[kk]*wavenum_scale)*(x-s*hole_x[kk]*wavenum_scale) + (y-s*hole_y[kk]*wavenum_scale)*(y-s*hole_y[kk]*wavenum_scale)) < 1.5*wavenum_scale)
                 {
-                    pupil[jj*SZ + ii] += hole_phasors[kk];
+                    pupil[jj*SZ + ii][0] += hole_phasors[kk].real();
+                    pupil[jj*SZ + ii][1] += hole_phasors[kk].imag();
                 }
             }
         }
@@ -79,13 +82,16 @@ int make_image(IMAGE *imarray, fftw_complex *pupil, fftw_complex *image, fftw_pl
 
     // Now take the square of the electric field and copy to the image
     // ->array is union; ->array.F is float pointer to image
-    int* dotF = imarray->array.F;
+    unsigned int* dotF = imarray->array.UI32;
     for (int ii=0; ii<SZ; ii++)
     {
         for (int jj=0; jj<SZ; jj++)
         {
             rnoise = rand()/(float)RAND_MAX - 0.5;
-            *(dotF++) = (int)(1000 + powf(cabsf(image[((ii + SZ/2) % SZ)*SZ + (jj + SZ/2) % SZ]),2)*flux_scale + rnoise*10);
+            ix = ((ii + SZ/2) % SZ)*SZ + (jj + SZ/2) % SZ;
+            val.real(image[ix][0]);
+            val.imag(image[ix][1]);
+            *(dotF++) = (int)(1000 + std::norm(val)*flux_scale + rnoise*10);
         }
     }
 
