@@ -13,6 +13,10 @@ sockets = [
     ("baldr2", 6663),
     ("baldr3", 6664),
     ("baldr4", 6665),
+    ("baldrtt1", 6671),
+    ("baldrtt2", 6672),
+    ("baldrtt3", 6673),
+    ("baldrtt4", 6674),
 ]
 
 
@@ -305,7 +309,6 @@ def main():
     client = UniversalClient(ip_addr, servers)
     client.show()
     sys.exit(app.exec_())
-
-
+    
 if __name__ == "__main__":
     main()

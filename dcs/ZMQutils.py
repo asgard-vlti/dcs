@@ -11,10 +11,39 @@ class ZmqReq:
 
     def __init__(self, endpoint: str, timeout_ms: int = 1500):
         self.ctx = zmq.Context.instance()
+        self.endpoint = endpoint
+        self.timeout_ms = timeout_ms
+        self._had_error = False
         self.s = self.ctx.socket(zmq.REQ)
         self.s.RCVTIMEO = timeout_ms
         self.s.SNDTIMEO = timeout_ms
         self.s.connect(endpoint)
+
+    def _reconnect_socket(self) -> None:
+        try:
+            self.s.disconnect(self.endpoint)
+        except zmq.ZMQError:
+            # Socket may already be disconnected or in a transitional state.
+            pass
+
+        self.s.close(0)
+        self.s = self.ctx.socket(zmq.REQ)
+        self.s.RCVTIMEO = self.timeout_ms
+        self.s.SNDTIMEO = self.timeout_ms
+        self.s.connect(self.endpoint)
+        self._had_error = False
+
+    def _send_string(self, payload: str) -> bool:
+        if self._had_error:
+            self._reconnect_socket()
+
+        try:
+            self.s.send_string(payload)
+            return True
+        except zmq.ZMQError as e:
+            logging.error(f"ZMQ send error occurred: {e}")
+            self._had_error = True
+            return False
 
     def send_payload(
         self, payload: Dict[str, Any], is_str=False, decode_ascii=True, image=False
@@ -24,9 +53,11 @@ class ZmqReq:
         decode_ascii: if True, decode the response as ascii and strip the last character (used False for Cpp interfaces)
         """
         if not is_str:
-            self.s.send_string(json.dumps(payload, sort_keys=True))
+            if not self._send_string(json.dumps(payload, sort_keys=True)):
+                return None
         else:
-            self.s.send_string(payload)
+            if not self._send_string(payload):
+                return None
 
         try:
             if decode_ascii:
@@ -35,12 +66,18 @@ class ZmqReq:
                 res = self.s.recv_string()
                 
             jres = json.loads(res)
+            self._had_error = False
             if image:
                 return image_from_message(jres)
         
             return json.loads(res)
         except zmq.error.Again as e:
             logging.error(f"ZMQ error occurred: {e}")
+            self._had_error = True
+            return None
+        except zmq.ZMQError as e:
+            logging.error(f"ZMQ error occurred: {e}")
+            self._had_error = True
             return None
         except json.decoder.JSONDecodeError:
             logging.error(f"JSON decode error occurred")

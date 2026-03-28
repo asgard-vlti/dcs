@@ -157,8 +157,9 @@ class MyMainWidget(QtWidgets.QWidget):
         self.vmax = False
         self.pwr = 1.0
         self.averaging = False
+        self.NDMR = False
         self.mycmap = cm.jet
-        self.pxi, self.pyi = 0.0, 0.0
+        self.pxi, self.pyi = 0, 0
         self.pxval = 0.0
 
         self.gView_live = pg.PlotWidget(self)
@@ -168,6 +169,7 @@ class MyMainWidget(QtWidgets.QWidget):
         # ============= display controls =============
         self.chB_nonlinear = QtWidgets.QCheckBox("non-linear", self)
         self.chB_average = QtWidgets.QCheckBox("averaging", self)
+        self.chB_NDMR = QtWidgets.QCheckBox("NDMR", self)
 
         self.dspB_disp_min = QtWidgets.QDoubleSpinBox(self)
         self.dspB_disp_max = QtWidgets.QDoubleSpinBox(self)
@@ -252,6 +254,10 @@ class MyMainWidget(QtWidgets.QWidget):
         self.chB_average.setGeometry(QRect(xcol2, y0, btw, clh))
         self.chB_average.stateChanged[int].connect(self.update_average_state)
 
+        y0 = 255
+        self.chB_NDMR.setGeometry(QRect(xcol2, y0, btw, clh))
+        self.chB_NDMR.stateChanged[int].connect(self.update_NDMR_state)
+
         y0 = 270
         self.dspB_disp_min.setGeometry(QRect(xcol1, y0, btw, clh))
         self.dspB_disp_max.setGeometry(QRect(xcol1, y0 + 30, btw, clh))
@@ -313,6 +319,14 @@ class MyMainWidget(QtWidgets.QWidget):
         pass
 
     # =========================================================
+    def update_NDMR_state(self):
+        if self.chB_NDMR.isChecked():
+            self.NDMR = True
+        else:
+            self.NDMR = False
+        pass
+
+    # =========================================================
     def test(self):
         pass
         print("Test success!")
@@ -327,8 +341,22 @@ class MyMainWidget(QtWidgets.QWidget):
 
     # =========================================================
     def refresh(self):
-        if self.averaging:
-            self.data_img = self.mySHM.get_data(False, True).mean(0)
+        if self.averaging or self.NDMR:
+            cube = self.mySHM.get_data(False, True)
+            if self.averaging:
+                self.data_img = cube.mean(0)
+            elif self.NDMR:
+                # Find the instances of 0 in the 1st pixels of each slice 
+                last_frames = np.where(cube[:, 0, 2] == 0)[0]
+                max_ix = np.max(cube[:, 0, 2])
+                first_frames = np.where(cube[:,0,2] == max_ix)[0]
+                navg = np.min([len(last_frames), len(first_frames)])
+                if navg > 0:
+                    last_frames = last_frames[:navg]
+                    first_frames = first_frames[:navg]
+                    self.data_img = np.mean(cube[last_frames], axis=0) - np.mean(cube[first_frames], axis=0) + 1000
+                else:
+                    self.data_img = cube[0]
         else:
             self.data_img = self.mySHM.get_latest_data_slice()
         self.refresh_img()

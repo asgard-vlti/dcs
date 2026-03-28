@@ -749,6 +749,7 @@ def main():
             "ia",
             "imageall",
             "p3",
+            "p1",
             "pupil3",
             "pa",
             "pupilall",
@@ -830,6 +831,13 @@ def main():
                 print("Pupil alignment with MCS output not supported, exiting...")
                 return
             heimdallr_aa.autoalign_pupil(3)
+            # open all shutters
+            heimdallr_aa.open_all_shutters()
+        elif args.align in ["p1", "pupil1"]:
+            if args.output == "mcs":
+                print("Pupil alignment with MCS output not supported, exiting...")
+                return
+            heimdallr_aa.autoalign_pupil(1)
             # open all shutters
             heimdallr_aa.open_all_shutters()
         elif args.align in ["test_mcs"]:

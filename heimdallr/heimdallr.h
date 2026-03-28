@@ -39,19 +39,19 @@
 #define OFFLOAD_GD 1
 #define OFFLOAD_OFF 2
 #define OFFLOAD_MANUAL 3
+#define OFFLOAD_MOD 4
 
 // The maximum number of frames to average for group delay. Delay error in wavelength from group
 // delay can be 0.4/which scales to a phasor error of 0.04, while phase error can only be 0.2
 // Group delay has naturally an SNR that is 2.5 times lower, so the SNR ratio is 0.2/0.04*2.5 = 12.5
 // ... this means we need 12.5^2 = ~150 times more frames to average for group delay than for
 // phase delay.
+#define INIT_N_GD_BOXCAR 128
 #define MAX_N_GD_BOXCAR 512 
-#define N_TO_JUMP 10         // Number of frames to wait before checking for a phase jump !!! Unused.
-#define MAX_N_BS_BOXCAR 64   // Maximum number of frames to average for bispectrum
-#define MAX_N_PS_BOXCAR 64   // Maximum number of frames to average for power spectrum
 #define MAX_N_PD_BOXCAR 256  // Maximum number of frames to keep for phase delay history (phasor and phase)
-
-#define N_DARK_BOXCAR 256 // Number of frames for the running average of the dark.
+#define MAX_N_BS_BOXCAR 256   // Maximum number of frames to average for bispectrum
+///!!! Always set to the maximum, and not synced to GD_BOXCAR.
+#define MAX_N_PS_BOXCAR 256   // Maximum number of frames to average for power spectrum
 
 #define N_TEL 4 // Number of telescopes
 #define N_BL 6  // Number of baselines
@@ -133,12 +133,12 @@ struct ControlU{
     Eigen::Vector4d dm_piston;
     Eigen::Vector4d search;
     Eigen::Vector4d dl_offload;
-    double search_delta, dit;
+    double search_delta, dit, nbreads, tsig_len;
     unsigned int search_Nsteps, steps_to_turnaround;
     int test_beam, test_n, test_ix;
     double test_value;
     bool fringe_found;
-    double itime, target_itime;
+    double itime;
     int beams_active[N_TEL]={1,1,1,1};
 };
 
@@ -153,11 +153,10 @@ struct Baselines{
     Eigen::Matrix<dcomp, N_BL, 1> gd_phasor_boxcar[MAX_N_GD_BOXCAR];
     Eigen::Matrix<dcomp, N_BL, 1> pd_phasor_boxcar_avg;
     Eigen::Matrix<dcomp, N_BL, 1> pd_phasor_boxcar[MAX_N_PD_BOXCAR];
-    unsigned int n_gd_boxcar, ix_gd_boxcar, n_pd_boxcar, ix_pd_boxcar;
-    // Set n_gd_boxcar, reset ix_gd_boxcar, and zero gd_phasor_boxcar
+    unsigned int n_gd_boxcar, n_pd_boxcar;
+    // Set n_gd_boxcar and zero gd_phasor_boxcar
     void set_gd_boxcar(unsigned int n) {
         n_gd_boxcar = n;
-        ix_gd_boxcar = 0;
         for (unsigned int i = 0; i < MAX_N_GD_BOXCAR; i++) {
             gd_phasor_boxcar[i].setZero();
         }
@@ -170,18 +169,6 @@ struct Bispectrum{
     dcomp bs_phasor;
     double closure_phase;
     int n_bs_boxcar, ix_bs_boxcar;
-};
-
-struct PIDSettings{
-    std::mutex mutex;
-    double kp;
-    double ki;
-    double kd;
-    double integral;
-    double dl_feedback_gain;
-    double gd_gain;
-    // Gain when operating GD only in steps - strictly not part of PID.
-    double offload_gd_gain; 
 };
 
 //-------Commander structs-------------
@@ -206,13 +193,14 @@ struct Status
     std::vector<double> pd_av, pd_av_filtered;
     std::vector<double> gd_phasor_real, gd_phasor_imag;
     int test_ix, test_n;
-    unsigned int cnt;
-    bool locked{false};
+    unsigned int cnt, num_ft_frames_missed;
+    bool locked;
     double itime;
 };
 
 // Settings struct for commander
-struct Settings {
+struct Settings
+{
     unsigned int n_gd_boxcar;
     double gd_threshold;
     double pd_threshold;
@@ -222,12 +210,18 @@ struct Settings {
     double gd_gain;
     double kp;
     double search_delta;
+    double target_itime;
     std::string delay_line_type;
-    int offload_mode, servo_mode;
+    int offload_mode, servo_mode, fixed_dl;
+    std::vector<double> search_offset;
 };
 
-
 //-------End of Commander structs------
+
+struct LocalSettings {
+    Settings s;
+    std::mutex mutex;
+};
 
 // -------- Extern global definitions ------------
 extern IMAGE DMs[N_TEL];
@@ -236,9 +230,7 @@ extern IMAGE master_DMs[N_TEL];
 extern toml::table config;
 
 // Servo parameters. These are the parameters that will be adjusted by the commander
-extern int servo_mode, offload_mode;
-extern uint offload_time_ms;
-extern PIDSettings pid_settings;
+extern LocalSettings settings;
 extern ControlU control_u;
 extern ControlA control_a;
 extern Baselines baselines;
@@ -246,6 +238,7 @@ extern Bispectrum bispectra_K1[N_CP];
 extern Bispectrum bispectra_K2[N_CP];
 extern double gd_to_K1;
 extern long unsigned int ft_cnt;
+extern int mod_ix;
 extern bool foreground_in_place;
 
 // Generally, we either work with beams or baselines, so have a separate lock for each.
@@ -253,9 +246,8 @@ extern std::mutex baseline_mutex, beam_mutex;
 extern std::atomic<bool> zero_offload;
 // DL offload variables
 extern bool keep_offloading;
-extern std::string delay_line_type;
 extern Eigen::Vector4d search_offset;
-extern Eigen::Vector4d last_offload;
+extern Eigen::Vector4d next_offload, mod_offload;
 
 // ForwardFt class
 class ForwardFt {   
@@ -264,9 +256,6 @@ public:
     std::mutex mutex;
     // POSIX semaphore for new frame notification
     sem_t sem_new_frame;
-
-    // Save dark frames as an atomic variable. !!! Remove as not needed.
-    std::atomic<bool> save_dark_frames;
     
     // Count of the frame number that has been processed
     long unsigned int cnt=0;
@@ -286,8 +275,7 @@ public:
     /// The power spectrum of the image, and the array to boxcar average.
     double *power_spectra[MAX_N_PS_BOXCAR];
     double *power_spectrum;
-    double *subim, *subim_av, *dark;
-    double *subim_boxcar[N_DARK_BOXCAR];
+    double *subim;
     double power_spectrum_bias;
     double power_spectrum_inst_bias;
     int ps_index = MAX_N_PS_BOXCAR-1;
@@ -318,6 +306,8 @@ private:
 };
 
 // Main thread function for fringe tracking.
+void start_modulation();
+void end_modulation();
 void fringe_tracker();
 
 // Seeting the delay lines (needed form the main thread and from the commander)
@@ -326,15 +316,17 @@ void set_delay_lines(Eigen::Vector4d dl);
 //The forward Fourier transforms
 extern ForwardFt *K1ft, *K2ft;
 
+// Camera status polling client
+void start_camera_client();
+void stop_camera_client();
+
 // Delay line offloads
 extern sem_t sem_offload;
+bool initialize_delay_line(std::string type);
 void set_delay_lines(Eigen::Vector4d dl);
+void set_mod(Eigen::Vector4d dl);
 void add_to_delay_lines(Eigen::Vector4d dl);
 void set_delay_line(int dl, double value);
 void dl_offload();
 void start_search(uint search_dl_in, double start, double stop, double rate, uint dt_ms, double threshold);
 
-// Thresholds for fringe tracking (now variables)
-extern double gd_threshold;
-extern double pd_threshold;
-extern double gd_search_reset;

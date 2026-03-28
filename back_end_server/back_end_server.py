@@ -157,17 +157,19 @@ import datetime
 import time
 import os
 import signal
-import uuid
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Type, Any
 from pathlib import Path
 import sys
 import subprocess
 import logging
 
 # from rts_base import AbstractRTSTask, RTSContext, RTSState, RTSErr
-from handlers.baldr_rts_handlers import register as register_baldr_rts
+# !!!ADAM please educate Mike on this path bit for editable installs.
+try:
+   from back_end_server.handlers.baldr_rts_handlers import register as register_baldr_rts
+except:
+   from handlers.baldr_rts_handlers import register as register_baldr_rts
 
 
 # --- Logging setup: file and console ---
@@ -206,10 +208,16 @@ class BackEndServer:
             "baldr2": 6663,
             "baldr3": 6664,
             "baldr4": 6665,
+            "baldrtt1": 6671,
+            "baldrtt2": 6672,
+            "baldrtt3": 6673,
+            "baldrtt4": 6674,
             "cam_server": 6667,
             "DM_server": 6666,
         },
+        baldr_mode = "FAINT",
     ):
+        self.baldr_mode = baldr_mode
         self.port = port
         # self.baldr_commands = baldr_back_end_server.BaldrCommands() #This is the Ben way.
         self.context = zmq.Context()
@@ -301,8 +309,6 @@ class BackEndServer:
             return self.abort()
         elif command_name == "expstatus":
             return self.expstatus(command)
-        elif command_name == "foreground":
-            return self.foreground(command)
         elif command_name.startswith("bld_"):
             # Fire-and-forget RTS
             return self.handle_bld_rts(command)
@@ -330,13 +336,21 @@ class BackEndServer:
         """
 
         # Map WAG verbs -> Commander command strings
-        cmd_map = {
-            "bld_open_lo": 'open_baldr_LO ""',
-            "bld_open_ho": 'open_baldr_HO ""',
-            "bld_close_lo": 'close_baldr_LO ""',
-            "bld_close_ho": 'close_baldr_HO ""',
-            "bld_n0_update": 'N0_update ""',
-        }
+        if (self.baldr_mode=="STANDARD"):
+            cmd_map = {
+                "bld_open_lo": 'open_baldr_LO ""',
+                "bld_open_ho": 'open_baldr_HO ""',
+                "bld_close_lo": 'close_baldr_LO ""',
+                "bld_close_ho": 'close_baldr_HO ""',
+                "bld_n0_update": 'N0_update ""',
+            }
+        else:
+            cmd_map = {
+                "bld_open_lo": 'servo "off"',
+                "bld_open_ho": 'servo "off"',
+                "bld_close_lo": 'servo "tt"',
+                "bld_close_ho": 'servo "ho"',
+            }
 
         name = (command.get("name") or "").lower()
         if name not in cmd_map:
@@ -375,7 +389,10 @@ class BackEndServer:
         errors = []
 
         for b in target_beams:
-            key = f"baldr{b}"
+            if (self.baldr_mode == "STANDARD"):
+                key = f"baldr{b}"
+            else:
+                key = f"baldrtt{b}"
             sock = self.servers.get(key)
             if sock is None:
                 errors.append(f"{key}: not connected")
@@ -503,9 +520,10 @@ class BackEndServer:
                 server.send_string("offload_time 10")
                 server.recv_string()
                 time.sleep(0.1)
-                server.send_string("set_gd_boxcar 64")
-                server.recv_string()
-                time.sleep(0.1)
+                #!!! Let's allow the user to set this.
+                #server.send_string("set_gd_boxcar 64")
+                #server.recv_string()
+                #time.sleep(0.1)
                 server.send_string(f"default_gains")
                 server.recv_string()
                 time.sleep(0.1)
@@ -585,7 +603,7 @@ class BackEndServer:
         # parameters = command.get("parameters", [])
         if command_name == "s_h-autoalign":
             process = subprocess.Popen(
-                ["h-autoalign", "-a", "ia", "-o", "mcs", "-b", "K1"],
+                ["/home/asg/.conda/envs/asgard/bin/h-autoalign", "-a", "ia", "-o", "mcs", "-b", "K1"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
@@ -599,7 +617,7 @@ class BackEndServer:
                 return self.create_response("ERROR: dark_time parameter is required")
 
             cmd = [
-                "h-shutter",
+                "/home/asg/.conda/envs/asgard/bin/h-shutter",
                 "--beam-time",
                 str(_param_value(command.get("parameters", []), "beam-time")),
                 "--dark-time",
@@ -641,6 +659,32 @@ class BackEndServer:
                 _log_subprocess_output(process, prefix=f"{command_name}-beam{beam}")
                 logging.info(f"Started s_b-autoalign script for beam {beam}.")
                 time.sleep(0.8)
+        elif command_name == "s_b-mode":
+            script = Path("/home/asg/Progs/repos/dcs/dcs/cmd_scripts/b_mode.py")
+            if _param_value(command.get("parameters", []), "mode") is None:
+                return self.create_response("ERROR: mode parameter is required")
+            mode = _param_value(command.get("parameters", []), "mode")
+            if mode.upper() not in ["FAINT", "STANDARD"]:
+                return self.create_response("ERROR: mode parameter must be FAINT or STANDARD")
+            if self.baldr_mode.upper() == mode.upper():
+                logging.info(f"Mode is already set to {mode.upper()}. No action taken.")
+                return self.create_response("OK")
+            else:
+                self.baldr_mode = mode.upper()
+                cmd = [
+                    sys.executable,
+                    str(script),
+                    mode.upper(),
+                ]
+                process = subprocess.Popen(
+                    cmd,
+                    cwd=str(script.parent),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )          
+                _log_subprocess_output(process, prefix=f"{command_name}-{mode}")
+                logging.info(f"Started s_b-mode script with mode {mode}.")
+                time.sleep(0.8)   
         else:
             logging.error(f"Unknown script command '{command_name}'")
             return self.create_response(
@@ -692,24 +736,15 @@ class BackEndServer:
                     return self.create_response(
                         f"ERROR: NWORESET value must be an integer"
                     )
-                if value <= 2:
-                    self.servers["cam_server"].send_string(
-                        f'cli "set mode globalresetcds"'
-                    )
-                    logging.info(self.servers["cam_server"].recv().decode("ascii"))
-                elif value < 500:
-                    self.servers["cam_server"].send_string(
-                        f'cli "set mode globalresetbursts"'
-                    )
-                    logging.info(self.servers["cam_server"].recv().decode("ascii"))
-                    self.servers["cam_server"].send_string(
-                        f'cli "set nbreadworeset {value}"'
-                    )
-                    logging.info(self.servers["cam_server"].recv().decode("ascii"))
-                else:
+                # It is essential that the server deals with details including timing
+                # being correct. We only do basic error checking. cli commands
+                # are not for here.
+                if (value < 0) or (value > 500):
                     return self.create_response(
-                        f"ERROR: NWORESET value {value} is higher than the max (500)"
+                        f"ERROR: NWORESET value {value} is out of range (0-500)"
                     )
+                self.servers["cam_server"].send_string(f"ndmr_mode {value}")
+                logging.info(self.servers["cam_server"].recv().decode("ascii"))
             elif name == "DET.GAIN":
                 try:
                     value = int(value)
@@ -767,9 +802,10 @@ class BackEndServer:
 
         return self.create_response(res)
 
-    # def foreground(self, command):
 
-
-if __name__ == "__main__":
+def main():
     server = BackEndServer()
     server.run()
+
+if __name__ == "__main__":
+    main()

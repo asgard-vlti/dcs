@@ -14,10 +14,7 @@ extern "C" {
 toml::table config;
 
 // Servo parameters. These are the parameters that will be adjusted by the commander
-int servo_mode=SERVO_OFF;
-int offload_mode=OFFLOAD_OFF;
-uint offload_time_ms=10;
-PIDSettings pid_settings;
+LocalSettings settings;
 ControlU control_u;
 ControlA control_a;
 Baselines baselines;
@@ -35,7 +32,6 @@ ForwardFt *K1ft, *K2ft;
 // Offload globals
 bool keep_offloading = true;
 Eigen::Vector4d search_offset = Eigen::Vector4d::Zero();
-std::string delay_line_type="rmn";
 
 IMAGE DMs[N_TEL];
 IMAGE master_DMs[N_TEL];
@@ -48,8 +44,6 @@ std::string encode(const char* input, unsigned int size)
 {
 	/* set up a destination buffer large enough to hold the encoded data */
     // print the size of the input
-    //std::cout << "Size of input: " << size << std::endl;
-	//char* output = (char*)malloc(size*4/3 + 4); /* large enough */
 	char* output = (char*)malloc(size*2); /* large enough */
 	/* keep track of our encoded position */
 	char* c = output;
@@ -87,15 +81,8 @@ void linear_search(uint beam, double start, double stop, double rate, uint searc
         std::cout << "Beam number (arg 0) out of range (1 to " << N_TEL-1 << ")" << std::endl;
         return;
     }
-    beam_mutex.lock();
-    
     // Set the delay line to the start position
     set_delay_line(beam, start);
-
-    // Set the piston DM to zero. !!! Can't be called from this thread.
-    //set_dm_piston(Eigen::Vector4d::Zero());
-
-    beam_mutex.unlock();
     usleep(DELAY_MOVE_USEC); // Wait for the delay line to move
     // Set the SNR values to zero.
     baseline_mutex.lock();
@@ -112,59 +99,81 @@ void linear_search(uint beam, double start, double stop, double rate, uint searc
 
 // Set the servo mode
 void set_servo_mode(std::string mode) {
+    settings.mutex.lock();
     if (mode == "off") {
-        servo_mode = SERVO_OFF;
+        settings.s.servo_mode = SERVO_OFF;
     } else if (mode == "simple") {
-        servo_mode = SERVO_SIMPLE;
+        settings.s.servo_mode = SERVO_SIMPLE;
     } else if (mode == "fight") {
-        servo_mode = SERVO_FIGHT;
+        settings.s.servo_mode = SERVO_FIGHT;
     } else if (mode == "lacour") {
-        servo_mode = SERVO_LACOUR;
+        settings.s.servo_mode = SERVO_LACOUR;
     } else if (mode == "on") {
         // "on" means lacour with nested offload
-        servo_mode = SERVO_LACOUR;
+        settings.s.servo_mode = SERVO_LACOUR;
         control_u.dl_offload.setZero();
-        offload_mode = OFFLOAD_NESTED;
+        settings.s.offload_mode = OFFLOAD_NESTED;
     } else {
         std::cout << "Servo mode not recognised" << std::endl;
+        settings.mutex.unlock();
         return;
     }
+    settings.mutex.unlock();
     // Reset the control_u parameters
     control_u.dl.setZero();
     control_u.piezo.setZero();
     control_u.dm_piston.setZero();
     control_u.search_Nsteps=0;
-    std::cout << "Servo mode updated to " << servo_mode << std::endl;
+    std::cout << "Servo mode updated to " << settings.s.servo_mode << std::endl;
     return;
 }
 
 // Set the offload time
 void set_offload_time(uint time) {
+    settings.mutex.lock();
     if (time < 10 || time > 10000) {
         std::cout << "Offload time out of range (0.01 to 10s)" << std::endl;
+        settings.mutex.unlock();
         return;
     }
-    offload_time_ms = time;
-    std::cout << "Offload time updated to " << offload_time_ms << " ms" << std::endl;
+    settings.s.offload_time_ms = time;
+    settings.mutex.unlock();
+    std::cout << "Offload time updated to " << settings.s.offload_time_ms << " ms" << std::endl;
     return;
 }
 
 // Set the offload mode
 std::string set_offload_mode(std::string mode) {
+    settings.mutex.lock();
+    if (settings.s.offload_mode == OFFLOAD_MOD) {
+        // If we are currently in modulation mode, zero 
+        // the modulation.
+        end_modulation();
+    }
     if (mode == "off") {
-        offload_mode = OFFLOAD_OFF;
+        settings.s.offload_mode = OFFLOAD_OFF;
     } else if ((mode == "nested") || (mode == "nest")) {
-        offload_mode = OFFLOAD_NESTED;
+        settings.s.offload_mode = OFFLOAD_NESTED;
         // Reset the offload to zero.
         control_u.dl_offload.setZero();
     } else if (mode == "gd") {
-        offload_mode = OFFLOAD_GD;
-        servo_mode = SERVO_OFF;
+        settings.s.offload_mode = OFFLOAD_GD;
+        settings.s.servo_mode = SERVO_OFF;
+    } else if (mode == "mod") {
+        settings.s.offload_mode = OFFLOAD_MOD;
+        settings.s.servo_mode = SERVO_OFF;
+        start_modulation();
     } else if ((mode == "man") || (mode =="manual")) {
-        offload_mode = OFFLOAD_MANUAL;
+        settings.s.offload_mode = OFFLOAD_MANUAL;
     } else {
+        std::cout << "Offload mode not recognised" << std::endl;
+        settings.mutex.unlock();
         return "ERROR: Offload mode not recognised";
     }
+    settings.mutex.unlock();
+    // Irrespective of the offload mode, we want to zero 
+    // the modulation offload.
+    mod_offload.setZero();
     control_u.search_Nsteps=0;
     return "OK";
 }
@@ -223,41 +232,37 @@ EncodedImage get_ps(std::string filter) {
     return ei; //encoded_ps;  
 }
 
-// Save the dark frames for K1 and K2. Can probably be removed, as this
-// is now done in the camera server !!!
-void save_dark() {
-    K1ft->save_dark_frames = true;
-    K2ft->save_dark_frames = true;
-}
-
 // Set the phase delay gain.
 void set_gain(double gain) {
-    pid_settings.mutex.lock();
-    pid_settings.kp = gain;
-    pid_settings.mutex.unlock();
+    settings.mutex.lock();
+    settings.s.kp = gain;
+    settings.mutex.unlock();
 }
 
 // Set the Group Delay integral gain. This has different meanings for different 
 // servo loop types.
 void set_ggain(double gain) {
-    pid_settings.mutex.lock();
-    pid_settings.gd_gain = gain / baselines.n_gd_boxcar;
-    pid_settings.mutex.unlock();
+    settings.mutex.lock();
+    settings.s.gd_gain = gain / baselines.n_gd_boxcar;
+    settings.mutex.unlock();
 }
 
 // Set the offload gain for 'offload "gd"' mode.
 void set_offload_gd_gain(double gain) {
-    pid_settings.mutex.lock();
-    pid_settings.offload_gd_gain = gain;
-    pid_settings.mutex.unlock();
+    settings.mutex.lock();
+    settings.s.offload_gd_gain = gain;
+    settings.mutex.unlock();
 }
 
 // Set the delay line type (doesn't have to be the main delay lines via RMN)
 void set_delay_line_type(std::string type) {
-    static const std::set<std::string> valid_types = {"piezo", "hfo", "rmn"};
+    static const std::set<std::string> valid_types = {"piezo", "hfo", "rmn", "off"};
     if (valid_types.count(type)) {
-        delay_line_type = type;
-        std::cout << "Delay line type updated to " << delay_line_type << std::endl;
+        settings.mutex.lock();
+        settings.s.delay_line_type = type;
+        settings.mutex.unlock();
+        initialize_delay_line(type);
+        std::cout << "Delay line type updated to " << settings.s.delay_line_type << std::endl;
     } else {
         std::cout << "Delay line type not recognised: " << type << std::endl;
     } 
@@ -265,7 +270,7 @@ void set_delay_line_type(std::string type) {
 
 // A wrapper for set_delay_lines that takes 4 doubles as input.
 std::string set_delay_lines_wrapper(double delay1=0.0, double delay2=0.0, double delay3=0.0, double delay4=0.0) {
-    if (offload_mode == OFFLOAD_OFF) return "ERROR: Offloads off. Set to manual to use the dls command.";
+    if (settings.s.offload_mode == OFFLOAD_OFF) return "ERROR: Offloads off. Set to manual to use the dls command.";
     Eigen::Vector4d delays = Eigen::Vector4d::Zero();
     delays(0) = delay1;
     delays(1) = delay2;
@@ -281,13 +286,20 @@ std::string set_delay_lines_wrapper(double delay1=0.0, double delay2=0.0, double
 
 
 // Add setter functions for thresholds
-void set_gd_threshold(double val) { gd_threshold = val; }
-void set_pd_threshold(double val) { pd_threshold = val; }
-void set_gd_search_reset(double val) { gd_search_reset = val; }
-
-// Getter for gd_threshold
-double get_gd_threshold() {
-    return gd_threshold;
+void set_gd_threshold(double val) { 
+    settings.mutex.lock();
+    settings.s.gd_threshold = val; 
+    settings.mutex.unlock();
+}
+void set_pd_threshold(double val) { 
+    settings.mutex.lock();
+    settings.s.pd_threshold = val; 
+    settings.mutex.unlock();
+}
+void set_gd_search_reset(double val) { 
+    settings.mutex.lock();
+    settings.s.gd_search_reset = val; 
+    settings.mutex.unlock();
 }
 
 Status get_status() {
@@ -333,7 +345,7 @@ Status get_status() {
         status.gd_tel[i] = std::round(control_a.gd(i)* 1000.0)/1000.0;
         status.pd_tel[i] = std::round(control_a.pd(i)* 1000.0)/1000.0;
         status.dm_piston[i] = std::round(control_u.dm_piston(i)* 1000.0)/1000.0;
-        status.dl_offload[i] = std::round(last_offload(i)* 1000.0)/1000.0; // not the offload increment, but the total offload!
+        status.dl_offload[i] = std::round(next_offload(i)* 1000.0)/1000.0; // not the offload increment, but the total offload!
     }
     for (int i = 0; i < N_CP; i++) {
         status.closure_phase_K1[i] = std::round(bispectra_K1[i].closure_phase* 1000.0)/1000.0;
@@ -347,22 +359,15 @@ Status get_status() {
 }
 
 Settings get_settings() {
-    Settings s;
-    s.n_gd_boxcar = baselines.n_gd_boxcar;
-    s.gd_threshold = gd_threshold;
-    s.pd_threshold = pd_threshold;
-    s.gd_search_reset = gd_search_reset;
-    s.offload_time_ms = offload_time_ms;
-    s.offload_gd_gain = pid_settings.offload_gd_gain;
-    s.gd_gain = pid_settings.gd_gain * baselines.n_gd_boxcar;
-    s.kp = pid_settings.kp;
-    s.servo_mode = servo_mode;
-    s.offload_mode = offload_mode;
-    s.delay_line_type = delay_line_type;
-    s.search_delta = control_u.search_delta;
-    return s;
+    // Fill in the few unusual parameters.
+    settings.mutex.lock();
+    settings.s.n_gd_boxcar = baselines.n_gd_boxcar;
+    settings.s.search_delta = control_u.search_delta;
+    settings.s.search_offset = {search_offset(0), search_offset(1), search_offset(2), search_offset(3)};
+    settings.mutex.unlock();
+    return settings.s;
 }
-
+    
 void test(uint beam, double value, int n) {
     // This is a test function that sets the DM piston to a value
     // and then waits for n seconds.
@@ -388,7 +393,7 @@ void zero_gd_offsets(void){
 }
 
 // Return the phasor offsets for all baselines to 3 decimal places
-std::vector<double> get_gd_offsets(void){
+std::vector<double> get_gd_toml_offsets(void){
     std::vector<double> gd_offsets(6);
     baseline_mutex.lock();
     for (int bl=0;bl<N_BL; bl++)
@@ -421,12 +426,12 @@ bool foreground_in_place = false;
 void set_foreground(int state) {
     static const Eigen::Vector4d fg_offset(-600.0, -200.0, 200.0, 600.0);
     if (state == 1 && !foreground_in_place) {
-        if (offload_mode == OFFLOAD_OFF) offload_mode=OFFLOAD_MANUAL;
+        if (settings.s.offload_mode == OFFLOAD_OFF) settings.s.offload_mode=OFFLOAD_MANUAL;
         add_to_delay_lines(fg_offset);
         foreground_in_place = true;
         
     } else if (state == 0 && foreground_in_place) {
-    	if (offload_mode == OFFLOAD_MANUAL) offload_mode=OFFLOAD_OFF;
+    	if (settings.s.offload_mode == OFFLOAD_MANUAL) settings.s.offload_mode=OFFLOAD_OFF;
         add_to_delay_lines(-fg_offset);
         foreground_in_place = false;
     }
@@ -501,13 +506,15 @@ void set_itime(double itime) {
     }
     beam_mutex.lock();
     control_u.itime = 0;
-    control_u.target_itime=itime;
-    beam_mutex.unlock();   
+    beam_mutex.unlock();
+    settings.mutex.lock();
+    settings.s.target_itime=itime;
+    settings.mutex.unlock();
     fmt::print("New integration started for a total time of {}\n", itime);
 }
 
 std::string expstatus(void){
-    if (control_u.itime < control_u.target_itime) return "integrating";
+    if (control_u.itime < settings.s.target_itime) return "integrating";
     return "success";
 }
 
@@ -517,19 +524,27 @@ std::string set_gd_boxcar(int n){
     baselines.set_gd_boxcar(n);
     baseline_mutex.unlock();
     // Update the gd_gain to keep the same overall gain.
-    pid_settings.mutex.lock();
-    pid_settings.gd_gain = pid_settings.gd_gain * (double)baselines.n_gd_boxcar / (double)n;
-    pid_settings.mutex.unlock();
+    settings.mutex.lock();
+    settings.s.gd_gain = settings.s.gd_gain * (double)baselines.n_gd_boxcar / (double)n;
+    settings.mutex.unlock();
     return "OK";
 }
 
 std::string default_gains(void){
-    // Lets movea maxmum of 70% of the way to the target in offload_time_ms. 
-    double temp_gain = 0.0007 * offload_time_ms / (baselines.n_gd_boxcar * control_u.dit);
-    if (temp_gain > 0.7) temp_gain = 0.7;
-    baseline_mutex.lock();
-    pid_settings.offload_gd_gain = temp_gain;     
-    baseline_mutex.unlock();
+    // Lets move maxmum of 70% of the way to the target in the maximum of
+    // the gd_boxcar time and the offload_time.
+    double offloads_per_gd_boxcar = 0.001 * settings.s.offload_time_ms / (baselines.n_gd_boxcar * control_u.dit);
+    if (control_u.nbreads > 1) offloads_per_gd_boxcar /= control_u.tsig_len; 
+    // Ensure not larger than 1
+    offloads_per_gd_boxcar = std::min(offloads_per_gd_boxcar, 1.0);
+    settings.mutex.lock();
+    settings.s.offload_gd_gain = 0.7 * offloads_per_gd_boxcar;     
+    settings.mutex.unlock();
+    // Also set the search_delta so that in the gd_boxcar time,
+    // we move no more than the coherence length/6, with 
+    // the coherence length equal to ~20 microns.
+    set_search_params(20.0/6.0*offloads_per_gd_boxcar, control_u.steps_to_turnaround);
+
     return "OK";
 }
 
@@ -564,6 +579,15 @@ std::string set_bad_pixels(std::vector<int> k1x, std::vector<int> k1y,
     return "OK";
 }
 
+std::string set_fixed_dl(int value) {
+    if (value < 0 || value > 4) 
+      return "ERROR: Fixed delay line value out of range (0 for none, or delay lines 1 to 4)";
+    settings.mutex.lock();
+    settings.s.fixed_dl = value;
+    settings.mutex.unlock();
+    return "OK";
+}
+
 COMMANDER_REGISTER(m)
 {
     using namespace commander::literals;
@@ -573,47 +597,48 @@ COMMANDER_REGISTER(m)
     m.def("linear_search", linear_search, "Execute a linear fringe search on a single beam (1,2,3 or 4)", 
         "beam"_arg, "start"_arg, "stop"_arg, "rate"_arg=1.0, "search_dt_ms"_arg=200, "search_snr_threshold"_arg=10.0);
     m.def("get_ps", get_ps, "Get the power spectrum in 2D", "filter"_arg="K1");
+    m.def("get_search_offset", get_search_offset, "Get the search offset in microns");
+    m.def("get_gd_toml_offsets", get_gd_toml_offsets, "Get the GD phasor offsets for all baselines in microns, to 3 decimal places");
     m.def("servo", set_servo_mode, "Set the servo mode", "mode"_arg="off");
     m.def("offload", set_offload_mode, "Set the offload (slow servo) mode", "mode"_arg="off");
+    // Settings routines...
     m.def("offload_time", set_offload_time, "Set the offload time in ms", "time"_arg=1000);
     m.def("set_search_offset", set_search_offset, "Set the search offset in microns. \n This is added to the search position when starting a search.", 
         "offset"_arg=std::vector<double>(N_TEL, 0.0));
-    m.def("get_search_offset", get_search_offset, "Get the search offset in microns");
-    m.def("dark", save_dark, "Save the dark frames");
     m.def("dl", set_delay_line, "Set a delay line value in microns", 
         "beam"_arg, "value"_arg=0.0);
     m.def("dls", set_delay_lines_wrapper, "Set a delay line value in microns", 
         "dl1"_arg, "dl2"_arg, "dl3"_arg, "dl4"_arg);
-    m.def("status", get_status, "Get the status of the system");
-    m.def("settings", get_settings, "Get current system settings");
-    m.def("gain", set_gain, "Set the gain for the servo loop", "gain"_arg=0.0);
+        m.def("gain", set_gain, "Set the gain for the servo loop", "gain"_arg=0.0);
+    m.def("fixed_dl", set_fixed_dl, "Set the fixed delay line value", "value"_arg=0);
     m.def("ggain", set_ggain, "Set the gain for the GD servo loop", "gain"_arg=0.0);
     m.def("offload_gd_gain", set_offload_gd_gain, "Set the gain when operating GD only in steps", "gain"_arg=0.0);
-    m.def("dl_type", set_delay_line_type, "Set the delay line type", "type"_arg="piezo");
-    m.def("test", test, "Make a test pattern - fractional DM motion every n samples.", "beam"_arg, "value"_arg=0.0, "n"_arg=10);
-    m.def("zero_gd_offsets", zero_gd_offsets, "Zero the group delay offsets i.e. track on this position");
-    m.def("get_gd_offsets", get_gd_offsets, "Return the GD offsets in a format to be added to the toml file");
-    m.def("search", set_search_params, "Set the fringe tracker search parameter", 
-        "delta"_arg=0.5, "turnaround"_arg=10);    
+    m.def("dl_type", set_delay_line_type, "Set the delay line type and initialize.", "type"_arg="piezo");
     m.def("set_gd_threshold", set_gd_threshold, "Set GD SNR threshold", "value"_arg=5.0);
-    m.def("get_gd_threshold", get_gd_threshold, "Get GD SNR threshold");
     m.def("set_pd_threshold", set_pd_threshold, "Set PD SNR threshold", "value"_arg=4.5);
     m.def("set_gd_search_reset", set_gd_search_reset, "Set GD search reset threshold", "value"_arg=5.0);
-    m.def("foreground", set_foreground, "Set (1) or unset (0) foreground delay line offsets", "state"_arg=1);
+    m.def("set_dit", set_dit, "Set the DIT in seconds", "dit"_arg=0.001);
+    m.def("set_bad_pixels", set_bad_pixels, "Set the bad pixel map from 4 vectors", 
+        "k1x"_arg=std::vector<int>(), "k1y"_arg=std::vector<int>(), "k2x"_arg=std::vector<int>(), "k2y"_arg=std::vector<int>());
+    m.def("set_gd_boxcar", set_gd_boxcar, "Set the number of frames for the GD boxcar average", "n"_arg=32);
     m.def("tweak_gd_offsets", tweak_gd_offsets, "Add offsets to beams 1,2,4 and project to baseline space", 
         "offset1"_arg=0.0, "offset2"_arg=0.0, "offset4"_arg=0.0);
     m.def("set_gd_offsets", set_gd_offsets, "Set the GD offsets directly from a list of offsets for beams 1,2,4", 
         "offset1"_arg=0.0, "offset2"_arg=0.0, "offset4"_arg=0.0);
     m.def("beams_active", beams_active, "Set which beams are active", "b1"_arg=1,"b2"_arg=1,"b3"_arg=1,"b4"_arg=1);
-    m.def("set_itime", set_itime, "Set the target integration time", "itime"_arg=100);
-    m.def("expstatus", expstatus, "Get the exposure time status (success if complete)");
-    m.def("set_gd_boxcar", set_gd_boxcar, "Set the number of frames for the GD boxcar average", "n"_arg=32);
     m.def("dlr", delay_line_relative_move, "Move the delay lines by a relative amount", 
         "dl_move1"_arg=0.0, "dl_move2"_arg=0.0, "dl_move3"_arg=0.0, "dl_move4"_arg=0.0);
+    m.def("search", set_search_params, "Set the fringe tracker search parameter", 
+        "delta"_arg=0.5, "turnaround"_arg=10);    
+    // Special wag routines, and status.
+    m.def("set_itime", set_itime, "Set the target integration time", "itime"_arg=100);
+    m.def("status", get_status, "Get the status of the system");
+    m.def("settings", get_settings, "Get current system settings");
+    m.def("test", test, "Make a test pattern - fractional DM motion every n samples.", "beam"_arg, "value"_arg=0.0, "n"_arg=10);
+    m.def("zero_gd_offsets", zero_gd_offsets, "Zero the group delay offsets i.e. track on this position");
+    m.def("foreground", set_foreground, "Set (1) or unset (0) foreground delay line offsets", "state"_arg=1);
+    m.def("expstatus", expstatus, "Get the exposure time status (success if complete)");
     m.def("default_gains", default_gains, "Set the gains to default values");
-    m.def("set_dit", set_dit, "Set the DIT in seconds", "dit"_arg=0.001);
-    m.def("set_bad_pixels", set_bad_pixels, "Set the bad pixel map from 4 vectors", 
-        "k1x"_arg=std::vector<int>(), "k1y"_arg=std::vector<int>(), "k2x"_arg=std::vector<int>(), "k2y"_arg=std::vector<int>());
 }
 
 int main(int argc, char* argv[]) {
@@ -628,6 +653,22 @@ int main(int argc, char* argv[]) {
         config = toml::parse_file(argv[1]);
         std::cout << "Configuration file read: "<< config["name"] << std::endl;
     }
+
+    // Fill in default settings (ideally from config file!)
+    // Thresholds for fringe tracking (now variables)
+    settings.s.gd_threshold = 8.0;
+    settings.s.pd_threshold = 4.5;
+    settings.s.gd_search_reset = 6.0;
+    settings.s.kp = 0.5;
+    settings.s.gd_gain = settings.s.kp / INIT_N_GD_BOXCAR;
+    settings.s.offload_gd_gain = 1.0;
+    settings.s.servo_mode=SERVO_OFF;
+    settings.s.offload_mode=OFFLOAD_OFF;
+    settings.s.delay_line_type="rmn";
+    settings.s.offload_time_ms=10;
+    settings.s.fixed_dl=3;
+    settings.s.search_offset = {0.0, 0.0, 0.0, 0.0};
+    settings.s.target_itime=0.0;
 
 #ifndef SIMULATE
     // Initialise the DMs
@@ -654,20 +695,28 @@ int main(int argc, char* argv[]) {
 
     // Start the main fringe-tracking thread. 
     std::thread fringe_thread(fringe_tracker);
+
+    // Set a delay line, and start the offloading thread.
+    initialize_delay_line(config["servo"]["dl_type"].value_or("rmn"));
     std::thread offloading_thread(dl_offload);
-    
+
+    // Start camera status polling in a dedicated client thread.
+    start_camera_client();
+
     // Initialize the commander server and run it
     commander::Server s(argc, argv);
     s.run();
+
+    stop_camera_client();
     
     keep_offloading=false;
     offloading_thread.join();
 
     // Join the fringe-tracking thread
-    servo_mode = SERVO_STOP;
+    settings.s.servo_mode = SERVO_STOP;
     fringe_thread.join();
 
-    // Join the FFTW threads. 
-    //K1ft->stop();
-    //K2ft->stop();
+    // Join the FFTW threads. !!! Doesn't seem to work.
+    K1ft->stop();
+    K2ft->stop();
 }

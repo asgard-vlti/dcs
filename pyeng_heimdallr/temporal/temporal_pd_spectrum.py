@@ -40,6 +40,7 @@ ssize = 2000  # sample size
 
 def power_spectrum(data):
     tmp = np.abs(np.fft.rfft(np.unwrap(data)))**2
+    # tmp = np.abs(np.fft.rfft(data))**2
     # tmp = np.abs(np.fft.fft(data)[:1000])**2
     # return np.sqrt(tmp) / 2000 * np.sqrt(2)
     return tmp[1:] / ssize**2 * 2
@@ -213,6 +214,7 @@ class MyMainWidget(QWidget):
         if len(self.wfs.phi_k1[0]) == self.wfs.log_len:
             for ii in range(nbuv):
                 pwr = power_spectrum(self.wfs.phi_k1[ii])
+                # pwr = power_spectrum(self.wfs.vis_k1[ii])
                 cum = np.cumsum(pwr[::-1])[::-1]
                 self.logplot_phi[ii].setData(freqs, pwr)
                 self.logplot_cum[ii].setData(

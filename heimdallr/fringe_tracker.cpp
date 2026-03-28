@@ -4,19 +4,17 @@
 //#define DEBUG
 //#define DEBUG_FILTER6
 
-// Thresholds for fringe tracking (now variables)
-double gd_threshold = 8.0;
-double pd_threshold = 4.5;
-double gd_search_reset = 6.0;
-
 #define MAX_DM_PISTON 0.4
 // Group delay is in wavelengths at 2.05 microns. Need 0.5 waves to be 2.5 sigma.
 #define GD_MAX_VAR_FOR_JUMP 0.2*0.2
 #define GD_MIN_REAL_VAR 1E-6
+#define N_MOD 14
+#define MODULATION_AMPLITUDE 30.0 
 
 using namespace std::complex_literals;
 
 long unsigned int ft_cnt=0, cnt_since_init=0;
+int mod_ix=0, gd_ix=0; //!!!This shouldn't be a local global.
 long unsigned int nerrors=0;
 double gd_to_K1=1.0;
 
@@ -35,8 +33,21 @@ Eigen::Matrix<double, N_TEL, N_TEL> singularDiag = Eigen::Matrix<double, N_TEL, 
 // A 4x4 identity matrix.
 Eigen::Matrix4d I4 = Eigen::Matrix4d::Identity();
 
-// The search vector.
-Eigen::Vector4d search_vector_scale(-2.75,-1.75,1.25,3.25);
+// A constant N_TEL x N_MOD matrix for modulation, and an equivalent for baselines.
+Eigen::Matrix<double, N_TEL, N_MOD> modulation_matrix = (Eigen::Matrix<double, N_TEL, N_MOD>() <<
+    1,0,0,1,1,0,0,0,1,0,1,1,1,0,
+    0,1,0,1,1,0,0,1,0,1,0,1,0,1,
+    0,0,1,0,1,0,1,0,0,1,1,0,1,1,    
+    1,1,1,1,0,1,0,0,0,1,1,0,0,0).finished();
+
+Eigen::Matrix<double, N_BL, N_MOD> bl_modulation_matrix = M_lacour * modulation_matrix;
+// Saving SNR during the modulation.
+Eigen::Matrix<double, N_BL, N_MOD> gd_snr_during_mod = Eigen::Matrix<double, N_BL, N_MOD>::Zero();
+
+// The search vector. There is no reason for this to have 
+// diferent frequencies for each baseline.
+//Eigen::Vector4d search_vector_scale(-2.75,-1.75,1.25,3.25);
+Eigen::Vector4d search_vector_scale(-1.5,-0.5,0.5,1.5);
 
 // Beams active as an Eigen vector (i.e. doubles rather than booleans)
 Eigen::Vector4d beams_active = Eigen::Vector4d::Ones();
@@ -92,6 +103,19 @@ double sinc_normalized(double x) {
     }
 }
 
+void start_modulation() {
+    // This function starts the modulation by setting the first modulation pattern.
+    mod_ix = 0;
+    gd_ix = 0;
+    set_mod(MODULATION_AMPLITUDE * modulation_matrix.col(mod_ix));
+}
+
+void end_modulation() {
+    // This function starts the modulation by setting the first modulation pattern.
+    mod_ix = 0;
+    set_mod(Eigen::Vector4d::Zero());
+}
+
 void set_dm_piston(Eigen::Vector4d dm_piston){
 #ifdef SIMULATE
     return;
@@ -125,9 +149,8 @@ void initialise_baselines(){
     baselines.pd.setZero();
     baselines.gd_snr.setZero();
     baselines.pd_snr.setZero();
-    baselines.set_gd_boxcar(64);
+    baselines.set_gd_boxcar(INIT_N_GD_BOXCAR);
     baselines.n_pd_boxcar=MAX_N_PD_BOXCAR;
-    baselines.ix_pd_boxcar=0;
     baselines.pd_phasor.setZero();
     baselines.pd_phasor_boxcar_avg.setZero();
     baselines.pd_av_filtered.setZero();
@@ -216,18 +239,7 @@ void reset_search(){
     control_u.test_value=0.1;
     control_u.fringe_found = false;
     control_u.itime=0;
-    control_u.target_itime=0;
     beam_mutex.unlock();
-
-    pid_settings.mutex.lock();
-    pid_settings.kp = 0.5;
-    pid_settings.ki = 0.0;
-    pid_settings.kd = 0.0;
-    pid_settings.integral = 0.0;
-    pid_settings.dl_feedback_gain = 0.0;
-    pid_settings.gd_gain = pid_settings.kp / baselines.n_gd_boxcar;
-    pid_settings.offload_gd_gain = 1.0;
-    pid_settings.mutex.unlock();
 }
 
 // This takes 12 microseconds on average. A little slow!
@@ -324,7 +336,7 @@ void fringe_tracker(){
     reset_search();
     set_dm_piston(Eigen::Vector4d::Zero()); 
     ft_cnt = K1ft->cnt;
-    while(servo_mode != SERVO_STOP){
+    while(settings.s.servo_mode != SERVO_STOP){
         cnt_since_init++; //This should "never" wrap around, as a long int is big.
         // See if there was a semaphore signalled for the next frame to be ready in K1 and K2
         sem_wait(&K1ft->sem_new_frame);
@@ -358,8 +370,8 @@ void fringe_tracker(){
 #endif
         // Extract the phases from the Fourier transforms, one baseline
         // at a time. This could in principle be vectorised. 
-        int gd_ix = baselines.ix_gd_boxcar;
-        int pd_ix = baselines.ix_pd_boxcar;
+        gd_ix = ft_cnt % baselines.n_gd_boxcar;
+        int pd_ix = ft_cnt % baselines.n_pd_boxcar;
         for (int bl=0; bl<N_BL; bl++){
             // Use the peak of the splodge to compute the phase
             x_px = lround(x_px_K1[bl]) % K1ft->subim_sz;
@@ -388,8 +400,18 @@ void fringe_tracker(){
 
             // Compute the group delay - units of wavelengths at K1
             baselines.gd_phasor(bl) -= baselines.gd_phasor_boxcar[gd_ix](bl);
-            baselines.gd_phasor_boxcar[gd_ix](bl) = 
-                K1_phasor[bl] * std::conj(K2_phasor[bl]);
+            if (settings.s.offload_mode == OFFLOAD_MOD){
+                // In mod mode, we skip the first frames of the boxcar.
+                int dit_per_offload = 0.001 * settings.s.offload_time_ms / control_u.dit;
+                if (control_u.nbreads > 1)
+                	dit_per_offload += control_u.tsig_len;
+                if (gd_ix < dit_per_offload){
+                    baselines.gd_phasor_boxcar[gd_ix](bl) = 0;
+                }
+            } else {
+                baselines.gd_phasor_boxcar[gd_ix](bl) = 
+                    K1_phasor[bl] * std::conj(K2_phasor[bl]);
+            }
             baselines.gd_phasor(bl) += baselines.gd_phasor_boxcar[gd_ix](bl);  
             baselines.gd(bl) = std::arg(baselines.gd_phasor(bl)*baselines.gd_phasor_offset(bl)) * gd_to_K1;
 
@@ -398,7 +420,7 @@ void fringe_tracker(){
             // can reverse this. It is difficult with 4 telescopes!
             // The phase delay is in units of the K1 central wavelength. 
             // For now... also have this feature with the Lacour algorithm.
-            if ((servo_mode == SERVO_FIGHT) || (servo_mode == SERVO_SIMPLE)){
+            if ((settings.s.servo_mode == SERVO_FIGHT) || (settings.s.servo_mode == SERVO_SIMPLE)){
                 // In fight mode, we just use the instantaneous phase, not the filtered phase.
                 // This is useful for debugging, but not for real operation.
                 // The 1.5 is a John Monnier hack, due to fmod's treatment of negative numbers.
@@ -424,7 +446,7 @@ void fringe_tracker(){
                 
             // Set the weight matriix (bl,bl) to the square of the SNR, unless 
             // the SNR is too low, in which case we set it to zero.
-            if ((baselines.gd_snr(bl) > gd_threshold) && 
+            if ((baselines.gd_snr(bl) > settings.s.gd_threshold) && 
                 (control_u.beams_active[baseline2beam[bl][0]]) && (control_u.beams_active[baseline2beam[bl][1]])){
                 Wgd(bl) = baselines.gd_snr(bl)*baselines.gd_snr(bl);
                 var_gd(bl) = gd_to_K1*gd_to_K1/baselines.gd_snr(bl)/baselines.gd_snr(bl);
@@ -433,7 +455,7 @@ void fringe_tracker(){
                 Wgd(bl) = 0;
                 var_gd(bl) = 1e6; 
             }
-            if ((baselines.pd_snr(bl) > pd_threshold) &&
+            if ((baselines.pd_snr(bl) > settings.s.pd_threshold) &&
                 (control_u.beams_active[baseline2beam[bl][0]]) && (control_u.beams_active[baseline2beam[bl][1]])){
                 Wpd(bl) = baselines.pd_snr(bl)*baselines.pd_snr(bl);
                 var_pd(bl) = 1/baselines.pd_snr(bl)/baselines.pd_snr(bl)/4/M_PI/M_PI;
@@ -445,9 +467,7 @@ void fringe_tracker(){
                 var_pd(bl) = 1e6;
             }
         }
-        baselines.ix_gd_boxcar = (gd_ix + 1) % baselines.n_gd_boxcar;
-        baselines.ix_pd_boxcar = (pd_ix + 1) % baselines.n_pd_boxcar;
-
+        
         // Make the beams_active a vector.
         beams_active = Eigen::Vector4d(control_u.beams_active[0],control_u.beams_active[1],control_u.beams_active[2],control_u.beams_active[3]);
 
@@ -463,8 +483,8 @@ void fringe_tracker(){
 #ifdef PRINT_TIMING_ALL
     clock_gettime(CLOCK_REALTIME, &then_all);
 #endif
-        if (servo_mode == SERVO_SIMPLE){
-            pd_filtered += gd_filtered * pid_settings.gd_gain;
+        if (settings.s.servo_mode == SERVO_SIMPLE){
+            pd_filtered += gd_filtered * settings.s.gd_gain;
         } else pd_filtered = filter6(I6pd, baselines.pd, Wpd);
 #ifdef PRINT_TIMING_ALL
     clock_gettime(CLOCK_REALTIME, &now_all);
@@ -531,29 +551,29 @@ void fringe_tracker(){
             }
         }
 
-        if (servo_mode == SERVO_SIMPLE){
+        if (settings.s.servo_mode == SERVO_SIMPLE){
            // Simple integrator, no fancy stuff. The group delay is added to the phase delay earlier.
-            control_u.dm_piston += pid_settings.kp * control_a.pd * config["wave"]["K1"].value_or(2.05)/OPD_PER_DM_UNIT;
+            control_u.dm_piston += settings.s.kp * control_a.pd * config["wave"]["K1"].value_or(2.05)/OPD_PER_DM_UNIT;
             // Center the DM piston.
             control_u.dm_piston = control_u.dm_piston - control_u.dm_piston.mean()*Eigen::Vector4d::Ones();
             // Limit it to no more than +/- MAX_DM_PISTON.
             control_u.dm_piston = control_u.dm_piston.cwiseMin(MAX_DM_PISTON);
             control_u.dm_piston = control_u.dm_piston.cwiseMax(-MAX_DM_PISTON);
         }
-        if (servo_mode==SERVO_FIGHT){
+        if (settings.s.servo_mode==SERVO_FIGHT){
             // Compute the piezo control signal.
-            control_u.dm_piston += (pid_settings.kp * pd_gain_scale.asDiagonal() * control_a.pd +
-                pid_settings.gd_gain * control_a.gd) * config["wave"]["K1"].value_or(2.05)/OPD_PER_DM_UNIT;
+            control_u.dm_piston += (settings.s.kp * pd_gain_scale.asDiagonal() * control_a.pd +
+                settings.s.gd_gain * control_a.gd) * config["wave"]["K1"].value_or(2.05)/OPD_PER_DM_UNIT;
             // Center the DM piston.
             control_u.dm_piston = control_u.dm_piston - control_u.dm_piston.mean()*Eigen::Vector4d::Ones();
             // Limit it to no more than +/- MAX_DM_PISTON.
             control_u.dm_piston = control_u.dm_piston.cwiseMin(MAX_DM_PISTON);
             control_u.dm_piston = control_u.dm_piston.cwiseMax(-MAX_DM_PISTON);
 
-        } else if (servo_mode == SERVO_LACOUR){
+        } else if (settings.s.servo_mode == SERVO_LACOUR){
             // Compute the piezo control signal from the phase delay.
             if ((cnt_since_init == last_gd_jump+1) || (cnt_since_init > last_gd_jump + 3)){
-	        control_u.dm_piston += pid_settings.kp * control_a.pd * config["wave"]["K1"].value_or(2.05)/OPD_PER_DM_UNIT;
+	        control_u.dm_piston += settings.s.kp * control_a.pd * config["wave"]["K1"].value_or(2.05)/OPD_PER_DM_UNIT;
             // Make sure that we only move the DM for for the active beams.
             control_u.dm_piston = beams_active.asDiagonal() * control_u.dm_piston;
            	// Center the DM piston.
@@ -589,16 +609,67 @@ void fringe_tracker(){
         double time_since_last_offload_ms = (now.tv_sec - last_dl_offload.tv_sec) * 1000.0 +
             (now.tv_nsec - last_dl_offload.tv_nsec) * 0.000001;
         // If it has been more than offload_time_ms, do the offload and the search step.
-        if (time_since_last_offload_ms > offload_time_ms){
+        // The exception is if we are in OFFLOAD_MOD mode, which we will treat separately for 
+        // code readability.
+        if ((settings.s.offload_mode == OFFLOAD_MOD) && (gd_ix == baselines.n_gd_boxcar-1)){
+            // In mod mode, we fill the group delay SNR matrix.
+            gd_snr_during_mod.col(mod_ix) = baselines.gd_snr;
+            std::cout << baselines.gd_snr.transpose() << std::endl;
+            mod_ix = (mod_ix + 1) % N_MOD;
+            set_mod(MODULATION_AMPLITUDE * modulation_matrix.col(mod_ix));
+            // DEBUG
+            std::cout << "Modulating: " << modulation_matrix.col(mod_ix).transpose() << std::endl;
+            if (mod_ix==0){
+                // Now find the fringe peak. We iterate over baselines, 
+                // and accumulate the SNR for zero, plus and minus modulation.
+                Eigen::Matrix<double, N_BL, 1> delays;
+                delays.setZero();
+                Eigen::Matrix<double, N_BL, 1> valid;
+                valid.setZero();
+                for (int bl=0; bl<N_BL; bl++){
+                    double snr_zero = 0;
+                    double snr_plus = 0;
+                    double snr_minus = 0;
+                    for (int ix=0; ix<N_MOD; ix++){
+                        if (bl_modulation_matrix(bl,ix) == 0) snr_zero += gd_snr_during_mod(bl,ix);
+                        else if (bl_modulation_matrix(bl,ix) == 1) snr_plus += gd_snr_during_mod(bl,ix);
+                        else if (bl_modulation_matrix(bl,ix) == -1) snr_minus += gd_snr_during_mod(bl,ix);
+                    }
+                    snr_zero /= 6; //!!! Hardwired.
+                    snr_plus /= 4;
+                    snr_minus /= 4;
+                    // DEBUG
+                    std::cout << std::fixed << std::setprecision(1) << snr_minus << " " << snr_zero << " " << snr_plus << std::endl;
+                    // Find max SNR and corresponding delay.
+                    double max_snr = std::max({snr_zero, snr_plus, snr_minus});
+                    if (max_snr > settings.s.gd_threshold){
+                        valid(bl) = 1;
+                        if (max_snr == snr_plus) delays(bl) = MODULATION_AMPLITUDE;
+                        else if (max_snr == snr_minus) delays(bl) = -MODULATION_AMPLITUDE;
+                    }
+                }
+                // Create a new pseudo-inverse matrix, and multiply the group delay 
+                // by this to find the new control signal. There is regularisation just like
+                // the normal fringe tracking above.
+                //DEBUG 
+                std::cout << "Delays: " << delays.transpose() << std::endl;
+                std::cout << "Valid: " << valid.transpose() << std::endl;
+                I6gd = M_lacour * make_pinv(valid, 0) * M_lacour.transpose() * valid.asDiagonal();
+                control_u.dl_offload = M_lacour_dag * I6gd * delays;
+                std::cout << "Regularised: " << (I6gd * delays).transpose() << std::endl;
+                std::cout << "Telescope Space: " << control_u.dl_offload.transpose() << std::endl;
+                add_to_delay_lines(control_u.search - control_u.dl_offload);
+            }
+        } else if (time_since_last_offload_ms > settings.s.offload_time_ms) {
             // Irrespective of offload type, see if we need to reset the search, 
             // based on determining if we confidently have fringes with all telescopes.
             Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, N_TEL, N_TEL>> eig_solver(cov_gd_tel);
             double worst_gd_var = eig_solver.eigenvalues().maxCoeff();
-            double gd_var_threshold = gd_to_K1*gd_to_K1/gd_search_reset/gd_search_reset;
+            double gd_var_threshold = gd_to_K1*gd_to_K1/settings.s.gd_search_reset/settings.s.gd_search_reset;
 
             // Find the nth smallest eigenvalue, where n=2 if all
             // telescopes are active, and n increases by 1 for each inactive telescope.
-
+            beam_mutex.lock();
             unsigned int num_zeros = 0;
             for (int i = 0; i < N_TEL; ++i) {
                 if (control_u.beams_active[i] == 0) num_zeros++;
@@ -616,7 +687,7 @@ void fringe_tracker(){
                 control_u.search_Nsteps=0;
                 control_u.search.setZero();
                 control_u.fringe_found = true;
-                control_u.itime += offload_time_ms/1000.0;
+                control_u.itime += settings.s.offload_time_ms/1000.0;
                 //fmt::print("Resetting search, good fringes detected. GD vars: {:.4f} {:.4f} {:.4f} {:.4f}\n", 
                 //	cov_gd_tel.diagonal()(0), cov_gd_tel.diagonal()(1),cov_gd_tel.diagonal()(2), cov_gd_tel.diagonal()(3));
                  //           fmt::print("cov_gd_tel eigenvalues: ");
@@ -625,7 +696,7 @@ void fringe_tracker(){
                 //}
                 //fmt::print("GD var threshold: {:.6f}\n", gd_var_threshold);
             } else {
-                if (foreground_in_place) control_u.itime += offload_time_ms/1000.0;
+                if (foreground_in_place) control_u.itime += settings.s.offload_time_ms/1000.0;
                 control_u.fringe_found = false;
                 // Now do the delay line control. This is slower, so occurs after the servo.
                 // Compute the search sign.
@@ -651,10 +722,10 @@ void fringe_tracker(){
                 control_u.test_ix = (control_u.test_ix + 1) % 2;
             }
 
-            if ((offload_mode == OFFLOAD_NESTED) && (servo_mode!=SERVO_OFF)){
+            if ((settings.s.offload_mode == OFFLOAD_NESTED) && (settings.s.servo_mode!=SERVO_OFF)){
             	// Add to the delay line offload.
         	    control_u.dl_offload = 0.3*control_u.dm_piston * OPD_PER_DM_UNIT;
-            	if ((servo_mode == SERVO_LACOUR) && (cnt_since_init - last_gd_jump > baselines.n_gd_boxcar)){
+            	if ((settings.s.servo_mode == SERVO_LACOUR) && (cnt_since_init - last_gd_jump > baselines.n_gd_boxcar)){
                     // Use the group delay to make full fringe jumps, only if there has been at least
                     // baselines.n_gd_boxcar frames since initialisation or the last jump.
             	    for (int i=0; i<N_TEL; i++){
@@ -674,15 +745,10 @@ void fringe_tracker(){
                 add_to_delay_lines(control_u.search - control_u.dl_offload);
                 //control_u.dl_offload.setZero();
             }
-            else if (offload_mode == OFFLOAD_GD) {
-                /*double o1 = -pid_settings.offload_gd_gain*control_a.gd(0) * config["wave"]["K1"].value_or(2.05);
-                double o2 = -pid_settings.offload_gd_gain*control_a.gd(1) * config["wave"]["K1"].value_or(2.05);
-                double o3 = -pid_settings.offload_gd_gain*control_a.gd(2) * config["wave"]["K1"].value_or(2.05);
-                double o4 = -pid_settings.offload_gd_gain*control_a.gd(3) * config["wave"]["K1"].value_or(2.05);
-                double otot = std::fabs(o1) + std::fabs(o2) + std::fabs(o3) + std::fabs(o4);
-                fmt::print("Adding {:.2f} {:.2f} {:.2f} {:.2f} to GD. total: {:.2f}\n", o1,o2,o3,o4,otot); */
-                add_to_delay_lines(control_u.search - pid_settings.offload_gd_gain*control_a.gd * config["wave"]["K1"].value_or(2.05));
+            else if (settings.s.offload_mode == OFFLOAD_GD) {
+                add_to_delay_lines(control_u.search - settings.s.offload_gd_gain*control_a.gd * config["wave"]["K1"].value_or(2.05));
             }
+            beam_mutex.unlock();
             last_dl_offload = now;
             sem_post(&sem_offload);
         }

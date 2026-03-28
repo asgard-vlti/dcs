@@ -58,7 +58,7 @@ uint32_t *map_lut[4];  // the DM actuator mappings
 
 int simmode = 0;  // flag to set to "1" to not attempt to connect to the driver
 int timelog = 0;  // flag to set to "1" to log DM response timing
-char drv_status[8] = "idle"; // to keep track of server status
+char drv_status[16] = "idle"; // to keep track of server status
 
 // order to be reshuffled when reassembling the instrument
 const char snumbers[4][BMC_SERIAL_NUMBER_LEN+1] = \
@@ -292,6 +292,26 @@ std::string status() {
   /* -------------------------------------------------------------------------
    *                          Returns server status
    * ------------------------------------------------------------------------- */
+  int nbshm = 24;
+  int counter = 24;
+
+  char fname[64];
+
+  for (int ii = 0; ii < ndm; ii++) {
+    sprintf(fname, "/dev/shm/dm%d.im.shm", ii+1);
+    if (access(fname, F_OK) != 0) counter -=1;
+  }
+
+  for (int ii = 0; ii < ndm; ii++) {
+    for (int jj = 0; jj < nch; jj++) {
+      sprintf(fname, "/dev/shm/dm%ddisp%02d.im.shm", ii+1, jj);
+      if (access(fname, F_OK) != 0) counter -=1;
+    }
+  }
+
+  if (counter != nbshm)
+      sprintf(drv_status, "%s", "SHM PROBLEM!");
+
   return drv_status;
 }
 

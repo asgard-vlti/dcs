@@ -704,7 +704,7 @@ class ScriptAdapter:
 
 
 # ---------------- Main publish loop ----------------
-if __name__ == "__main__":
+def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Run the MDS server.")
@@ -755,3 +755,7 @@ if __name__ == "__main__":
     )
 
     mcs.run()
+
+if __name__ == "__main__":
+    main()
+
