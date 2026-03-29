@@ -35,7 +35,7 @@ zmq::socket_t mds_zmq_socket(mds_zmq_context, zmq::socket_type::req);
 const std::string mds_host_str = "tcp://192.168.100.2:5555";
 zmq::context_t wag_rmn_context(1);
 zmq::socket_t wag_rmn_socket(wag_rmn_context, zmq::socket_type::req);
-const std::string wag_rmn_host_str = "tcp://192.168.100.1:7050";
+const std::string wag_rmn_host_str = "tcp://wag:7050";
 bool mds_zmq_initialized = false, controllino_initialized = false, wag_rmn_initialized = false;
 
 // Initialize the connection to wag for the RMN relay
@@ -284,6 +284,7 @@ void move_main_dl()
     if (!wag_rmn_initialized) return;
 
     // Build the JSON message
+#ifndef SIMULATE
     nlohmann::json j;
     j["command"]["name"] = "writermn";
     // Use current time as ISO string
@@ -327,6 +328,9 @@ void move_main_dl()
 
     std::string msg = j.dump(); // No newlines
     //fmt::print("Sent to wag: {} \n", j.dump());
+#else
+    std::string msg = fmt::format("simrmn [{:.2f}, {:.2f}, {:.2f}, {:.2f}]", -next_offload(0), -next_offload(1), -next_offload(2), -next_offload(3));
+#endif
 
     wag_rmn_socket.send(zmq::buffer(msg), zmq::send_flags::none);
     zmq::message_t reply;

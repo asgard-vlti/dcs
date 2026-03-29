@@ -1,6 +1,9 @@
 CC=gcc
-
 CFLAGS  = -W -Wall -ggdb
+
+CC=g++
+CFLAGS  = -std=c++17 -Wall -Wextra -ggdb -O1
+
 LIB     = libImageStreamIO.a
 OBJECTS = ImageStreamIO.o
 
