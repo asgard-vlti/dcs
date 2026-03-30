@@ -11,8 +11,7 @@
  * ImageStruct.h     : Image structure definition
  *
  * EXECUTION:
- * ./a.out
- * (no argument)
+ * ./imft --socket tcp://*:7501 
  *
  * Creates an image imtest00 in shared memory
  * Updates the image every ~ 10ms, forever...
@@ -20,8 +19,7 @@
  */
 #define SZ 32
 #define NWAVE 10 // Number of wavelengths per bandpass
-#define ATM_DAMPING 0.0001
-#define ATM_DELTA 0.1 // gets to 100 times this in 10,000 iterations
+#define ATM_DAMPING 0.0001 // Damping factor. Damps in 1/ATM_DAMPING iterations,
 
 #include <math.h>
 #include <stdio.h>
@@ -29,6 +27,7 @@
 #include <pthread.h>
 #include <complex>
 #include <fftw3.h>
+#include <iostream>
 #include <commander/commander.h>
 
 #ifndef M_PI
@@ -53,6 +52,9 @@ bool keepgoing = true;
 const float hole_x[4] = {-0.00792, -0.0085, 0.0,0.02130};
 const float hole_y[4] = {0.019,-0.01484, 0.0, -0.00015};
 const float s = SZ*24/2.1;
+
+// Globals that can be changed by commander
+double atm_delta = 0.15; // NB get to 100 times this in 10,000 iterations, with damping factor of 0.0001
 
 int make_image(IMAGE *imarray, fftw_complex *pupil, fftw_complex *image, fftw_plan plan, double wave, double bw, double flux_scale)
 {
@@ -150,7 +152,7 @@ void* simulate_heimdallr(void *arg)
         make_image(imarray+1, pupil_K2, image_K2, plan_K2, 2.15,0.2, 0.6);
         for (int kk=0;kk<4;kk++){
             atm_delays[kk] *= 1 - ATM_DAMPING;
-            atm_delays[kk] += (std::rand()/(double)RAND_MAX - 0.5) * ATM_DELTA * 3.46; //2 * sqrt(3)
+            atm_delays[kk] += (std::rand()/(double)RAND_MAX - 0.5) * atm_delta * 3.46; //2 * sqrt(3)
         }
         usleep(dtus);           // Wait 10ms
     }
@@ -161,6 +163,12 @@ std::string simrmn(std::vector<double> delays_in) {
     // This function simulates the RMN delay by applying a phase shift based on the input delay.
     // The delay is in microns, and we convert to radians using the K1 wavelength.
     delays = delays_in;
+    return "OK";
+}
+
+std::string set_atm_delta(double delta) {
+    if (delta <= 0.0 || delta > 1.0) return "ERROR: ATM_DELTA out of range (0.0 to 1.0 microns)";
+    atm_delta = delta;
     return "OK";
 }
 
