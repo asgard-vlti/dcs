@@ -586,9 +586,9 @@ void* save_dark(void *arg) {
     for (int ii = 0; ii < camconf->nbr_hlf * 2; ii++) {
       unsigned int sum = 0;
       for (int jj = 0; jj < camconf->nbpix_frm; jj++) {
-        sum += svdark[ii + jj*camconf->nbpix_cub];
+        sum += svdark[jj + ii*camconf->nbpix_frm];
       }
-      svdark_av[ii] = sum / camconf->nbr_hlf;
+      svdark_av[ii] = sum / (camconf->nbr_hlf * 2);
     }
   } else {
     // Zero the sum arrays
