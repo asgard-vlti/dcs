@@ -559,13 +559,72 @@ void* save_roi_cubes(void *arg) {
  *                                Save a dark
  * ========================================================================= */
 void* save_dark(void *arg) {
-  long naxes[3] = {camconf->width, camconf->height, camconf->bf_size};
+  long axis3 = 1;
+  if (camconf->ndmr_mode == 1)
+    axis3 = camconf->nbreads - 1; //The -1 is a weird "feature" of the C-Red.
+  long naxes[3] = {camconf->width, camconf->height, axis3};
   char fname[300];  // path + name of the fits file to write
-
+  // Need to create an unsigned short *svdark_av
+  unsigned short *svdark_av = NULL;
+  svdark_av = (unsigned short *) malloc(naxes[0] * naxes[1] * naxes[2] * sizeof(unsigned short));
+  // also need to create an array nbreads long to save the number
+  // of reads at each ramp setting in NDMR mode.
+  unsigned int *nbreads_cnt = NULL;
+  unsigned int *nbreads_sum = NULL;
+  if (camconf->ndmr_mode == 1) {
+    nbreads_cnt = (unsigned int *) malloc(axis3 * sizeof(unsigned int));
+    nbreads_sum = (unsigned int *) malloc(camconf->nbpix_frm * axis3 * sizeof(unsigned int));
+  }
   struct timespec tnow;  // time since epoch
   struct tm *uttime;     // calendar time
   struct stat st;
 
+  // average the dark cube if not in NDMR mode.
+  // We have 2 * nbpix_hlf frames in svdark. 
+  // So nbr_hlf has to multiplied by 2 - to be refactored!!! 
+  if (camconf->ndmr_mode == 0) {
+    for (int ii = 0; ii < camconf->nbr_hlf * 2; ii++) {
+      unsigned int sum = 0;
+      for (int jj = 0; jj < camconf->nbpix_frm; jj++) {
+        sum += svdark[jj + ii*camconf->nbpix_frm];
+      }
+      svdark_av[ii] = sum / (camconf->nbr_hlf * 2);
+    }
+  } else {
+    // Zero the sum arrays
+    for (int ii = 0; ii < axis3; ii++){
+      nbreads_cnt[ii] = 0;
+      for (int jj = 0; jj < camconf->nbpix_frm; jj++) {
+        nbreads_sum[ii*camconf->nbpix_frm + jj] = 0;
+        svdark_av[ii*camconf->nbpix_frm + jj] = 0;
+      }
+    }
+
+    // in NDMR mode, we save the different reads separately, and also save the number of reads at each ramp setting
+    for (int ii = 0; ii < camconf->nbr_hlf * 2; ii++) {
+      // We find the relevant read from pixel 2 (0 indexed) of each dark frame.
+      unsigned short reset_cntr = svdark[ii*camconf->nbpix_frm + 2]; 
+      // Check this isn't camconf->nbread or higher. If it is there is an error!
+      if (reset_cntr >= axis3) {
+        printf("Error: read number %d in dark cube is higher than the number of reads %d specified in the configuration. Saving to read 0.\n", reset_cntr, camconf->nbreads);
+        // Set to zero so at least we average something.
+        reset_cntr = 0;
+      }
+      for (int jj = 0; jj < camconf->nbpix_frm; jj++) {
+        nbreads_sum[reset_cntr*camconf->nbpix_frm + jj] += svdark[ii*camconf->nbpix_frm + jj];
+      }
+      nbreads_cnt[reset_cntr] += 1;
+    }
+    // Now we average the sum arrays to get the average dark for each read.
+    for (int ii = 0; ii < axis3; ii++){
+      if (nbreads_cnt[ii] > 0)
+        for (int jj = 0; jj < camconf->nbpix_frm; jj++) {
+          svdark_av[ii*camconf->nbpix_frm + jj] = nbreads_sum[ii*camconf->nbpix_frm + jj] / nbreads_cnt[ii];
+        }
+    }
+  }
+
+  // Fill the strings used for the filename.
   char CROP[5] = "FULL";  // or "CROP"
   if (camconf->cropmode == 1)
     sprintf(CROP, "%s", "CROP");
@@ -597,6 +656,13 @@ void* save_dark(void *arg) {
   printf("%s was saved!\n", fname);
   camconf->valid_dark = 1;
   set_dark_sub_mode(1);
+
+  // Free memory we don't need anymore
+  free(svdark_av);
+  if (camconf->ndmr_mode == 1){
+    free(nbreads_cnt);
+    free(nbreads_sum);
+  }
   return NULL;
 }
 
@@ -609,6 +675,11 @@ void update_dark() {
   char fname[300];  // path + name of the fits file to load
   struct stat st;
   unsigned short *new_dark = NULL; // holder for the dark
+
+  // The number of dark frames depends on if NDMR mode
+  int nframes_dark = 1;
+  if (camconf->ndmr_mode == 1)
+    nframes_dark = camconf->nbreads - 1; // The -1 is a weird "feature" of the C-Red.
 
   struct timespec tnow;  // time since epoch
   struct tm *uttime;     // calendar time
@@ -626,7 +697,7 @@ void update_dark() {
   clock_gettime(CLOCK_REALTIME, &tnow);  // elapsed time since epoch
   uttime = gmtime(&tnow.tv_sec);        // translate into calendar time
   
-  new_dark = (unsigned short *) malloc(camconf->nbpix_cub * 2 *
+  new_dark = (unsigned short *) malloc(camconf->nbpix_frm * nframes_dark *
 				       sizeof(unsigned short));
 
   sprintf(camconf->utdate, "%04d-%02d-%02d",
@@ -646,12 +717,12 @@ void update_dark() {
   }
   else {
     fits_open_file(&fptr, fname, READONLY, &status);
-    fits_read_img(fptr, TUSHORT, 1, 2*camconf->nbpix_cub,
+    fits_read_img(fptr, TUSHORT, 1, camconf->nbpix_frm * nframes_dark,
 		  NULL, new_dark, NULL, &status);
     // direct fits_read_img to shared memory possible?
     memcpy(shm_img_dark->array.UI16,
 	   (unsigned short *) new_dark,
-	   sizeof(unsigned short) * 2*camconf->nbpix_cub);
+	   sizeof(unsigned short) * camconf->nbpix_frm * nframes_dark);
 
     // read the dark and copy its content to shared memory
     fits_close_file(fptr, &status);
@@ -691,8 +762,7 @@ void* fetch_imgs(void *arg) {
   long int liveroi_index = 0;
 
   int reset_cntr = 0, prev_reset_cntr = 0;
-  int dark_reset_index = 0, matching_dark_index = 0;
-
+  
   long nbpix_frm = camconf->nbpix_frm;
   long nbpix_cub = camconf->nbpix_cub;
   long nbpix_roi_tosave = ROI[0].npx * ROI[0].nbs / 2;
@@ -729,15 +799,6 @@ void* fetch_imgs(void *arg) {
 	        2 * nbpix_cub * sizeof(unsigned short));
 	      pthread_create(&tid_save_dark, NULL, save_dark, NULL);
 	      camconf->save_dark = 0;
-	      if (camconf->ndmr_mode == 1) {
-	        dark_reset_index = shm_img->md->size[2] - reset_cntr;
-	        printf("Dark reset index = %d\n", dark_reset_index);
-	      }
-	      else {
-	        dark_reset_index = 0;
-	        printf("Filled the non-NDMR mode buffer.\n");
-	        fflush(stdout);
-	      }
       }
 
 #ifdef DEBUG_TIMING
@@ -778,17 +839,15 @@ void* fetch_imgs(void *arg) {
       // ===================================================
       if (camconf->rt_dark_sub == 1) {
         if (camconf->ndmr_mode == 0)
-          livedrk_ptr = shm_img_dark->array.UI16 + liveindex * nbpix_frm;
+          // Now we pre-average and there is just one dark!
+          livedrk_ptr = shm_img_dark->array.UI16;
         else {
-          // adapt index here. reset_cntr is the number of frames since the last reset,
-          // and dark_reset_index is the first index of the reset in the dark cube.
-          matching_dark_index = liveindex - reset_cntr + dark_reset_index;
-          matching_dark_index = matching_dark_index % shm_img->md->size[2];
-          livedrk_ptr = shm_img_dark->array.UI16 + matching_dark_index * nbpix_frm;
+          // point to the pre-averared dark for this post-reset number.
+          livedrk_ptr = shm_img_dark->array.UI16 + reset_cntr * nbpix_frm; 
         }
         for (ii = 0; ii < nbpix_frm; ii++) // subtracting dark here
           //liveimg_ptr[ii] -= livedrk_ptr[ii] - camconf->offset;
-          // MJI: This next line (and not memcpy above) is needed to fix the flashing issue.
+          // MJI: This next line (and not a memcpy previously above) is needed to fix the flashing issue.
           liveimg_ptr[ii] = ((unsigned short *)image_p)[ii] - livedrk_ptr[ii] + camconf->offset; 
         liveimg_ptr[2] = reset_cntr; // to keep track of the resets in the live image (for display)
       } else {
