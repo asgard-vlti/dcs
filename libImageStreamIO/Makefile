@@ -21,7 +21,7 @@ $(LIB): $(OBJECTS)
 	$(CC) -o $@ -c $< $(CFLAGS)
 
 imft: ImCreate_ft.c
-	$(CC) -o $@ ImageStreamIO.c $< $(CFLAGS) -O3 -lm -lpthread -lfftw3 
+	$(CC) -o $@ ImageStreamIO.c $< $(CFLAGS) -O3 -lm -lpthread -lfftw3 -lfmt -lcommander -lboost_program_options -lzmq -lb64
 
 clean:
 	rm -rf *.o *~

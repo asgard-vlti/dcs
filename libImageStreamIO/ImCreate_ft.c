@@ -19,11 +19,17 @@
  *
  */
 #define SZ 32
+#define NWAVE 10 // Number of wavelengths per bandpass
+#define ATM_DAMPING 0.0001
+#define ATM_DELTA 0.1 // gets to 100 times this in 10,000 iterations
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include <complex>
 #include <fftw3.h>
+#include <commander/commander.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -41,12 +47,14 @@ pix = 24.0
 const float hole_radius = 1.65;      // Radius of the hole in pupil pixels
 //const float hole_x[4] = {-3.46*hole_radius, 0,0,3.46*hole_radius}; // Hole x center in pupil pixels
 //const float hole_y[4] = {-2*hole_radius, 4*hole_radius, 0 , -2*hole_radius}; // Hole y center in pupil pixels
-double phase=0.0;
+std::vector <double> delays = {0.0, 0.0, 0.0, 0.0}; // Delay line positions in microns, for the 4 telescopes
+std::vector <double> atm_delays = {0,0,0,0}; // Atmospheric delays
+bool keepgoing = true;
 const float hole_x[4] = {-0.00792, -0.0085, 0.0,0.02130};
 const float hole_y[4] = {0.019,-0.01484, 0.0, -0.00015};
 const float s = SZ*24/2.1;
 
-int make_image(IMAGE *imarray, fftw_complex *pupil, fftw_complex *image, fftw_plan plan, double wavenum_scale, double flux_scale)
+int make_image(IMAGE *imarray, fftw_complex *pupil, fftw_complex *image, fftw_plan plan, double wave, double bw, double flux_scale)
 {
     double x,y, rnoise;                    // Image column and row indices
     std::complex<double> hole_phasors[4];              // Phasors for the holes
@@ -56,7 +64,7 @@ int make_image(IMAGE *imarray, fftw_complex *pupil, fftw_complex *image, fftw_pl
 
     // Make our hole phasors
     for (int kk=0; kk<4; kk++)
-        hole_phasors[kk] = std::exp(1.2i*static_cast<double>(kk)*sin(phase)*wavenum_scale);
+        hole_phasors[kk] = std::exp(2i*M_PI*(delays[kk] + atm_delays[kk])/wave);
 
     // Fill the pupil with the holes
     for(int jj=0; jj<SZ; jj++)            // loop rows
@@ -69,7 +77,9 @@ int make_image(IMAGE *imarray, fftw_complex *pupil, fftw_complex *image, fftw_pl
             pupil[jj*SZ + ii][1] = 0.0;
             for (int kk=0; kk<4; kk++)
             {
-                if (sqrt((x-s*hole_x[kk]*wavenum_scale)*(x-s*hole_x[kk]*wavenum_scale) + (y-s*hole_y[kk]*wavenum_scale)*(y-s*hole_y[kk]*wavenum_scale)) < 1.5*wavenum_scale)
+                double dx = x-s*hole_x[kk]*2.05/wave;
+                double dy = y-s*hole_y[kk]*2.05/wave;
+                if ((dx*dx+ dy*dy) < 1.5*1.5*2.05*2.05/wave/wave)
                 {
                     pupil[jj*SZ + ii][0] += hole_phasors[kk].real();
                     pupil[jj*SZ + ii][1] += hole_phasors[kk].imag();
@@ -94,6 +104,7 @@ int make_image(IMAGE *imarray, fftw_complex *pupil, fftw_complex *image, fftw_pl
             *(dotF++) = (int)(1000 + std::norm(val)*flux_scale + rnoise*10);
         }
     }
+    imarray->md->write=0;
 
     // Post all semaphores (index = -1)
     ImageStreamIO_sempost(imarray, -1);
@@ -104,7 +115,7 @@ int make_image(IMAGE *imarray, fftw_complex *pupil, fftw_complex *image, fftw_pl
     return 0;
 }
 
-int main()
+void* simulate_heimdallr(void *arg)
 {
     fftw_complex *pupil_K1, *image_K1, *pupil_K2, *image_K2;
     fftw_plan plan_K1, plan_K2;
@@ -117,7 +128,7 @@ int main()
 
     int shared = 1;                // 1 if image in shared mem
     int NBkw = 10;                 // number of keywords allowed
-    int dtus = 10000;              // Wait 10ms = 10,000 microseconds
+    int dtus = 500;              // Wait 2ms = 500 microseconds
 
     // allocate the fftw arrays
     pupil_K1 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * SZ * SZ);
@@ -133,13 +144,47 @@ int main()
 
 
     // Writes an image, with random noise on top.
-    while (1)
+    while (keepgoing)
     {
-        make_image(imarray, pupil_K1, image_K1, plan_K1, 1.0, 1.0);
-        make_image(imarray+1, pupil_K2, image_K2, plan_K2, 0.9, 0.6);
-        phase += 0.02;
-        phase = fmod(phase, 2*M_PI);
+        make_image(imarray, pupil_K1, image_K1, plan_K1, 2.05,0.2, 1.0);
+        make_image(imarray+1, pupil_K2, image_K2, plan_K2, 2.15,0.2, 0.6);
+        for (int kk=0;kk<4;kk++){
+            atm_delays[kk] *= 1 - ATM_DAMPING;
+            atm_delays[kk] += (std::rand()/(double)RAND_MAX - 0.5) * ATM_DELTA * 3.46; //2 * sqrt(3)
+        }
         usleep(dtus);           // Wait 10ms
     }
+    return NULL;
+}
+
+std::string simrmn(std::vector<double> delays_in) {
+    // This function simulates the RMN delay by applying a phase shift based on the input delay.
+    // The delay is in microns, and we convert to radians using the K1 wavelength.
+    delays = delays_in;
+    return "OK";
+}
+
+COMMANDER_REGISTER(m)
+{
+    using namespace commander::literals;
+
+    // You can register a function or any other callable object as
+    // long as the signature is deductible from the type.
+    m.def("simrmn", simrmn, "Simulate the RMN delay by applying a phase shift based on the input delay.", 
+        "delays"_arg);
+}
+
+int main(int argc, char* argv[])
+{
+    pthread_t sim_thread;
+    pthread_create(&sim_thread, NULL, simulate_heimdallr, NULL);
+
+    // Initialize the commander server and run it
+    commander::Server s(argc, argv);
+    s.run();
+    keepgoing = false;
+    pthread_join(sim_thread, NULL);
     return 0;
 }
+
+
