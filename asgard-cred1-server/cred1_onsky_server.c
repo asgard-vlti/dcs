@@ -583,13 +583,14 @@ void* save_dark(void *arg) {
   // We have 2 * nbpix_hlf frames in svdark. 
   // So nbr_hlf has to multiplied by 2 - to be refactored!!! 
   if (camconf->ndmr_mode == 0) {
-    for (int ii = 0; ii < camconf->nbr_hlf * 2; ii++) {
+    for (int ii = 0; ii < camconf->nbpix_frm; ii++) {
       unsigned int sum = 0;
-      for (int jj = 0; jj < camconf->nbpix_frm; jj++) {
-        sum += svdark[jj + ii*camconf->nbpix_frm];
+      for (int jj = 0; jj < camconf->nbr_hlf * 2; jj++) {
+        sum += svdark[ii + jj*camconf->nbpix_frm];
       }
       svdark_av[ii] = sum / (camconf->nbr_hlf * 2);
     }
+    printf("Averaged GCDS mode dark.\n");
   } else {
     // Zero the sum arrays
     for (int ii = 0; ii < axis3; ii++){
@@ -652,7 +653,7 @@ void* save_dark(void *arg) {
 	  savedir, CROP, camconf->readmode, NBFR,
 	  camconf->fps, camconf->gain);
 
-  save_cube_to_fits(svdark, naxes, fname, USHORT_IMG, 0);
+  save_cube_to_fits(svdark_av, naxes, fname, USHORT_IMG, 0);
   printf("%s was saved!\n", fname);
   camconf->valid_dark = 1;
   set_dark_sub_mode(1);
@@ -845,11 +846,12 @@ void* fetch_imgs(void *arg) {
           // point to the pre-averared dark for this post-reset number.
           livedrk_ptr = shm_img_dark->array.UI16 + reset_cntr * nbpix_frm; 
         }
-        for (ii = 0; ii < nbpix_frm; ii++) // subtracting dark here
+        // No dark subtraction for the special pixels. Important for NDMR mode
+        memcpy(liveimg_ptr, image_p, 3 * sizeof(unsigned short));
+        for (ii = 3; ii < nbpix_frm; ii++) // subtracting dark here
           //liveimg_ptr[ii] -= livedrk_ptr[ii] - camconf->offset;
           // MJI: This next line (and not a memcpy previously above) is needed to fix the flashing issue.
           liveimg_ptr[ii] = ((unsigned short *)image_p)[ii] - livedrk_ptr[ii] + camconf->offset; 
-        liveimg_ptr[2] = reset_cntr; // to keep track of the resets in the live image (for display)
       } else {
         memcpy(liveimg_ptr, image_p, nbpix_frm * sizeof(unsigned short));
       }

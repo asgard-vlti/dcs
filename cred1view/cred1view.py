@@ -349,6 +349,7 @@ class MyMainWidget(QtWidgets.QWidget):
                 # Find the instances of 0 in the 1st pixels of each slice 
                 last_frames = np.where(cube[:, 0, 2] == 0)[0]
                 max_ix = np.max(cube[:, 0, 2])
+                print(cube[:,0,2])
                 first_frames = np.where(cube[:,0,2] == max_ix)[0]
                 navg = np.min([len(last_frames), len(first_frames)])
                 if navg > 0:
@@ -356,6 +357,7 @@ class MyMainWidget(QtWidgets.QWidget):
                     first_frames = first_frames[:navg]
                     self.data_img = np.mean(cube[last_frames], axis=0) - np.mean(cube[first_frames], axis=0) + 1000
                 else:
+                    print("ERROR - setting NDMR mode average to first frame.")
                     self.data_img = cube[0]
         else:
             self.data_img = self.mySHM.get_latest_data_slice()
