@@ -239,7 +239,7 @@ void ForwardFt::reverse_ft() {
     // It executes the core code if bad_frame is false.
     while (mode != FT_STOPPING) {
         // No counters here. Just go whenever we can!
-        sem_wait(sem_reverse_ft_ready);
+        sem_wait(&sem_reverse_ft_ready);
 
         // Copy the relevant pixels into the arrays ready for inverse transform.
         reverse_ft_mutex.lock();

@@ -173,7 +173,7 @@ struct Bispectrum{
 struct FourierSampling{
     double x_px_K1[N_BL], y_px_K1[N_BL], x_px_K2[N_BL], 
         y_px_K2[N_BL], sign[N_BL];
-}
+};
 
 //-------Commander structs-------------
 // An encoded 2D image in row-major form.

@@ -182,7 +182,6 @@ void initialise_baselines(){
             bispectra_K2[i].bs_phasors[j] = 0;
         }
     }
-    float pix = config["geometry"]["pix"].value_or(24.0);
     float wave_K1 = config["wave"]["K1"].value_or(2.05);
     float wave_K2 = config["wave"]["K2"].value_or(2.25);
     gd_to_K1 = wave_K2/(wave_K2-wave_K1)/2/M_PI;
@@ -195,6 +194,9 @@ void initialise_baselines(){
 }
 
 void initialise_fourier_sampling(){
+    float pix = config["geometry"]["pix"].value_or(24.0);
+    float wave_K1 = config["wave"]["K1"].value_or(2.05);
+    float wave_K2 = config["wave"]["K2"].value_or(2.25);
     for (int bl=0; bl<N_BL; bl++){
         // Set the x and y coordinates for extracting flux
         float bl_x = config["geometry"]["beam_x"][baseline2beam[bl][1]].value_or(0.0) -
