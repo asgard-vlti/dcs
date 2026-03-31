@@ -19,8 +19,8 @@ long unsigned int nerrors=0;
 double gd_to_K1=1.0;
 
 // Local baseline variables
-double x_px_K1[N_BL], y_px_K1[N_BL], x_px_K2[N_BL], y_px_K2[N_BL], sign[N_BL];
 dcomp K1_phasor[N_BL], K2_phasor[N_BL];
+FourierSampling fs;
 
 // A 6x6 matrix for the weights of phase and group delay
 Eigen::Matrix<double, N_BL, 1> var_pd, var_gd, Wpd, Wgd;
@@ -191,7 +191,11 @@ void initialise_baselines(){
         // Set the offsets to the group delay
         baselines.gd_phasor_offset(bl) = 
             std::exp(-1.0i *config["servo"]["gd_phasor_offset"][bl].value_or(0.0)/gd_to_K1);
+    }
+}
 
+void initialise_fourier_sampling(){
+    for (int bl=0; bl<N_BL; bl++){
         // Set the x and y coordinates for extracting flux
         float bl_x = config["geometry"]["beam_x"][baseline2beam[bl][1]].value_or(0.0) -
             config["geometry"]["beam_x"][baseline2beam[bl][0]].value_or(0.0);
@@ -200,21 +204,20 @@ void initialise_baselines(){
         if (bl_x < 0){
             bl_x = -bl_x;
             bl_y = -bl_y;
-            sign[bl] = -1;
-        } else sign[bl] = 1;
-        x_px_K1[bl] = bl_x * pix / wave_K1 * K1ft->subim_sz;
-        y_px_K1[bl] = bl_y * pix / wave_K1 * K1ft->subim_sz;
-        x_px_K2[bl] = bl_x * pix / wave_K2 * K2ft->subim_sz;
-        y_px_K2[bl] = bl_y * pix / wave_K2 * K2ft->subim_sz;
+            fs.sign[bl] = -1;
+        } else fs.sign[bl] = 1;
+        fs.x_px_K1[bl] = bl_x * pix / wave_K1 * K1ft->subim_sz;
+        fs.y_px_K1[bl] = bl_y * pix / wave_K1 * K1ft->subim_sz;
+        fs.x_px_K2[bl] = bl_x * pix / wave_K2 * K2ft->subim_sz;
+        fs.y_px_K2[bl] = bl_y * pix / wave_K2 * K2ft->subim_sz;
         if (bl_y < 0){
-            y_px_K1[bl] += K1ft->subim_sz;
-            y_px_K2[bl] += K2ft->subim_sz;
+            fs.y_px_K1[bl] += K1ft->subim_sz;
+            fs.y_px_K2[bl] += K2ft->subim_sz;
         }
         //std::cout << "Baseline: " << bl << " x_px_K1: " << x_px_K1[bl] << " y_px_K1: " << y_px_K1[bl] << std::endl;
         //std::cout << "Baseline: " << bl << " x_px_K2: " << x_px_K2[bl] << " y_px_K2: " << y_px_K2[bl] << std::endl;
     }
 }
-
 
 // Reset the search
 void reset_search(){
@@ -374,11 +377,11 @@ void fringe_tracker(){
         int pd_ix = ft_cnt % baselines.n_pd_boxcar;
         for (int bl=0; bl<N_BL; bl++){
             // Use the peak of the splodge to compute the phase
-            x_px = lround(x_px_K1[bl]) % K1ft->subim_sz;
-            y_px = lround(y_px_K1[bl]) % K1ft->subim_sz;
+            x_px = lround(fs.x_px_K1[bl]) % K1ft->subim_sz;
+            y_px = lround(fs.y_px_K1[bl]) % K1ft->subim_sz;
             stride = K1ft->subim_sz/2 + 1;
             K1_phasor[bl] = K1ft->ft[y_px*stride + x_px][0] + 
-                1i*K1ft->ft[y_px*stride + x_px][1]*sign[bl];
+                1i*K1ft->ft[y_px*stride + x_px][1]*fs.sign[bl];
             // Also fill in the V^2 from the power spectrum.
             baselines.v2_K1(bl) = (K1ft->power_spectrum[y_px*stride + x_px]-K1ft->power_spectrum_bias)
                 /K1ft->power_spectrum[0] * 16;
@@ -389,11 +392,11 @@ void fringe_tracker(){
             baselines.pd_phasor_boxcar_avg(bl) += baselines.pd_phasor_boxcar[pd_ix](bl);
             baselines.pd_av(bl) = std::arg(baselines.pd_phasor_boxcar_avg(bl)) /2/M_PI;
             
-            x_px = lround(x_px_K2[bl]) % K2ft->subim_sz;
-            y_px = lround(y_px_K2[bl]) % K2ft->subim_sz;
+            x_px = lround(fs.x_px_K2[bl]) % K2ft->subim_sz;
+            y_px = lround(fs.y_px_K2[bl]) % K2ft->subim_sz;
             stride = K2ft->subim_sz/2 + 1;
             K2_phasor[bl] = K2ft->ft[y_px*stride + x_px][0] + 
-                1i*K2ft->ft[y_px*stride + x_px][1]*sign[bl];
+                1i*K2ft->ft[y_px*stride + x_px][1]*fs.sign[bl];
             // Also fill in the V^2 from the power spectrum.
             baselines.v2_K2(bl) = (K2ft->power_spectrum[y_px*stride + x_px]-K2ft->power_spectrum_bias)
                 /K2ft->power_spectrum[0] * 16;

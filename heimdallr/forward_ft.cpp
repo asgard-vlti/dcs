@@ -23,6 +23,7 @@ ForwardFt::ForwardFt(IMAGE * subarray_in) {
     }
     // Allocate memory for the Fourier transform and plan it.
     ft = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * subim_sz * (subim_sz / 2 + 1));
+    ft_copy = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * subim_sz * (subim_sz / 2 + 1));
     subim = (double*) fftw_malloc(sizeof(double) * subim_sz * subim_sz);
 
     // Create the plan
@@ -54,8 +55,10 @@ ForwardFt::ForwardFt(IMAGE * subarray_in) {
             power_spectrum[ii*(subim_sz/2+1) + jj] = 0.0;
         }
     }
-    // Initialise POSIX semaphore for new frame notification
+    // Initialise POSIX semaphore for new frame notification and
+    // reverse Fourier transforms.
     sem_init(&sem_new_frame, 0, 0);
+    sem_init(&sem_reverse_ft_ready, 0, 0);
 }
 
 void ForwardFt::set_bad_pixels(std::vector<int> kx, std::vector<int> ky) {
@@ -67,6 +70,7 @@ void ForwardFt::set_bad_pixels(std::vector<int> kx, std::vector<int> ky) {
 
 void ForwardFt::start() {
     thread = std::thread(&ForwardFt::loop, this);
+    reverse_thread = std::thread(&ForwardFt::reverse_ft, this);
 }
 
 void ForwardFt::stop() {
@@ -211,11 +215,38 @@ void ForwardFt::loop() {
             // Signal that a new frame is available.
             sem_post(&sem_new_frame);
 
+            // Copy the Fourier Transform to the place needed for reverse_ft
+            // !!! If we were clever, we'd just swap pointers.
+            reverse_ft_mutex.lock();
+            memcpy(ft_copy, ft, sizeof(fftw_complex) * subim_sz * (subim_sz / 2 + 1));
+            reverse_ft_mutex.unlock();
+
+            // Now ready for the reverse_ft.
+            sem_post(&sem_reverse_ft_ready);
+
             //std::cout << subarray->name << ": " << cnt << std::endl;
         } else {
             // This shouldn't happen, but if it does, just continue
             std::cout << "FT: Semaphore signalled but no new frame" << std::endl;
             nerrors++;
         }
+    }
+}
+
+void ForwardFt::reverse_ft() {
+    // This is called by the fringe tracker thread when it is ready for a reverse FT. 
+    // It should be called after sem_wait(&sem_reverse_ft_ready).
+    // It executes the core code if bad_frame is false.
+    while (mode != FT_STOPPING) {
+        // No counters here. Just go whenever we can!
+        sem_wait(sem_reverse_ft_ready);
+
+        // Copy the relevant pixels into the arrays ready for inverse transform.
+        reverse_ft_mutex.lock();
+        
+        reverse_ft_mutex.unlock();
+        // Inverse transform all baselines.
+
+        // Take square modulus and add to the boxcar average.
     }
 }

@@ -171,6 +171,11 @@ struct Bispectrum{
     int n_bs_boxcar, ix_bs_boxcar;
 };
 
+struct FourierSampling{
+    double x_px_K1[N_BL], y_px_K1[N_BL], x_px_K2[N_BL], 
+        y_px_K2[N_BL], sign[N_BL];
+}
+
 //-------Commander structs-------------
 // An encoded 2D image in row-major form.
 struct EncodedImage
@@ -234,6 +239,7 @@ extern LocalSettings settings;
 extern ControlU control_u;
 extern ControlA control_a;
 extern Baselines baselines;
+extern FourierSampling fs;
 extern Bispectrum bispectra_K1[N_CP];
 extern Bispectrum bispectra_K2[N_CP];
 extern double gd_to_K1;
@@ -253,10 +259,13 @@ extern Eigen::Vector4d next_offload, mod_offload;
 class ForwardFt {   
 public:
     // We need a mutex in case we want to change parameters while the thread is running
-    std::mutex mutex;
-    // POSIX semaphore for new frame notification
+    // We also need a mutex for writing to the FT used for the reverse_ft
+    std::mutex mutex, reverse_ft_mutex;
+    // POSIX semaphore for new frame notification, and
+    // for reverse FT ready.
     sem_t sem_new_frame;
-    
+    sem_t sem_reverse_ft_ready;
+
     // Count of the frame number that has been processed
     long unsigned int cnt=0;
     
@@ -264,7 +273,7 @@ public:
     int nerrors=0;
 
     // The Fourier transformed image.
-    fftw_complex *ft;
+    fftw_complex *ft, *ft_copy;
 
     bool bad_frame=false;
 
@@ -300,15 +309,17 @@ private:
     // The window function to apply to the image before FFT.
     double *window;
     fftw_plan plan;
-    std::thread thread; 
+    std::thread thread, reverse_thread; 
     int mode=FT_STARTING;
     void loop();
+    void reverse_ft();
 };
 
 // Main thread function for fringe tracking.
 void start_modulation();
 void end_modulation();
 void fringe_tracker();
+void initialise_fourier_sampling();
 
 // Seeting the delay lines (needed form the main thread and from the commander)
 void set_delay_lines(Eigen::Vector4d dl);
