@@ -21,13 +21,38 @@ ForwardFt::ForwardFt(IMAGE * subarray_in) {
     if (subarray->md->size[1] != subim_sz) {
         throw std::runtime_error("Subarray is not square");
     }
-    // Allocate memory for the Fourier transform and plan it.
+    // Check that subim_sz is divisible by 4 - needed for reverse FT
+    if (subim_sz % 4 != 0) {
+        throw std::runtime_error("Subarray size is not divisible by 4");
+    }
+    rft_sz = subim_sz/4; 
+    // Allocate memory for the Fourier transform and other variables.
     ft = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * subim_sz * (subim_sz / 2 + 1));
     ft_copy = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * subim_sz * (subim_sz / 2 + 1));
     subim = (double*) fftw_malloc(sizeof(double) * subim_sz * subim_sz);
+    ift_result = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * rft_sz * rft_sz);
+    ift = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * rft_sz * rft_sz);
+    
+    // Allocate the memory for the boxcar averaged baseline power, and
+    // fill with zeros. We allocate the boxcar arrays as a contiguous block of 
+    // memory for each baseline, and then set the pointers.
+    // Lots of small mallocs is meant to be avoided for speed.
+    for (int ii=0; ii<N_BL; ii++) {
+        baseline_power_avg[ii] = (double*) malloc(sizeof(double) * rft_sz * rft_sz);
+        for (int kk=0; kk<rft_sz*rft_sz; kk++)
+            baseline_power_avg[ii][kk] = 0.0;
+        baseline_power_boxcar[ii][0] = (double*) malloc(sizeof(double) * rft_sz * rft_sz * MAX_N_GD_BOXCAR);
+        for (int jj=0; jj<MAX_N_GD_BOXCAR; jj++){
+            baseline_power_boxcar[ii][jj] = baseline_power_boxcar[ii][0] + jj * rft_sz * rft_sz * MAX_N_GD_BOXCAR;
+            for (int kk=0; kk<rft_sz*rft_sz; kk++){
+                baseline_power_boxcar[ii][jj][kk] = 0.0;
+            }
+        }
+    }
 
-    // Create the plan
+    // Create the plan for the Forward transform and Reverse transform.
     plan = fftw_plan_dft_r2c_2d(subim_sz, subim_sz, subim, ft, FFTW_MEASURE);
+    rplan = fftw_plan_dft_2d(rft_sz, rft_sz, ift, ift_result, FFTW_BACKWARD, FFTW_MEASURE);
 
     // Allocate memory for the subimage
     window = (double*) fftw_malloc(sizeof(double) * subim_sz * subim_sz);
@@ -237,16 +262,65 @@ void ForwardFt::reverse_ft() {
     // This is called by the fringe tracker thread when it is ready for a reverse FT. 
     // It should be called after sem_wait(&sem_reverse_ft_ready).
     // It executes the core code if bad_frame is false.
+    int boxcar_index=0;
     while (mode != FT_STOPPING) {
         // No counters here. Just go whenever we can!
         sem_wait(&sem_reverse_ft_ready);
 
         // Copy the relevant pixels into the arrays ready for inverse transform.
-        reverse_ft_mutex.lock();
-        
-        reverse_ft_mutex.unlock();
-        // Inverse transform all baselines.
+        for (int bl=0; bl<N_BL; bl++){
+            // Find the relevant pixels for K1 or K2.
+            // !!! Obviously a place to speed up if we wanted...
+            // could be pre-calculated.
+            if ((subarray->name == "hei_k1") || (subarray->name == "shei_k1")) {
+                x_px = lround(fs.x_px_K1[bl]) % K1ft->subim_sz;
+                y_px = lround(fs.y_px_K1[bl]) % K1ft->subim_sz;
+            }
+            else if ((subarray->name == "hei_k2") || (subarray->name == "shei_k2")) {
+                x_px = lround(fs.x_px_K2[bl]) % K2ft->subim_sz;
+                y_px = lround(fs.y_px_K2[bl]) % K2ft->subim_sz;
+            } else {
+                std::cout << "Unknown subarray name in reverse_ft: " << subarray->name << std::endl;
+                continue;
+            }
+            // During the copying loop only, we need a lock
+            reverse_ft_mutex.lock();
+            for (int ii=-2; ii<=2; ii++) {
+                for (int jj=-2; jj<=2; jj++) {
+                    // If the absolute value of ii and jj is both 2, continue.
+                    if (abs(ii)==2 && abs(jj)==2) continue;
+                    int ift_ix = (ii+2)*rft_sz + (jj+2);
+                    int ft_yix = y_px + jj;
+                    int ft_xix = x_px + ii;
+                    double sign=1;
+                    if (ft_xix < 0){
+                        ft_yix = -ft_yix;
+                        ft_xix = -ft_xix;
+                        sign=-1;
+                    }
+                    // Now correct ft_yix, which could be negative or more than subim_sz.
+                    ft_yix = (ft_yix + subim_sz) % subim_sz;
+                    ift[ift_ix][0] = ft_copy[ft_yix*(subim_sz/2+1) + ft_xix][0];
+                    ift[ift_ix][1] = ft_copy[ft_yix*(subim_sz/2+1) + ft_xix][1] * sign;
+                }
+            }
+            reverse_ft_mutex.unlock();
+            // Now do the FFT
+            fftw_execute(rplan);
+            
+            // Take square modulus and add to the boxcar average.
+            // !!! TODO: use settings.s.n_gd_boxcar instead of MAX_N_GD_BOXCAR
+            baseline_power_mutex.lock();
+            for (int ii=0; ii<rft_sz*rft_sz; ii++) {
+                baseline_power_avg[bl][ii] -= baseline_power_boxcar[bl][boxcar_index][ii]/MAX_N_GD_BOXCAR;
+                baseline_power_boxcar[bl][boxcar_index][ii] = 
+                    ift_result[ii][0]*ift_result[ii][0] + 
+                    ift_result[ii][1]*ift_result[ii][1];
+                baseline_power_avg[bl][ii] += baseline_power_boxcar[bl][boxcar_index][ii]/MAX_N_GD_BOXCAR;
+            }
+            baseline_power_mutex.unlock();
 
-        // Take square modulus and add to the boxcar average.
-    }
+        }            
+        boxcar_index = (boxcar_index + 1) % MAX_N_GD_BOXCAR;
+    }   
 }
