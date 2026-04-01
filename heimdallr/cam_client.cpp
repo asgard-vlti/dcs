@@ -14,7 +14,7 @@ std::atomic<bool> keep_cam_polling{false};
 std::thread cam_poll_thread;
 std::string status_string = "status";
 std::string cam_endpoint() {
-    return "tcp://192.168.100.2:" + std::to_string(CAM_PORT);
+    return "tcp://mimir:" + std::to_string(CAM_PORT);
 }
 
 void create_cam_socket(zmq::socket_t& socket) {

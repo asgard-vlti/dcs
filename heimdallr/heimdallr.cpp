@@ -152,7 +152,11 @@ std::string set_offload_mode(std::string mode) {
     }
     if (mode == "off") {
         settings.s.offload_mode = OFFLOAD_OFF;
-    } else if ((mode == "nested") || (mode == "nest")) {
+    } else if (settings.s.delay_line_type == "off"){
+        return 
+            "ERROR: Can not offload when dl_type is ""off"".";
+    } 
+    if ((mode == "nested") || (mode == "nest")) {
         settings.s.offload_mode = OFFLOAD_NESTED;
         // Reset the offload to zero.
         control_u.dl_offload.setZero();
