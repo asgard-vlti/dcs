@@ -18,9 +18,9 @@
  *
  */
 #define SZ 32
-#define NWAVE 7 // Number of wavelengths per bandpass. Must be odd.
+#define NWAVE 11 // Number of wavelengths per bandpass. Must be odd.
 #define DTUS 2000              // Wait 5ms = 5000 microseconds
-#define ATM_DAMPING 0.0001      // Damping factor for atmospheric delay evolution
+#define ATM_DAMPING 4e-5      // Damping factor for atmospheric delay evolution
 
 #include <math.h>
 #include <stdio.h>
@@ -127,7 +127,7 @@ int make_image(IMAGE *imarray, fftw_complex *pupil, fftw_complex *image, fftw_pl
                 ix = ((ii + SZ/2) % SZ)*SZ + (jj + SZ/2) % SZ;
                 val.real(image[ix][0]);
                 val.imag(image[ix][1]);
-                *(dotUI++) += (int)std::norm(val)*flux_scale;
+                *(dotUI++) += (int)std::norm(val)*flux_scale/NWAVE;
             }
         }
     }
