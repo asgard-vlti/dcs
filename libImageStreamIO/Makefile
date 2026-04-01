@@ -12,7 +12,7 @@ ifeq ($(PREFIX),)
     PREFIX := /usr/local
 endif
 
-all: $(LIB)
+all: $(LIB) imft
 
 $(LIB): $(OBJECTS)
 	ar rcs $(LIB) $(OBJECTS)
@@ -24,7 +24,7 @@ imft: ImCreate_ft.c
 	$(CC) -o $@ ImageStreamIO.c $< $(CFLAGS) -O3 -lm -lpthread -lfftw3 -lfmt -lcommander -lboost_program_options -lzmq -lb64
 
 clean:
-	rm -rf *.o *~
+	rm -rf *.o *~ imft
 
 install:
 	install -D $(LIB) $(PREFIX)/lib/

@@ -20,7 +20,6 @@ double gd_to_K1=1.0;
 
 // Local baseline variables
 dcomp K1_phasor[N_BL], K2_phasor[N_BL];
-FourierSampling fs;
 
 // A 6x6 matrix for the weights of phase and group delay
 Eigen::Matrix<double, N_BL, 1> var_pd, var_gd, Wpd, Wgd;
@@ -161,7 +160,7 @@ void initialise_baselines(){
     //    baselines.gd_phasor_boxcar[i].setZero();
     //}
 
-    for (int i=0; i<baselines.n_pd_boxcar; i++){
+    for (unsigned int i=0; i<baselines.n_pd_boxcar; i++){
         baselines.pd_phasor_boxcar[i].setZero();
     }
 
@@ -188,36 +187,13 @@ void initialise_baselines(){
 
     for (int bl=0; bl<N_BL; bl++){
         // Set the offsets to the group delay
+#ifndef SIMULATE
         baselines.gd_phasor_offset(bl) = 
             std::exp(-1.0i *config["servo"]["gd_phasor_offset"][bl].value_or(0.0)/gd_to_K1);
-    }
-}
-
-void initialise_fourier_sampling(){
-    float pix = config["geometry"]["pix"].value_or(24.0);
-    float wave_K1 = config["wave"]["K1"].value_or(2.05);
-    float wave_K2 = config["wave"]["K2"].value_or(2.25);
-    for (int bl=0; bl<N_BL; bl++){
-        // Set the x and y coordinates for extracting flux
-        float bl_x = config["geometry"]["beam_x"][baseline2beam[bl][1]].value_or(0.0) -
-            config["geometry"]["beam_x"][baseline2beam[bl][0]].value_or(0.0);
-        float bl_y = config["geometry"]["beam_y"][baseline2beam[bl][1]].value_or(0.0) -
-            config["geometry"]["beam_y"][baseline2beam[bl][0]].value_or(0.0);
-        if (bl_x < 0){
-            bl_x = -bl_x;
-            bl_y = -bl_y;
-            fs.sign[bl] = -1;
-        } else fs.sign[bl] = 1;
-        fs.x_px_K1[bl] = bl_x * pix / wave_K1 * K1ft->subim_sz;
-        fs.y_px_K1[bl] = bl_y * pix / wave_K1 * K1ft->subim_sz;
-        fs.x_px_K2[bl] = bl_x * pix / wave_K2 * K2ft->subim_sz;
-        fs.y_px_K2[bl] = bl_y * pix / wave_K2 * K2ft->subim_sz;
-        if (bl_y < 0){
-            fs.y_px_K1[bl] += K1ft->subim_sz;
-            fs.y_px_K2[bl] += K2ft->subim_sz;
-        }
-        //std::cout << "Baseline: " << bl << " x_px_K1: " << x_px_K1[bl] << " y_px_K1: " << y_px_K1[bl] << std::endl;
-        //std::cout << "Baseline: " << bl << " x_px_K2: " << x_px_K2[bl] << " y_px_K2: " << y_px_K2[bl] << std::endl;
+#else
+        baselines.gd_phasor_offset(bl) = 
+            std::exp(-1.0i *config["servo"]["gd_phasor_sim_offset"][bl].value_or(0.0)/gd_to_K1);
+#endif
     }
 }
 
@@ -252,7 +228,7 @@ Eigen::Matrix<double, N_BL, 1> filter6(Eigen::Matrix<double, N_BL, N_BL> I6, Eig
     // This function filters the input vector x using the I6gd matrix.
     // It returns the filtered vector.
     double chi2=1e6, chi2_min=1e6;
-    int i_best;
+ //   int i_best;
     Eigen::Matrix<double, N_BL, 1> y_best, x_try, x_best;
     Eigen::Matrix<double, N_BL, 1> y;
     // Each positive element of x could be x-1, and each negative element
@@ -295,7 +271,7 @@ Eigen::Matrix<double, N_BL, 1> filter6(Eigen::Matrix<double, N_BL, N_BL> I6, Eig
             chi2_min = chi2;
             y_best = y;
             x_best = x_try;
-            i_best = i;
+//            i_best = i;
         }
     }
 #ifdef DEBUG_FILTER6
@@ -616,7 +592,7 @@ void fringe_tracker(){
         // If it has been more than offload_time_ms, do the offload and the search step.
         // The exception is if we are in OFFLOAD_MOD mode, which we will treat separately for 
         // code readability.
-        if ((settings.s.offload_mode == OFFLOAD_MOD) && (gd_ix == baselines.n_gd_boxcar-1)){
+        if ((settings.s.offload_mode == OFFLOAD_MOD) && (gd_ix == (int)baselines.n_gd_boxcar-1)){
             // In mod mode, we fill the group delay SNR matrix.
             gd_snr_during_mod.col(mod_ix) = baselines.gd_snr;
             std::cout << baselines.gd_snr.transpose() << std::endl;

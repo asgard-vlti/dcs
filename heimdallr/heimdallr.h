@@ -18,7 +18,7 @@
 #include <semaphore.h>
 
 //----------Defines-----------
-//#define SIMULATE
+#define SIMULATE
 #define OPD_PER_DM_UNIT 6.0 
 #define OPD_PER_PIEZO_UNIT 0.15 //Should be 0.26 
 
@@ -59,14 +59,14 @@
 #define DELAY_MOVE_USEC 200000 // Time to wait for the delay line to move
 
 //----------Constant Arrays-----------
-const char beam2baseline[N_TEL][N_TEL] = {
+const short beam2baseline[N_TEL][N_TEL] = {
     {-1, 0, 1, 2},
     {0, -1, 3, 4},
     {1, 3, -1, 5},
     {2, 4, 5, -1}
 };
 
-const char baseline2beam[N_BL][2] = {
+const short baseline2beam[N_BL][2] = {
     {0, 1},
     {0, 2},
     {0, 3},
@@ -75,7 +75,7 @@ const char baseline2beam[N_BL][2] = {
     {2, 3}
 };
 
-const char beam_baselines[N_TEL][N_TEL-1] = {
+const short beam_baselines[N_TEL][N_TEL-1] = {
     {0, 1, 2},
     {0, 3, 4},
     {1, 3, 5},
@@ -89,7 +89,7 @@ const double M_pseudo_inverse[N_TEL][N_BL] = {
     {0, 0, 0.25, 0, 0.25, 0.25}
 };
 
-const char closure2bl[N_CP][3] = {
+const short closure2bl[N_CP][3] = {
     {0, 3, 1},
     {0, 4, 2},
     {1, 5, 2},
@@ -175,6 +175,14 @@ struct FourierSampling{
         y_px_K2[N_BL], sign[N_BL];
 };
 
+/* !!! For another day - harder to serialise...
+struct EncodedBaselineImages
+{
+    std::vector<EncodedImage> K1;
+    std::vector<EncodedImage> K2;
+};
+*/
+
 //-------Commander structs-------------
 // An encoded 2D image in row-major form.
 struct EncodedImage
@@ -183,6 +191,7 @@ struct EncodedImage
     std::string type;
     std::string message;
 };
+
 
 // The status, encoded as std::vector<double> for 
 // key variables.
@@ -259,7 +268,7 @@ class ForwardFt {
 public:
     // We need a mutex in case we want to change parameters while the thread is running
     // We also need a mutex for writing to the FT used for the reverse_ft
-    std::mutex mutex, reverse_ft_mutex;
+    std::mutex mutex, reverse_ft_mutex, baseline_power_mutex;
     // POSIX semaphore for new frame notification, and
     // for reverse FT ready.
     sem_t sem_new_frame;
@@ -267,6 +276,7 @@ public:
 
     // Count of the frame number that has been processed
     long unsigned int cnt=0;
+    short filternum; // Are we K1 or K1?
     
     // Count of the number of errors
     int nerrors=0;
@@ -274,11 +284,17 @@ public:
     // The Fourier transformed image.
     fftw_complex *ft, *ft_copy;
 
+    // The boxcar averaged baseline power.
+    double *baseline_power_boxcar[N_BL][MAX_N_GD_BOXCAR];
+    double *baseline_power_avg[N_BL];
+
+    // Is a frame bad? This needs to be a flag so that we can 
+    // monitor skipped frames in the fringe tracker.
     bool bad_frame=false;
 
     // A vector of bad pixel x indices
-    std::vector<int> bad_pixel_x;
-    std::vector<int> bad_pixel_y;
+    std::vector<unsigned int> bad_pixel_x;
+    std::vector<unsigned int> bad_pixel_y;
 
     /// The power spectrum of the image, and the array to boxcar average.
     double *power_spectra[MAX_N_PS_BOXCAR];
@@ -289,7 +305,7 @@ public:
     int ps_index = MAX_N_PS_BOXCAR-1;
 
     // The size of the subimage, needed to determine which Fourier components to use.
-    unsigned int subim_sz;
+    unsigned int subim_sz, rft_sz;
 
     // The image that contains the metadata.
     IMAGE *subarray;
@@ -303,11 +319,12 @@ public:
     // Clean-up and join the FFT thread.
     void stop();
     
-    void set_bad_pixels(std::vector<int> kx, std::vector<int> ky);
+    void set_bad_pixels(std::vector<unsigned int> kx, std::vector<unsigned int> ky);
 private:
     // The window function to apply to the image before FFT.
     double *window;
-    fftw_plan plan;
+    fftw_complex *ift_result, *ift;
+    fftw_plan plan, rplan;
     std::thread thread, reverse_thread; 
     int mode=FT_STARTING;
     void loop();
@@ -318,7 +335,6 @@ private:
 void start_modulation();
 void end_modulation();
 void fringe_tracker();
-void initialise_fourier_sampling();
 
 // Seeting the delay lines (needed form the main thread and from the commander)
 void set_delay_lines(Eigen::Vector4d dl);
