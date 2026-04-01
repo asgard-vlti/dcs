@@ -602,8 +602,10 @@ EncodedImage get_baseline_image(std::string filter, int baseline) {
         throw std::runtime_error("Baseline number out of range");
     }
     unsigned int sz_in_bytes = ft->rft_sz * ft->rft_sz * sizeof(double);
+    ft->baseline_power_mutex.lock();
     std::string encoded_image = encode((char*)ft->baseline_power_avg[baseline], sz_in_bytes);
     EncodedImage ei = {ft->subim_sz, ft->subim_sz, "double", encoded_image};
+    ft->baseline_power_mutex.unlock();
     return ei;  
 }
 

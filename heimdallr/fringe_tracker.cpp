@@ -188,8 +188,13 @@ void initialise_baselines(){
 
     for (int bl=0; bl<N_BL; bl++){
         // Set the offsets to the group delay
+#ifndef SIMULATE
         baselines.gd_phasor_offset(bl) = 
             std::exp(-1.0i *config["servo"]["gd_phasor_offset"][bl].value_or(0.0)/gd_to_K1);
+#else
+        baselines.gd_phasor_offset(bl) = 
+            std::exp(-1.0i *config["servo"]["gd_phasor_sim_offset"][bl].value_or(0.0)/gd_to_K1);
+#endif
     }
 }
 
