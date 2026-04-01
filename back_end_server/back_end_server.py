@@ -167,9 +167,11 @@ import logging
 # from rts_base import AbstractRTSTask, RTSContext, RTSState, RTSErr
 # !!!ADAM please educate Mike on this path bit for editable installs.
 try:
-   from back_end_server.handlers.baldr_rts_handlers import register as register_baldr_rts
+    from back_end_server.handlers.baldr_rts_handlers import (
+        register as register_baldr_rts,
+    )
 except:
-   from handlers.baldr_rts_handlers import register as register_baldr_rts
+    from handlers.baldr_rts_handlers import register as register_baldr_rts
 
 
 # --- Logging setup: file and console ---
@@ -215,7 +217,7 @@ class BackEndServer:
             "cam_server": 6667,
             "DM_server": 6666,
         },
-        baldr_mode = "FAINT",
+        baldr_mode="FAINT",
     ):
         self.baldr_mode = baldr_mode
         self.port = port
@@ -336,7 +338,7 @@ class BackEndServer:
         """
 
         # Map WAG verbs -> Commander command strings
-        if (self.baldr_mode=="STANDARD"):
+        if self.baldr_mode == "STANDARD":
             cmd_map = {
                 "bld_open_lo": 'open_baldr_LO ""',
                 "bld_open_ho": 'open_baldr_HO ""',
@@ -389,7 +391,7 @@ class BackEndServer:
         errors = []
 
         for b in target_beams:
-            if (self.baldr_mode == "STANDARD"):
+            if self.baldr_mode == "STANDARD":
                 key = f"baldr{b}"
             else:
                 key = f"baldrtt{b}"
@@ -521,9 +523,9 @@ class BackEndServer:
                 server.recv_string()
                 time.sleep(0.1)
                 #!!! Let's allow the user to set this.
-                #server.send_string("set_gd_boxcar 64")
-                #server.recv_string()
-                #time.sleep(0.1)
+                # server.send_string("set_gd_boxcar 64")
+                # server.recv_string()
+                # time.sleep(0.1)
                 server.send_string(f"default_gains")
                 server.recv_string()
                 time.sleep(0.1)
@@ -549,6 +551,24 @@ class BackEndServer:
             if stderr:
                 logging.error("Signit process errors:")
                 logging.error(stderr)
+
+    def kill_running_script(self, script_name):
+        for pid, process in self.scripts_running.items():
+            if isinstance(process.args, list):
+                if any(script_name in str(arg) for arg in process.args):
+                    logging.info(
+                        f"Found existing {script_name} process with PID {pid}. Terminating it before starting a new one."
+                    )
+                    process.send_signal(signal.SIGINT)
+                    stdout, stderr = process.communicate()
+                    logging.info(f"Terminated existing {script_name} process output:")
+                    logging.info(stdout)
+                    if stderr:
+                        logging.error(
+                            f"Terminated existing {script_name} process errors:"
+                        )
+                        logging.error(stderr)
+                    del self.scripts_running[pid]
 
     def handle_script(self, command):
         """
@@ -603,7 +623,15 @@ class BackEndServer:
         # parameters = command.get("parameters", [])
         if command_name == "s_h-autoalign":
             process = subprocess.Popen(
-                ["/home/asg/.conda/envs/asgard/bin/h-autoalign", "-a", "ia", "-o", "mcs", "-b", "K1"],
+                [
+                    "/home/asg/.conda/envs/asgard/bin/h-autoalign",
+                    "-a",
+                    "ia",
+                    "-o",
+                    "mcs",
+                    "-b",
+                    "K1",
+                ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
@@ -665,7 +693,9 @@ class BackEndServer:
                 return self.create_response("ERROR: mode parameter is required")
             mode = _param_value(command.get("parameters", []), "mode")
             if mode.upper() not in ["FAINT", "STANDARD"]:
-                return self.create_response("ERROR: mode parameter must be FAINT or STANDARD")
+                return self.create_response(
+                    "ERROR: mode parameter must be FAINT or STANDARD"
+                )
             if self.baldr_mode.upper() == mode.upper():
                 logging.info(f"Mode is already set to {mode.upper()}. No action taken.")
                 return self.create_response("OK")
@@ -681,10 +711,10 @@ class BackEndServer:
                     cwd=str(script.parent),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                )          
+                )
                 _log_subprocess_output(process, prefix=f"{command_name}-{mode}")
                 logging.info(f"Started s_b-mode script with mode {mode}.")
-                time.sleep(0.8)   
+                time.sleep(0.8)
         elif command_name == "s_adc-track":
             if _param_value(command.get("parameters", []), "ra") is None:
                 return self.create_response("ERROR: ra parameter is required")
@@ -694,9 +724,25 @@ class BackEndServer:
             print(ra_str)
             print(command.get("parameters", []))
             dec_str = _param_value(command.get("parameters", []), "dec")
-            # print(f"In principle we would now slew the ADCs to RA {ra_str} and DEC {dec_str}. Do this manually for now.")
 
-            # TODO: see if existing adc track running and kill it
+            # check if the adc_track script is already running, and if so, kill it before starting a new one
+            self.kill_running_script("adc_track")
+
+            # start new adc_track process
+            cmd = [
+                "/home/asg/.conda/envs/asgard/bin/adc-track",
+            ]
+
+            process = subprocess.Popen(
+                cmd,
+                cwd="/home/asg/.conda/envs/asgard/bin/",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            _log_subprocess_output(process, prefix=command_name)
+            logging.info(
+                f"Started s_adc-track script process with RA={ra_str} and Dec={dec_str}."
+            )
 
             return self.create_response("OK")
         elif command_name == "s_adc-zero":
@@ -823,6 +869,7 @@ class BackEndServer:
 def main():
     server = BackEndServer()
     server.run()
+
 
 if __name__ == "__main__":
     main()
