@@ -36,6 +36,13 @@ from datetime import datetime, timezone
 # hdlr_align      6661
 # baldr           6662
 
+# param names taken from was/ASGARD/CONFIG/agmcfg/config/agmcfgMCS.cfg
+WAG_PARAMS_TO_READ = [
+    "seeing",
+    "alt",
+    "az",
+]
+
 
 class ZmqReq:
     """
@@ -99,7 +106,6 @@ class ZmqRep:
 
 # ---------------- MCS client ----------------
 class MCSClient:
-
     @staticmethod
     def _is_zmq_socket_open(sock):
         """
@@ -149,7 +155,7 @@ class MCSClient:
         sleep_time: float = 1.0,
         script_only: bool = False,
     ):
-        self.publish_z = ZmqReq(publish_endpoint)
+        self.req_z = ZmqReq(publish_endpoint)
         logging.info(f"REQ publish set up on {publish_endpoint}")
 
         self.script_z = ScriptAdapter(script_endpoint)
@@ -174,8 +180,10 @@ class MCSClient:
 
         self.t_last_server_check = time.time()
 
+        self.wag_reads = {param: None for param in WAG_PARAMS_TO_READ}
+
     def _send(self, body: Dict[str, Any]) -> Tuple[bool, str]:
-        rep = self.publish_z.send_payload(body)
+        rep = self.req_z.send_payload(body)
         print(rep)
         if not rep or "reply" not in rep:
             return False, "no-reply"
@@ -188,8 +196,39 @@ class MCSClient:
         also poll the cpp databases for new data. Publish all at once.
         """
         while True:
+            self.read_from_wag()
             self.publish_all_to_wag()
             time.sleep(self.sleep_time)
+
+    def read_from_wag(self):
+        """Read WAG parameters if connection is open, and update self.wag_reads. Only query if connection is open."""
+
+        msg = {
+            "command": {
+                "name": "read",
+                "time": self.ts(),
+                "parameter": [{"name": param} for param in WAG_PARAMS_TO_READ],
+                "requester": self.requester,
+            }
+        }
+        ok, rep = self._send(msg)
+        if not ok or "reply" not in rep:
+            logging.warning(f"failed to read from wag: {rep}")
+            for param in WAG_PARAMS_TO_READ:
+                self.wag_reads[param] = None
+            return
+        content = rep["reply"].get("content", {})
+        if not isinstance(content, dict):
+            logging.warning(f"unexpected reply content format from wag: {content}")
+            for param in WAG_PARAMS_TO_READ:
+                self.wag_reads[param] = None
+            return
+        for param in WAG_PARAMS_TO_READ:
+            if param in content:
+                self.wag_reads[param] = content[param]
+            else:
+                logging.warning(f"parameter {param} not found in wag reply content")
+                self.wag_reads[param] = None
 
     def gather_baldr_parameters(self):
         """Gather Baldr parameters for all beams as a list of dicts. Only query if connection is open."""
@@ -351,69 +390,11 @@ class MCSClient:
         if not ok:
             logging.warning(f"failed to write script data to wag: {msg}")
 
-    # def publish_hdlr_databases_to_wag(self):
-    #     self.dcs_adapters["HDLR"].fetch()
-
-    #     Hdlr_parameters = fields(HeimdallrStatus)
-
-    #     body = self.ESO_format([])
-
-    #     # append to body["parameter"]
-    #     for param in Hdlr_parameters:
-    #         values = self.dcs_adapters["HDLR"][param]  # is already a list
-    #         prop = {}
-    #         prop["name"] = f"hdlr_{param}"
-    #         prop["range"] = "(0:3)"
-    #         prop["value"] = values
-    #         body["parameter"].append(prop)
-
-    #     ok, msg = self._send(body)
-    #     if not ok:
-    #         logging.warning(f"failed to write script data to wag: {msg}")
-
     def publish_script_data(self):
         if self.script_z.has_new_data:
             msg = self.script_z.read_most_recent_msg()
         else:
             return
-        # // option 1: all 4 beams updated, formatting done by MCS
-        # {
-        #     "origin": "s_h-autoalign",
-        #     "data": [
-        #         {"hdlr_x_offset": x_offsets}, // each value is a list if needed
-        #         {"hdlr_y_offset": y_offsets},
-        #         {"hdlr_complete": True},
-        #     ],
-        # }
-
-        # // option 2: single beam updated, formatting done by MCS
-        # {
-        #     "origin": "s_h-autoalign",
-        #     "beam" : beam_no, // if this keyword exists MCS knows it is this case
-        #     "data": [
-        #         {"hdlr_x_offset": x_offset}, // each value is a single value
-        #         {"hdlr_y_offset": y_offset}, // constraint: only params with "unique per telescope" can be sent
-        #     ],
-        # }
-
-        # final form that is sent to wag is (in the data section):
-        # // case 1
-        # [
-        #     {
-        #         "name": "hdlr_x_offset",
-        #         "value": x_offsets,
-        #         "range": "(0:3)"
-        #     }, ... // same for all other params
-        # ]
-
-        # // case 2
-        # [
-        #     {
-        #         "name": "hdlr_x_offset",
-        #         "value": [x_offset],
-        #         "range": "(beam_no:beam_no)"
-        #     }, ... // same for all other params
-        # ]
 
         # check if "beam" keyword exists, if so it is a single beam update
         # otherwise it is all beams

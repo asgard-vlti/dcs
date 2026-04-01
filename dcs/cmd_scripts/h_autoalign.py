@@ -26,7 +26,9 @@ import json
 
 
 class HeimdallrAA:
-    def __init__(self, shutter_pause_time, band, flux_threshold, savepth, output, ncubes, t_pause):
+    def __init__(
+        self, shutter_pause_time, band, flux_threshold, savepth, output, ncubes, t_pause
+    ):
         # Set target_pixels and col_bnds based on band
         centres = self.load_centre_positions()
         if band.upper() == "K1":
@@ -571,9 +573,7 @@ class HeimdallrAA:
                 )
                 self.imalign_single(beam)
                 time.sleep(2)
-                centre, flux = self._get_blob(
-                    radius=flux_beam_radius, return_flux=True
-                )
+                centre, flux = self._get_blob(radius=flux_beam_radius, return_flux=True)
 
             fluxes_x2.append(flux)
 
@@ -855,6 +855,7 @@ def main():
         print(f"Interrupt recieved during alignment")
         # open all shutters
         heimdallr_aa.open_all_shutters()
+        time.sleep(2)
 
         time.sleep(0.5)
 
