@@ -685,6 +685,18 @@ class BackEndServer:
                 _log_subprocess_output(process, prefix=f"{command_name}-{mode}")
                 logging.info(f"Started s_b-mode script with mode {mode}.")
                 time.sleep(0.8)   
+        elif command_name == "s_adc-track":
+            if _param_value(command.get("parameters", []), "ra") is None:
+                return self.create_response("ERROR: ra parameter is required")
+            if _param_value(command.get("parameters", []), "dec") is None:
+                return self.create_response("ERROR: dec parameter is required")
+            ra_str = _param_value(command.get("parameters", []), "ra")
+            dec_str = _param_value(command.get("parameters", []), "dec")
+            print(f"In principle we would now slew the ADCs to RA {ra_str} and DEC {dec_str}. Do this manually for now.")
+            return self.create_response("OK")
+        elif command_name == "s_adc-zero":
+            print("ADCs not in use. Please zero them maually!")
+            return self.create_response("OK")
         else:
             logging.error(f"Unknown script command '{command_name}'")
             return self.create_response(
