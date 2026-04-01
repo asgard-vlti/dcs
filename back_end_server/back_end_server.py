@@ -677,7 +677,7 @@ class BackEndServer:
                     mode.upper(),
                 ]
                 process = subprocess.Popen(
-                    cmd,
+                    cmd, # test
                     cwd=str(script.parent),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
