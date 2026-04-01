@@ -138,7 +138,7 @@ class Heimdallr():
 
         # connecting to HPOLs
         # ===================
-        self.cc = co.Controllino("192.168.100.12", init_motors=False)
+        self.cc = co.RotationMotorTeensy("192.168.100.12")
         self.hpol_IDs = [4,5,6,7]  # check first w/ Mike
         self.hpol_pos = np.zeros(self.ndm, dtype=int)
         for ii in range(self.ndm):
@@ -301,12 +301,19 @@ class Heimdallr():
     # =========================================================================
     def get_hpol_pos(self, beamid=1):
         """ Get the HPOL stepper motor position for the requested beam ID # """
-        return self.cc.where(self.hpol_IDs[beamid-1])
+        # print(self.hpol_IDs[beamid-1])
+        # return self.cc.where(self.hpol_IDs[beamid-1])
+
+        self.socket.send_string(f"read HPOL{beamid}")
+
+        return self.socket.recv_string().strip()
 
     # =========================================================================
     def move_hpol(self, pos, beamid=1):
         """ Move the HPOL stepper motor to *pos*  the requested beam ID # """
-        self.cc.amove(self.hpol_IDs[beamid-1], pos)
+        # self.cc.amove(self.hpol_IDs[beamid-1], pos)
+        self.socket.send_string(f"moveabs HPOL{beamid} {float(pos)}")
+        self.socket.recv_string()
 
     # =========================================================================
     def get_dl_pos(self, beamid=1):

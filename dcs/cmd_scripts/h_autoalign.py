@@ -851,10 +851,12 @@ def main():
             raise ValueError("Unknown alignment method.")
 
         print("Autoalignment completed.")
-    except Exception as e:
-        print(f"Error during alignment: {e}")
+    except KeyboardInterrupt as e:
+        print(f"Interrupt recieved during alignment")
         # open all shutters
         heimdallr_aa.open_all_shutters()
+
+        time.sleep(0.5)
 
         if args.output == "internal":
             print("Restoring initial motor positions.")

@@ -691,8 +691,13 @@ class BackEndServer:
             if _param_value(command.get("parameters", []), "dec") is None:
                 return self.create_response("ERROR: dec parameter is required")
             ra_str = _param_value(command.get("parameters", []), "ra")
+            print(ra_str)
+            print(command.get("parameters", []))
             dec_str = _param_value(command.get("parameters", []), "dec")
-            print(f"In principle we would now slew the ADCs to RA {ra_str} and DEC {dec_str}. Do this manually for now.")
+            # print(f"In principle we would now slew the ADCs to RA {ra_str} and DEC {dec_str}. Do this manually for now.")
+
+            # TODO: see if existing adc track running and kill it
+
             return self.create_response("OK")
         elif command_name == "s_adc-zero":
             print("ADCs not in use. Please zero them maually!")
