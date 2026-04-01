@@ -559,8 +559,8 @@ std::string set_dit(double dit){
     return "OK";
 }
 
-std::string set_bad_pixels(std::vector<int> k1x, std::vector<int> k1y,
-                          std::vector<int> k2x, std::vector<int> k2y) {
+std::string set_bad_pixels(std::vector<unsigned int> k1x, std::vector<unsigned int> k1y,
+                          std::vector<unsigned int> k2x, std::vector<unsigned int> k2y) {
     // Set the bad pixels in the Fourier transform structures
     // Check that the input vectors are valid
     if (k1x.size() != k1y.size() || k2x.size() != k2y.size()) {
@@ -568,12 +568,12 @@ std::string set_bad_pixels(std::vector<int> k1x, std::vector<int> k1y,
     }
     // Check that the pixel coordinates are valid. They have to be smaller than subim_sz
     for (size_t i = 0; i < k1x.size(); i++) {
-        if (k1x[i] < 0 || k1x[i] >= K1ft->subim_sz || k1y[i] < 0 || k1y[i] >= K1ft->subim_sz) {
+        if (k1x[i] >= K1ft->subim_sz || k1y[i] >= K1ft->subim_sz) {
                 return "ERROR: Bad pixel coordinates out of range for K1";
         }
     }
     for (size_t i = 0; i < k2x.size(); i++) {
-        if (k2x[i] < 0 || k2x[i] >= K2ft->subim_sz || k2y[i] < 0 || k2y[i] >= K2ft->subim_sz) {
+        if (k2x[i] >= K2ft->subim_sz || k2y[i] >= K2ft->subim_sz) {
                 return "ERROR: Bad pixel coordinates out of range for K2";
         }
     }
@@ -664,7 +664,7 @@ COMMANDER_REGISTER(m)
     m.def("foreground", set_foreground, "Set (1) or unset (0) foreground delay line offsets", "state"_arg=1);
     m.def("expstatus", expstatus, "Get the exposure time status (success if complete)");
     m.def("default_gains", default_gains, "Set the gains to default values");
-    m.def("get_baseline_im", get_baseline_im, "Get a baseline image for K1 or K2 as an encoded string");
+    m.def("get_baseline_im", get_baseline_image, "Get a baseline image for K1 or K2 as an encoded string");
 }
 
 int main(int argc, char* argv[]) {
@@ -712,9 +712,6 @@ int main(int argc, char* argv[]) {
     std::cout << "Simulation mode!" << std::endl;
    
 #endif
-    // Initialise the baseline variables
-    initialise_fourier_sampling();
-
     K1ft = new ForwardFt(&K1);
     K2ft = new ForwardFt(&K2);
 
