@@ -592,6 +592,27 @@ std::string set_fixed_dl(int value) {
     return "OK";
 }
 
+EncodedImage get_baseline_image(std::string filter, int baseline) {
+    // Get the baseline image for one filter. This is a 2D array.
+    ForwardFt *ft;
+    if (filter == "K1") {
+        ft = K1ft;
+    } else if (filter == "K2") {
+        ft = K2ft;
+    } else {
+        throw std::runtime_error("Filter not recognised - please edit this code for a better error response");
+    }
+    if (baseline < 0 || baseline >= N_BL) {
+        throw std::runtime_error("Baseline number out of range");
+    }
+    unsigned int sz_in_bytes = ft->rft_sz * ft->rft_sz * sizeof(double);
+    ft->baseline_power_mutex.lock();
+    std::string encoded_image = encode((char*)ft->baseline_power_avg[baseline], sz_in_bytes);
+    EncodedImage ei = {ft->subim_sz, ft->subim_sz, "double", encoded_image};
+    ft->baseline_power_mutex.unlock();
+    return ei;  
+}
+
 COMMANDER_REGISTER(m)
 {
     using namespace commander::literals;
@@ -643,6 +664,7 @@ COMMANDER_REGISTER(m)
     m.def("foreground", set_foreground, "Set (1) or unset (0) foreground delay line offsets", "state"_arg=1);
     m.def("expstatus", expstatus, "Get the exposure time status (success if complete)");
     m.def("default_gains", default_gains, "Set the gains to default values");
+    m.def("get_baseline_im", get_baseline_im, "Get a baseline image for K1 or K2 as an encoded string");
 }
 
 int main(int argc, char* argv[]) {
@@ -690,6 +712,9 @@ int main(int argc, char* argv[]) {
     std::cout << "Simulation mode!" << std::endl;
    
 #endif
+    // Initialise the baseline variables
+    initialise_fourier_sampling();
+
     K1ft = new ForwardFt(&K1);
     K2ft = new ForwardFt(&K2);
 
