@@ -722,11 +722,11 @@ def main():
     logging.getLogger().addHandler(console)
 
     mcs = MCSClient(
-        dcs_endpoints={
-            "BLD1": "tcp://192.168.100.2:6662",
-            "BLD2": "tcp://192.168.100.2:6663",
-            "BLD3": "tcp://192.168.100.2:6664",
-            "BLD4": "tcp://192.168.100.2:6665",
+        dcs_endpoints={ #!!! Removed Baldr for now...
+            #"BLD1": "tcp://192.168.100.2:6662",
+            #"BLD2": "tcp://192.168.100.2:6663",
+            #"BLD3": "tcp://192.168.100.2:6664",
+            #"BLD4": "tcp://192.168.100.2:6665",
             "HDLR": "tcp://192.168.100.2:6660",
         },
         script_endpoint="tcp://192.168.100.2:7019",
