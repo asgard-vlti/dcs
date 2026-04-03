@@ -728,31 +728,31 @@ class BackEndServer:
             print(command.get("parameters", []))
             dec_str = _param_value(command.get("parameters", []), "dec")
 
-            # # check if the adc_track script is already running, and if so, kill it before starting a new one
-            # self.kill_running_script("adc_track")
+            # check if the adc_track script is already running, and if so, kill it before starting a new one
+            self.kill_running_script("adc_track")
 
-            # # start new adc_track process
-            # cmd = [
-            #     "/home/asg/.conda/envs/asgard/bin/adc-track",
-            # ]
-
-            # process = subprocess.Popen(
-            #     cmd,
-            #     cwd="/home/asg/.conda/envs/asgard/bin/",
-            #     stdout=subprocess.PIPE,
-            #     stderr=subprocess.PIPE,
-            # )
-            # _log_subprocess_output(process, prefix=command_name)
-            # logging.info(
-            #     f"Started s_adc-track script process with RA={ra_str} and Dec={dec_str}."
-            # )
-
-            logging.info(
-                f"Would haveStarted s_adc-track script process with RA={ra_str} and Dec={dec_str}."
+            # start new adc_track process
+            cmd = [
+                "/home/asg/.conda/envs/asgard/bin/adc-track",
+                str(ra_str),
+                str(dec_str),
+                "--track",
+            ]
+            process = subprocess.Popen(
+                cmd,
+                cwd="/home/asg/.conda/envs/asgard/bin/",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
+            _log_subprocess_output(process, prefix=command_name)
+            logging.info(
+                f"Started s_adc-track script process with RA={ra_str} and Dec={dec_str}."
+            )
+
 
             return self.create_response("OK")
         elif command_name == "s_adc-zero":
+            # TODO
             print("ADCs not in use. Please zero them maually!")
             return self.create_response("OK")
         else:
