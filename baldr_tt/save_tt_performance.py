@@ -70,9 +70,9 @@ class BTTLogger:
         h_z = get_zmq(self.zmq_port)
 
         # get the data since last cnt
-        data = h_z.send_payload(f"ttmet {self.last_cnt}", isstr=True)
+        data = h_z.send_payload(f"ttmet {self.last_cnt}", is_str=True, decode_ascii=False)
         if type(data) != dict:
-            raise UserWarning("Incorrect response: " + data)
+            raise UserWarning(f"Data unexpected: {data}")
 
         # log to file
         with open(self.log_path, "a") as f:
