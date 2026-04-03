@@ -363,7 +363,7 @@ void ForwardFt::reverse_ft() {
             // Do an fftshift equialent here.
             // !!! TODO: use settings.s.n_gd_boxcar instead of MAX_N_GD_BOXCAR
             baseline_power_mutex.lock();
-            for (unsigned int ii=0; ii<rft_sz; ii++) 
+            for (unsigned int ii=0; ii<rft_sz; ii++) {
                 for (unsigned int jj=0; jj<rft_sz; jj++) {
                     ift_ii = (ii + rft_sz/2) % rft_sz;
                     ift_jj = (jj + rft_sz/2) % rft_sz;

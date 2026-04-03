@@ -48,7 +48,7 @@ WAG_PARAMS_TO_READ = [
 
 def check_port(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        result = s.connect_ex(("192.168.100.2", port))
+        result = s.connect_ex(("mimir", port))
         return "open" if result == 0 else "closed"
 
 
@@ -197,16 +197,16 @@ class MCSClient:
         self.watchdog_last_check = time.time()-10
         # TODO: use file of all the endpoints everywhere
         self.watchdog_zmqs = {
-            "MDS": ZmqReq("tcp://192.168.100.2:5555"),
+            "MDS": ZmqReq("tcp://mimir:5555"),
             "Eng gui": "checkport 8501",  # not zmq, use check_port function instead
-            "CRED1": ZmqReq("tcp://192.168.100.2:6667"),
-            "DM": ZmqReq("tcp://192.168.100.2:6666"),
-            "BTT1": ZmqReq("tcp://192.168.100.2:6671"),
-            "BTT2": ZmqReq("tcp://192.168.100.2:6672"),
-            "BTT3": ZmqReq("tcp://192.168.100.2:6673"),
-            "BTT4": ZmqReq("tcp://192.168.100.2:6674"),
+            "CRED1": ZmqReq("tcp://mimir:6667"),
+            "DM": ZmqReq("tcp://mimir:6666"),
+            "BTT1": ZmqReq("tcp://mimir:6671"),
+            "BTT2": ZmqReq("tcp://mimir:6672"),
+            "BTT3": ZmqReq("tcp://mimir:6673"),
+            "BTT4": ZmqReq("tcp://mimir:6674"),
             "HDLR": self.dcs_adapters.get("HDLR").z,
-            "back_end": ZmqReq("tcp://192.168.100.2:7001"),
+            "back_end": ZmqReq("tcp://mimir:7002"),
         }
 
         self.processes_of_interest = {
@@ -273,6 +273,7 @@ class MCSClient:
         
         wd_status = {}
         running_scripts = get_running_scripts(self.processes_of_interest)
+        print(running_scripts)
 
         for proc_name, zmq_obj in self.watchdog_zmqs.items():
             zmq_status = "no-conn"
@@ -844,13 +845,13 @@ def main():
 
     mcs = MCSClient(
         dcs_endpoints={  #!!! Removed Baldr for now...
-            # "BLD1": "tcp://192.168.100.2:6662",
-            # "BLD2": "tcp://192.168.100.2:6663",
-            # "BLD3": "tcp://192.168.100.2:6664",
-            # "BLD4": "tcp://192.168.100.2:6665",
-            "HDLR": "tcp://192.168.100.2:6660",
+            # "BLD1": "tcp://mimir:6662",
+            # "BLD2": "tcp://mimir:6663",
+            # "BLD3": "tcp://mimir:6664",
+            # "BLD4": "tcp://mimir:6665",
+            "HDLR": "tcp://mimir:6660",
         },
-        script_endpoint="tcp://192.168.100.2:7019",
+        script_endpoint="tcp://mimir:7019",
         publish_endpoint="tcp://192.168.100.1:7050",
         wag_wd_endpoint="tcp://192.168.100.1:7051",
         sleep_time=1.0,
