@@ -17,6 +17,7 @@ from dataclasses import dataclass, asdict, fields
 from typing import Any, Dict, List, Optional, Tuple
 import zmq
 from datetime import datetime, timezone
+import socket
 
 # Following protocol described in
 # Top-Level Control Software
@@ -44,6 +45,12 @@ WAG_PARAMS_TO_READ = [
 ]
 
 
+def check_port(port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        result = s.connect_ex(("192.168.100.2", port))
+        return "open" if result == 0 else "closed"
+
+
 class ZmqReq:
     """
     An adapter for a ZMQ REQ socket (client).
@@ -63,9 +70,7 @@ class ZmqReq:
             self.s.send_string(json.dumps(payload, sort_keys=True))
         else:
             self.s.send_string(payload)
-
         try:
-
             if decode_ascii:
                 res = self.s.recv().decode("ascii")[:-1]
             else:
@@ -152,6 +157,7 @@ class MCSClient:
         dcs_endpoints: dict,
         script_endpoint: str,
         publish_endpoint: str,
+        wag_wd_endpoint: str,
         sleep_time: float = 1.0,
         script_only: bool = False,
     ):
@@ -182,6 +188,40 @@ class MCSClient:
 
         self.wag_reads = {param: None for param in WAG_PARAMS_TO_READ}
 
+        self.wag_wd_z = ZmqReq(wag_wd_endpoint)
+        logging.info(f"WAG watchdog REQ set up on {wag_wd_endpoint}")
+
+        self.watchdog_last_check = time.time()
+        # TODO: use file of all the endpoints everywhere
+        self.watchdog_zmqs = {
+            "MDS": ZmqReq("tcp://localhost:5555"),
+            "Eng gui": "checkport 8501",  # not zmq, use check_port function instead
+            "CRED1": ZmqReq("tcp://localhost:6667"),
+            "DM": ZmqReq("tcp://localhost:6666"),
+            "BTT1": ZmqReq("tcp://localhost:6671"),
+            "BTT2": ZmqReq("tcp://localhost:6672"),
+            "BTT3": ZmqReq("tcp://localhost:6673"),
+            "BTT4": ZmqReq("tcp://localhost:6674"),
+            "HDLR": self.dcs_adapters.get("HDLR").z,
+            "back_end": ZmqReq("tcp://localhost:7001"),
+        }
+
+        self.processes_of_interest = {
+            "MDS": "python asgard_alignment/MultiDeviceServer.py",
+            "Eng gui": "streamlit run asgard_alignment/cmd_scripts/engineering_GUI.py",
+            "CRED1": "/bin/cred1_server",
+            "DM": "/bin/cred1_server",
+            "BTT1": "/usr/local/bin/baldr_tt /usr/local/etc/def1.toml --socket 'tcp://*:6671'",
+            "BTT2": "/usr/local/bin/baldr_tt /usr/local/etc/def2.toml --socket 'tcp://*:6672'",
+            "BTT3": "/usr/local/bin/baldr_tt /usr/local/etc/def3.toml --socket 'tcp://*:6673'",
+            "BTT4": "/usr/local/bin/baldr_tt /usr/local/etc/def4.toml --socket 'tcp://*:6674'",
+            "HDLR": "/usr/local/bin/heimdallr",
+            "back_end": "/home/asg/.conda/envs/asgard/bin/back-end-server",
+            # "MCS": "/home/asg/.conda/envs/asgard/bin/mcs-client",
+            "Heim Telem": "/home/asg/.conda/envs/asgard/bin/save-ft-performance",
+            "Baldr Telem": "save_tt_performance",
+        }
+
     def _send(self, body: Dict[str, Any]) -> Tuple[bool, str]:
         rep = self.req_z.send_payload(body)
         print(rep)
@@ -198,7 +238,70 @@ class MCSClient:
         while True:
             self.read_from_wag()
             self.publish_all_to_wag()
+
+            if self.wag_wd_z is not None and time.time() - self.watchdog_last_check > 5:
+                self.publish_wd()
+
             time.sleep(self.sleep_time)
+
+    def publish_wd(self):
+        """
+        { <process>: {
+            "process": "running"/"closed",
+            "zmq": "open"/"closed"/"no-conn",
+            "status" {<custom status per server>}
+            }
+        }
+
+        """
+        wd_status = {}
+
+        for proc_name, zmq_obj in self.watchdog_zmqs.items():
+            proc_status = "closed"
+            zmq_status = "no-conn"
+            custom_status = ""
+
+            if proc_name == "eng gui":
+                zmq_status = check_port(8501)
+                proc_status = "running" if zmq_status == "open" else "closed"
+            else:
+                if isinstance(zmq_obj, ZmqReq):
+                    zmq_status = (
+                        "open" if self._is_zmq_socket_open(zmq_obj.s) else "closed"
+                    )
+                    proc_status = "running" if zmq_status == "open" else "closed"
+
+                    if zmq_status == "open":
+                        # send "status" and use the reply as custom status
+                        try:
+                            zmq_obj.s.send_string("status", zmq.NOBLOCK)
+                            poller = zmq.Poller()
+                            poller.register(zmq_obj.s, zmq.POLLIN)
+                            socks = dict(poller.poll(300))
+                            if zmq_obj.s in socks and socks[zmq_obj.s] == zmq.POLLIN:
+                                reply = zmq_obj.s.recv_string()
+                                custom_status = reply
+                            else:
+                                custom_status = "no-reply"
+                        except zmq.Again:
+                            custom_status = "no-reply"
+                else:
+                    logging.warning(
+                        f"Unexpected type for watchdog zmq object for {proc_name}"
+                    )
+
+            wd_status[proc_name] = {
+                "process": proc_status,
+                "zmq": zmq_status,
+                "status": custom_status,
+            }
+
+        try:
+            self.wag_wd_z.send_payload(wd_status)
+        except zmq.error.ZMQError as e:
+            logging.error(f"ZMQ error sending watchdog status to WAG: {e}")
+
+            self.wag_wd_z = None
 
     def read_from_wag(self):
         """Read WAG parameters if connection is open, and update self.wag_reads. Only query if connection is open."""
@@ -722,21 +825,22 @@ def main():
     logging.getLogger().addHandler(console)
 
     mcs = MCSClient(
-        dcs_endpoints={ #!!! Removed Baldr for now...
-            #"BLD1": "tcp://192.168.100.2:6662",
-            #"BLD2": "tcp://192.168.100.2:6663",
-            #"BLD3": "tcp://192.168.100.2:6664",
-            #"BLD4": "tcp://192.168.100.2:6665",
+        dcs_endpoints={  #!!! Removed Baldr for now...
+            # "BLD1": "tcp://192.168.100.2:6662",
+            # "BLD2": "tcp://192.168.100.2:6663",
+            # "BLD3": "tcp://192.168.100.2:6664",
+            # "BLD4": "tcp://192.168.100.2:6665",
             "HDLR": "tcp://192.168.100.2:6660",
         },
         script_endpoint="tcp://192.168.100.2:7019",
         publish_endpoint="tcp://192.168.100.1:7050",
+        wag_wd_endpoint="tcp://192.168.100.1:7051",
         sleep_time=1.0,
         script_only=args.script_only,
     )
 
     mcs.run()
 
+
 if __name__ == "__main__":
     main()
-

@@ -1,156 +1,3 @@
-"""
-BackEndServer
-=============
-
-Purpose
-- Exposes a single ZeroMQ REP endpoint to receive WAG/DCS JSON commands and return
-  the standard reply shape: {"reply": {"time": "...", "content": "OK" | "ERROR: ..."}}.
-- Implements core verbs (ping, setup, start, abort, expstatus) and dispatches
-  RTS (real-time system) commands to subsystem-specific handlers via a registry
-  (e.g., handlers.baldr). Baldr commands may be sent as "bld_<name>".
-
-Why a bounded worker pool for RTS?
-- A REP socket must strictly recv→send→recv…; if the command handler blocks,
-  all clients are head-of-line blocked (even for different subsystems/ports).
-- RTS commands are treated as *fire-and-forget*: we ACK immediately once accepted,
-  then complete work in the background and push results to WAG/MCS via update_DB().
-- We use a bounded ThreadPoolExecutor plus a semaphore cap to:
-    * avoid unbounded thread creation and memory growth,
-    * prevent the REP loop from blocking on long RTS actions,
-    * provide predictable back-pressure ("ERROR: busy" when saturated).
-
-Concurrency / safety notes
-- Do not share ZMQ REQ sockets across threads. Concrete RTS tasks must
-  create/connect any device sockets inside run() (per-thread) and close them.
-- The main thread only parses, validates, enqueues, and immediately replies "OK".
-
-Operational features
-- Registry pattern (`register_rts`) selects the task class by command name
-  (the "bld_" prefix is stripped). Adding a new RTS = add class + register once.
-- `report_jobs` returns a snapshot of queued/running/done jobs (job_id, name, state, err).
-- `abort` supports cancel-by-job_id; concrete tasks implement actual termination logic.
-- When the pool is saturated, requests receive `"ERROR: busy"` rather than blocking.
-
-This design keeps the wire contract simple, avoids REP head-of-line blocking, and
-scales predictably while remaining easy to extend with new RTS handlers.
-"""
-
-""" 
-SPECIFIC DETAILS FROM 
-
-Asgard Top-Level Control Software User and Maintenance Manual
-
-This back-end-server takes commands from wag, and based on a database of:
-command, server, internal_command for checking what is possible:
-
-This is the back_end_server.py
-
-The server has to implement a nubmber of commands, and after each successful command, it should return:
-{
-“reply”:
-{
-“time” : “< timestamp >”
-“content” : “OK”
-,
-}
-}
-
-Commands to be implemented:
-
-PING: recieve:
-{
-“command” :
-{
-“name” : “ping”
-,
-“time” : “< timestamp >”
-}
-}
-
-
-SETUP: recieve:
-{
-“command” :
-{
-“name” : “setup”
-,
-“time” : “< timestamp >”
-“parameters” :
-,
-[
-{
-“name” : “< keyword #1 name >”
-“value” : < keyword #1 value>
-},
-. . .
-{
-“name” : “< keyword #n name >”
-“value” : < keyword #n value>
-}
-,
-,
-]
-}
-
-NB the setup command will be used in the asg_hdlr_only_autotest_align template, e.g. for now
-we are using DCS readout, 1000Hz, and gain=10. DET.DIT=0.001, DET.NDIT=0 (i.e. no saving),
-DET.NWORESET=2.
-
-We need START (name:start) and ABORT (name:abort) commands, which are used to start and abort the readout.
-
-Once we get to on-sky data, we need an EXPSTATUS command.
-{
-“command” :
-{
-“name” : “expstatus”
-,
-“time” : “< timestamp >”
-}
-}
-
-The RTS command is used for RTS commands, which are lower case and generally passed directoy to servers.
-{
-command:
-{
-“name” : “< name of the command >”
-,
-“time” : “< timestamp >”
-,
-“parameters” :
-[
-{
-“name” : “< name of parameter 1 >”
-“value” : < value of parameter 1 >
-,
-},
-. . .
-{
-“name” : “< name of parameter n >”
-“value” : < value of parameter n >
-,
-}
-]
-}
-}
-e.g. "name" : "beamid", "value" : 1,2,3,4 or 0 (for all available)
-"name: "server" : "heimdallr", "baldr", "cam"
-
-If an error, then replace "OK" in the reply with “ERROR: < error description>”
-
-Sockets:
-cam_server      6667
-DM_server       6666
-hdlr            6660
-hdlr_align      6661
-"baldr1"        6662,
-"baldr2"        6663,
-"baldr3"        6664,
-"baldr4"        6665,
-"MCS"           7020,
-"ICS"           5555,
-"RTD"           7000,
-"""
-
 import zmq
 import json
 import datetime
@@ -206,10 +53,10 @@ class BackEndServer:
         server_ports={
             "hdlr": 6660,
             "hdlr_align": 6661,
-            "baldr1": 0, #Ignore. old is 6662
-            "baldr2": 0, #Ignore. old is 6663
-            "baldr3": 0, #Ignore. old is 6664
-            "baldr4": 0, #Ignore. old is 6665
+            "baldr1": 0,  # Ignore. old is 6662
+            "baldr2": 0,  # Ignore. old is 6663
+            "baldr3": 0,  # Ignore. old is 6664
+            "baldr4": 0,  # Ignore. old is 6665
             "baldrtt1": 6671,
             "baldrtt2": 6672,
             "baldrtt3": 6673,
@@ -318,8 +165,16 @@ class BackEndServer:
             return self.handle_hdlr_rts(command)
         elif command_name.startswith("s_"):
             return self.handle_script(command)
+        elif command_name == "status":
+            return self.report_jobs()
         else:
             return self.create_response(f"ERROR: Unknown command '{command_name}'")
+
+    def report_jobs(self):
+        reply = "OK:"
+        for pid, process in self.scripts_running.items():
+            reply += f"\n  PID {pid}: {' '.join(process.args) if isinstance(process.args, list) else process.args}"
+        return self.create_response(reply)
 
     def handle_bld_rts(self, command):
         """
@@ -664,6 +519,7 @@ class BackEndServer:
             logging.info("Started s_h-shutter script process.")
 
         elif command_name == "s_b-autoalign":
+            # TODO: this breaks the pattern for scripts running, since not all 4 are added to the dict
             script = Path(
                 "/home/asg/Progs/repos/dcs/dcs/cmd_scripts/b_autoalign_onsky.py"
             )
