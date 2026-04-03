@@ -206,10 +206,10 @@ class BackEndServer:
         server_ports={
             "hdlr": 6660,
             "hdlr_align": 6661,
-            "baldr1": 6662,
-            "baldr2": 6663,
-            "baldr3": 6664,
-            "baldr4": 6665,
+            "baldr1": 0, #Ignore. old is 6662
+            "baldr2": 0, #Ignore. old is 6663
+            "baldr3": 0, #Ignore. old is 6664
+            "baldr4": 0, #Ignore. old is 6665
             "baldrtt1": 6671,
             "baldrtt2": 6672,
             "baldrtt3": 6673,
@@ -396,6 +396,9 @@ class BackEndServer:
             else:
                 key = f"baldrtt{b}"
             sock = self.servers.get(key)
+            if sock == 0:
+                # Just ignore! We'll return OK.
+                continue
             if sock is None:
                 errors.append(f"{key}: not connected")
                 continue
