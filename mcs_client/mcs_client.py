@@ -79,7 +79,11 @@ class ZmqReq:
         self.s.connect(self.endpoint)
 
     def send_payload(
-        self, payload: Dict[str, Any], is_str=False, decode_ascii=True, jsonloads=True,
+        self,
+        payload: Dict[str, Any],
+        is_str=False,
+        decode_ascii=True,
+        jsonloads=True,
     ) -> Optional[Dict[str, Any]]:
         if not is_str:
             self.s.send_string(json.dumps(payload, sort_keys=True))
@@ -332,7 +336,7 @@ class MCSClient:
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
             return status
-        
+
         wd_status = {}
         running_scripts = get_running_scripts(self.processes_of_interest)
         print(running_scripts)
@@ -347,6 +351,7 @@ class MCSClient:
             else:
                 if isinstance(zmq_obj, ZmqReq):
                     # send "status" and use the reply as custom status
+                    # TODO: this isnt right, use prev version
                     try:
                         zmq_obj.s.send_string("status", zmq.NOBLOCK)
                         poller = zmq.Poller()
@@ -365,7 +370,7 @@ class MCSClient:
                     port_status = "running" if zmq_status == "open" else "closed"
                     wd_status[proc_name] = {
                         "process": running_scripts[proc_name],
-                        "status": port_status
+                        "status": port_status,
                     }
                 else:
                     logging.warning(
