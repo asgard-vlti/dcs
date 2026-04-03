@@ -45,7 +45,10 @@ settings_to_log = [
 def get_zmq(port):
     while True:
         try:
-            return ZmqReq(f"tcp://192.168.100.2:{port}")
+            z = ZmqReq(f"tcp://192.168.100.2:{port}")
+            print(f"[BTT Performance] Connected to server on port {port}")
+            return z
+
         except Exception as e:
             print(
                 f"[FT Performance] Could not connect to server: {e}. Retrying in 2s..."
@@ -65,6 +68,7 @@ class BTTLogger:
         self.log_path = log_path
         self.zmq_port = zmq_port
         self.last_cnt = last_cnt
+        self.h_z = get_zmq(self.zmq_port)
         # Write header only if file is empty
         write_header = True
         try:
@@ -79,12 +83,20 @@ class BTTLogger:
                 f.write(" ".join(["time"] + self.FIELDS) + "\n")
 
     def log_performance(self):
-        h_z = get_zmq(self.zmq_port)
-
         # get the data since last cnt
-        data = h_z.send_payload(
-            f"ttmet {self.last_cnt}", is_str=True, decode_ascii=False
-        )
+
+        try:
+            data = self.h_z.send_payload(
+                f"ttmet {self.last_cnt}", is_str=True, decode_ascii=False
+            )
+        except Exception as e:
+            print(
+                f"[FT Performance] Lost connection to server: {e}. Reconnecting in 2s..."
+            )
+            time.sleep(2)
+            self.h_z = get_zmq(self.zmq_port)
+            return
+
         if type(data) != dict:
             raise UserWarning(f"Data unexpected: {data}")
 
@@ -111,6 +123,7 @@ class BTTSettingLogger:
     def __init__(self, log_path, zmq_port):
         self.log_path = log_path
         self.zmq_port = zmq_port
+        self.h_z = get_zmq(self.zmq_port)
         # Write header only if file is empty
         write_header = True
         try:
@@ -125,13 +138,15 @@ class BTTSettingLogger:
                 f.write("# timestamp " + " ".join(settings_to_log) + "\n")
 
     def log_settings(self):
-        h_z = get_zmq(self.zmq_port)
         try:
-            reply = h_z.send_payload("settings", is_str=True, decode_ascii=False)
+            reply = self.h_z.send_payload("settings", is_str=True, decode_ascii=False)
         except Exception as e:
             print(
                 f"[FT Performance] Lost connection to server: {e}. Reconnecting in 2s..."
             )
+            time.sleep(2)
+            self.h_z = get_zmq(self.zmq_port)
+            return
 
         with open(self.log_path, "a") as f:
             timestamp = "{:.4f}".format(time.time())
