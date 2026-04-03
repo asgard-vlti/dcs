@@ -103,17 +103,18 @@ class BackEndServer:
         while True:
             # Wait for the next request from wag
             message = self.socket.recv().decode("ascii")
-            if message[-1] == "\0":
-                message = message[:-1]
-            # Parse the message as JSON
-            try:
-                message = json.loads(message)
-            except json.JSONDecodeError as e:
-                logging.error(f"Failed to decode JSON: {e}")
-                self.socket.send_json(
-                    self.create_response("ERROR: Invalid JSON format")
-                )
-                continue
+            if message != "status":
+                if message[-1] == "\0":
+                    message = message[:-1]
+                # Parse the message as JSON
+                try:
+                    message = json.loads(message)
+                except json.JSONDecodeError as e:
+                    logging.error(f"Failed to decode JSON: {e}")
+                    self.socket.send_json(
+                        self.create_response("ERROR: Invalid JSON format")
+                    )
+                    continue
             logging.info(f"Received request: {message}")
 
             # Process the command
@@ -145,8 +146,11 @@ class BackEndServer:
             self.socket.send_json(response)
 
     def process_command(self, message):
-        command = message.get("command", {})
-        command_name = command.get("name", "").lower()
+        if message == "status":
+            command_name = "status"
+        else:
+            command = message.get("command", {})
+            command_name = command.get("name", "").lower()
 
         if command_name == "ping":
             return self.create_response("OK")
@@ -166,6 +170,7 @@ class BackEndServer:
         elif command_name.startswith("s_"):
             return self.handle_script(command)
         elif command_name == "status":
+            logging.info("reporting jobs")
             return self.report_jobs()
         else:
             return self.create_response(f"ERROR: Unknown command '{command_name}'")
@@ -590,8 +595,10 @@ class BackEndServer:
             # start new adc_track process
             cmd = [
                 "/home/asg/.conda/envs/asgard/bin/adc-track",
+                str(ra_str),
+                str(dec_str),
+                "--track",
             ]
-
             process = subprocess.Popen(
                 cmd,
                 cwd="/home/asg/.conda/envs/asgard/bin/",
@@ -603,12 +610,10 @@ class BackEndServer:
                 f"Started s_adc-track script process with RA={ra_str} and Dec={dec_str}."
             )
 
-            logging.info(
-                f"Would haveStarted s_adc-track script process with RA={ra_str} and Dec={dec_str}."
-            )
 
             return self.create_response("OK")
         elif command_name == "s_adc-zero":
+            # TODO
             print("ADCs not in use. Please zero them maually!")
             return self.create_response("OK")
         else:

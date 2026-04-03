@@ -18,7 +18,7 @@
 #include <semaphore.h>
 
 //----------Defines-----------
-#define SIMULATE
+//#define SIMULATE
 #define OPD_PER_DM_UNIT 6.0 
 #define OPD_PER_PIEZO_UNIT 0.15 //Should be 0.26 
 
@@ -285,8 +285,8 @@ public:
     fftw_complex *ft, *ft_copy;
 
     // The boxcar averaged baseline power.
-    double *baseline_power_boxcar[N_BL][MAX_N_GD_BOXCAR];
-    double *baseline_power_avg[N_BL];
+    float *baseline_power_boxcar[N_BL][MAX_N_GD_BOXCAR];
+    float *baseline_power_avg[N_BL];
 
     // Is a frame bad? This needs to be a flag so that we can 
     // monitor skipped frames in the fringe tracker.

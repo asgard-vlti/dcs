@@ -1,4 +1,5 @@
 #include "heimdallr.h"
+#include <cstring>
 //#define PRINT_TIMING
 #define DARK_OFFSET 1000.0
 
@@ -43,16 +44,17 @@ ForwardFt::ForwardFt(IMAGE * subarray_in) {
     subim = (double*) fftw_malloc(sizeof(double) * subim_sz * subim_sz);
     ift_result = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * rft_sz * rft_sz);
     ift = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * rft_sz * rft_sz);
-    
+    std::memset(ift, 0, sizeof(fftw_complex) * rft_sz * rft_sz);
+
     // Allocate the memory for the boxcar averaged baseline power, and
     // fill with zeros. We allocate the boxcar arrays as a contiguous block of 
     // memory for each baseline, and then set the pointers.
     // Lots of small mallocs is meant to be avoided for speed.
     for (int ii=0; ii<N_BL; ii++) {
-        baseline_power_avg[ii] = (double*) malloc(sizeof(double) * rft_sz * rft_sz);
+        baseline_power_avg[ii] = (float*) malloc(sizeof(float) * rft_sz * rft_sz);
         for (unsigned int kk=0; kk<rft_sz*rft_sz; kk++)
             baseline_power_avg[ii][kk] = 0.0;
-        baseline_power_boxcar[ii][0] = (double*) malloc(sizeof(double) * rft_sz * rft_sz * MAX_N_GD_BOXCAR);
+        baseline_power_boxcar[ii][0] = (float*) malloc(sizeof(float) * rft_sz * rft_sz * MAX_N_GD_BOXCAR);
         for (int jj=0; jj<MAX_N_GD_BOXCAR; jj++){
             baseline_power_boxcar[ii][jj] = baseline_power_boxcar[ii][0] + jj * rft_sz * rft_sz ;
             for (unsigned int kk=0; kk<rft_sz*rft_sz; kk++){
@@ -313,6 +315,7 @@ void ForwardFt::reverse_ft() {
     // It should be called after sem_wait(&sem_reverse_ft_ready).
     // It executes the core code if bad_frame is false.
     int boxcar_index=0, x_px, y_px;
+    unsigned int ift_ii, ift_jj, ift_ix, ii_jj;
     while (mode != FT_STOPPING) {
         // No counters here. Just go whenever we can!
         sem_wait(&sem_reverse_ft_ready);
@@ -359,14 +362,21 @@ void ForwardFt::reverse_ft() {
             fftw_execute(rplan);
             
             // Take square modulus and add to the boxcar average.
+            // Do an fftshift equialent here.
             // !!! TODO: use settings.s.n_gd_boxcar instead of MAX_N_GD_BOXCAR
             baseline_power_mutex.lock();
-            for (unsigned int ii=0; ii<rft_sz*rft_sz; ii++) {
-                baseline_power_avg[bl][ii] -= baseline_power_boxcar[bl][boxcar_index][ii]/MAX_N_GD_BOXCAR;
-                baseline_power_boxcar[bl][boxcar_index][ii] = 
-                    ift_result[ii][0]*ift_result[ii][0] + 
-                    ift_result[ii][1]*ift_result[ii][1];
-                baseline_power_avg[bl][ii] += baseline_power_boxcar[bl][boxcar_index][ii]/MAX_N_GD_BOXCAR;
+            for (unsigned int ii=0; ii<rft_sz; ii++) {
+                for (unsigned int jj=0; jj<rft_sz; jj++) {
+                    ift_ii = (ii + rft_sz/2) % rft_sz;
+                    ift_jj = (jj + rft_sz/2) % rft_sz;
+                    ift_ix = ift_ii*rft_sz + ift_jj;
+                    ii_jj = ii*rft_sz + jj;
+                    baseline_power_avg[bl][ii_jj] -= baseline_power_boxcar[bl][boxcar_index][ii_jj]/MAX_N_GD_BOXCAR;
+                    baseline_power_boxcar[bl][boxcar_index][ii_jj] = 
+                        ift_result[ift_ix][0]*ift_result[ift_ix][0] + 
+                        ift_result[ift_ix][1]*ift_result[ift_ix][1];
+                    baseline_power_avg[bl][ii_jj] += baseline_power_boxcar[bl][boxcar_index][ii_jj]/MAX_N_GD_BOXCAR;
+                }
             }
             baseline_power_mutex.unlock();
 
