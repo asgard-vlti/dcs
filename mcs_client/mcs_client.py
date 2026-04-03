@@ -70,21 +70,17 @@ class ZmqReq:
         if not is_str:
             self.s.send_string(json.dumps(payload, sort_keys=True))
         else:
-            print("sending", payload)
             self.s.send_string(payload)
         try:
             if decode_ascii:
                 res = self.s.recv().decode("ascii")[:-1]
-                print("res", res)
             else:
                 res = self.s.recv_string()
-                print("res", res)
 
             if jsonloads:
                 return json.loads(res)
             return res
         except zmq.error.Again as e:
-            print("zmq error")
             return None
         except json.decoder.JSONDecodeError:
             return None
@@ -201,16 +197,16 @@ class MCSClient:
         self.watchdog_last_check = time.time()-10
         # TODO: use file of all the endpoints everywhere
         self.watchdog_zmqs = {
-            "MDS": ZmqReq("tcp://localhost:5555"),
+            "MDS": ZmqReq("tcp://192.168.100.2:5555"),
             "Eng gui": "checkport 8501",  # not zmq, use check_port function instead
-            "CRED1": ZmqReq("tcp://localhost:6667"),
-            "DM": ZmqReq("tcp://localhost:6666"),
-            "BTT1": ZmqReq("tcp://localhost:6671"),
-            "BTT2": ZmqReq("tcp://localhost:6672"),
-            "BTT3": ZmqReq("tcp://localhost:6673"),
-            "BTT4": ZmqReq("tcp://localhost:6674"),
+            "CRED1": ZmqReq("tcp://192.168.100.2:6667"),
+            "DM": ZmqReq("tcp://192.168.100.2:6666"),
+            "BTT1": ZmqReq("tcp://192.168.100.2:6671"),
+            "BTT2": ZmqReq("tcp://192.168.100.2:6672"),
+            "BTT3": ZmqReq("tcp://192.168.100.2:6673"),
+            "BTT4": ZmqReq("tcp://192.168.100.2:6674"),
             "HDLR": self.dcs_adapters.get("HDLR").z,
-            "back_end": ZmqReq("tcp://localhost:7001"),
+            "back_end": ZmqReq("tcp://192.168.100.2:7001"),
         }
 
         self.processes_of_interest = {
