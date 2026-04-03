@@ -58,10 +58,24 @@ class ZmqReq:
 
     def __init__(self, endpoint: str, timeout_ms: int = 1500):
         self.ctx = zmq.Context.instance()
+        self.endpoint = endpoint
+        self.timeout_ms = timeout_ms
         self.s = self.ctx.socket(zmq.REQ)
         self.s.RCVTIMEO = timeout_ms
         self.s.SNDTIMEO = timeout_ms
         self.s.connect(endpoint)
+
+    def reconnect(self):
+        try:
+            self.s.setsockopt(zmq.LINGER, 0)
+            self.s.close()
+        except zmq.ZMQError:
+            pass
+
+        self.s = self.ctx.socket(zmq.REQ)
+        self.s.RCVTIMEO = self.timeout_ms
+        self.s.SNDTIMEO = self.timeout_ms
+        self.s.connect(self.endpoint)
 
     def send_payload(
         self, payload: Dict[str, Any], is_str=False, decode_ascii=True
@@ -192,18 +206,46 @@ class MCSClient:
         logging.info(f"WAG watchdog REQ set up on {wag_wd_endpoint}")
 
         self.watchdog_last_check = time.time()
+        self.watchdog_fast_timeout_ms = 80
+        self.watchdog_fast_retries = 2
+        self.watchdog_retry_delay_s = 0.02
+        hdlr_adapter = self.dcs_adapters.get("HDLR")
+        hdlr_watchdog_zmq = (
+            hdlr_adapter.z
+            if hdlr_adapter is not None
+            else ZmqReq(
+                self.dcs_endpoints.get("HDLR", "tcp://localhost:6660"),
+                timeout_ms=self.watchdog_fast_timeout_ms,
+            )
+        )
         # TODO: use file of all the endpoints everywhere
         self.watchdog_zmqs = {
-            "MDS": ZmqReq("tcp://localhost:5555"),
+            "MDS": ZmqReq(
+                "tcp://localhost:5555", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
             "Eng gui": "checkport 8501",  # not zmq, use check_port function instead
-            "CRED1": ZmqReq("tcp://localhost:6667"),
-            "DM": ZmqReq("tcp://localhost:6666"),
-            "BTT1": ZmqReq("tcp://localhost:6671"),
-            "BTT2": ZmqReq("tcp://localhost:6672"),
-            "BTT3": ZmqReq("tcp://localhost:6673"),
-            "BTT4": ZmqReq("tcp://localhost:6674"),
-            "HDLR": self.dcs_adapters.get("HDLR").z,
-            "back_end": ZmqReq("tcp://localhost:7001"),
+            "CRED1": ZmqReq(
+                "tcp://localhost:6667", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "DM": ZmqReq(
+                "tcp://localhost:6666", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "BTT1": ZmqReq(
+                "tcp://localhost:6671", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "BTT2": ZmqReq(
+                "tcp://localhost:6672", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "BTT3": ZmqReq(
+                "tcp://localhost:6673", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "BTT4": ZmqReq(
+                "tcp://localhost:6674", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "HDLR": hdlr_watchdog_zmq,
+            "back_end": ZmqReq(
+                "tcp://localhost:7001", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
         }
 
         self.processes_of_interest = {
@@ -221,6 +263,42 @@ class MCSClient:
             "Heim Telem": "/home/asg/.conda/envs/asgard/bin/save-ft-performance",
             "Baldr Telem": "save_tt_performance",
         }
+
+    def _watchdog_lazy_pirate_status(
+        self, proc_name: str, zmq_obj: ZmqReq
+    ) -> Tuple[str, str, str]:
+        """
+        Fast Lazy Pirate probe for watchdog status requests.
+        On timeout or socket state errors, reset the REQ socket and retry quickly.
+        """
+        for attempt in range(self.watchdog_fast_retries):
+            try:
+                zmq_obj.s.send_string("status")
+                poller = zmq.Poller()
+                poller.register(zmq_obj.s, zmq.POLLIN)
+                socks = dict(poller.poll(self.watchdog_fast_timeout_ms))
+                if zmq_obj.s in socks and socks[zmq_obj.s] == zmq.POLLIN:
+                    reply = zmq_obj.s.recv_string()
+                    return "running", "open", reply
+            except zmq.ZMQError:
+                pass
+
+            logging.info(
+                "watchdog probe failed for %s, retry %d/%d",
+                proc_name,
+                attempt + 1,
+                self.watchdog_fast_retries,
+            )
+
+            try:
+                zmq_obj.reconnect()
+            except zmq.ZMQError:
+                pass
+
+            if attempt + 1 < self.watchdog_fast_retries:
+                time.sleep(self.watchdog_retry_delay_s)
+
+        return "closed", "closed", "no-reply"
 
     def _send(self, body: Dict[str, Any]) -> Tuple[bool, str]:
         rep = self.req_z.send_payload(body)
@@ -261,30 +339,14 @@ class MCSClient:
             zmq_status = "no-conn"
             custom_status = ""
 
-            if proc_name == "eng gui":
+            if proc_name.lower() == "eng gui":
                 zmq_status = check_port(8501)
                 proc_status = "running" if zmq_status == "open" else "closed"
             else:
                 if isinstance(zmq_obj, ZmqReq):
-                    zmq_status = (
-                        "open" if self._is_zmq_socket_open(zmq_obj.s) else "closed"
+                    proc_status, zmq_status, custom_status = (
+                        self._watchdog_lazy_pirate_status(proc_name, zmq_obj)
                     )
-                    proc_status = "running" if zmq_status == "open" else "closed"
-
-                    if zmq_status == "open":
-                        # send "status" and use the reply as custom status
-                        try:
-                            zmq_obj.s.send_string("status", zmq.NOBLOCK)
-                            poller = zmq.Poller()
-                            poller.register(zmq_obj.s, zmq.POLLIN)
-                            socks = dict(poller.poll(300))
-                            if zmq_obj.s in socks and socks[zmq_obj.s] == zmq.POLLIN:
-                                reply = zmq_obj.s.recv_string()
-                                custom_status = reply
-                            else:
-                                custom_status = "no-reply"
-                        except zmq.Again:
-                            custom_status = "no-reply"
                 else:
                     logging.warning(
                         f"Unexpected type for watchdog zmq object for {proc_name}"
