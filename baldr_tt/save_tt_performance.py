@@ -167,14 +167,14 @@ if __name__ == "__main__":
     loggers = []
 
     for beam_idx in range(4):
-        log_path = f"{pth}/btt_performance_beam{beam_idx}_{cur_datetime}.log"
+        log_path = f"{pth}/btt_performance_beam{beam_idx+1}_{cur_datetime}.log"
         logger = BTTLogger(log_path, ports[beam_idx], last_cnt=0)
         loggers.append(logger)
         print(f"Logging BTT performance for beam {beam_idx} to {log_path}")
 
     settings_loggers = []
     for beam_idx in range(4):
-        settings_log_path = f"{pth}/btt_settings_{cur_datetime}.log"
+        settings_log_path = f"{pth}/btt_beam{beam_idx+1}_settings_{cur_datetime}.log"
         settings_logger = BTTSettingLogger(settings_log_path, ports[beam_idx])
         settings_loggers.append(settings_logger)
         print(f"Logging BTT settings for beam {beam_idx} to {settings_log_path}")
