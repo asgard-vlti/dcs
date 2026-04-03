@@ -25,6 +25,22 @@ ports = [
     6674,
 ]
 
+settings_to_log = [
+    "flux_threshold",
+    "focus_amp",
+    "focus_offset",
+    "gauss_hwidth",
+    "hog",
+    "hol",
+    "px",
+    "py",
+    "servo_mode",
+    "ttg",
+    "ttl",
+    "ttxo",
+    "ttyo",
+]
+
 # reqs = [
 #     ZmqReq("tcp://
 # ]
@@ -64,28 +80,85 @@ class BTTLogger:
 
         if write_header:
             with open(log_path, "w") as f:
-                f.write(" ".join(self.FIELDS) + "\n")
+                f.write(" ".join(["time"] + self.FIELDS) + "\n")
 
     def log_performance(self):
         h_z = get_zmq(self.zmq_port)
 
         # get the data since last cnt
-        data = h_z.send_payload(f"ttmet {self.last_cnt}", is_str=True, decode_ascii=False)
+        data = h_z.send_payload(
+            f"ttmet {self.last_cnt}", is_str=True, decode_ascii=False
+        )
         if type(data) != dict:
             raise UserWarning(f"Data unexpected: {data}")
 
         # log to file
         with open(self.log_path, "a") as f:
+            timestamp = "{:.4f}".format(time.time())
             for i in range(len(data["tx"])):
+                if i == 0:
+                    t = str(timestamp)
+                else:
+                    t = "prev"
                 values = [data[field][i] for field in self.FIELDS]
-                f.write(" ".join(f"{v:.3f}" for v in values) + "\n")
+                f.write(" ".join([t] + [f"{v:.3f}" for v in values]) + "\n")
 
         # Update last cnt
         self.last_cnt = data["cnt"]
 
 
-if __name__ == "__main__":
+class BTTSettingLogger:
+    """
+    logs much slower, doesnt need to keep track of last count
+    """
 
+    def __init__(self, log_path, zmq_port):
+        self.log_path = log_path
+        self.zmq_port = zmq_port
+        # Write header only if file is empty
+        write_header = True
+        try:
+            with open(log_path, "r") as f_check:
+                if f_check.read(1):
+                    write_header = False
+        except FileNotFoundError:
+            pass
+
+        if write_header:
+            with open(log_path, "w") as f:
+                f.write("# timestamp " + " ".join(settings_to_log) + "\n")
+
+    def log_settings(self):
+        h_z = get_zmq(self.zmq_port)
+        try:
+            reply = h_z.send_payload("settings", is_str=True, decode_ascii=False)
+        except Exception as e:
+            print(
+                f"[FT Performance] Lost connection to server: {e}. Reconnecting in 2s..."
+            )
+
+        with open(self.log_path, "a") as f:
+            timestamp = "{:.4f}".format(time.time())
+            values = []
+            for k in settings_to_log:
+                v = reply.get(k)
+                if isinstance(v, (list, np.ndarray)):
+                    values.extend(
+                        [
+                            "{:.3f}".format(float(x) if x is not None else np.nan)
+                            for x in v
+                        ]
+                    )
+                else:
+                    try:
+                        values.append("{:.3f}".format(float(v)))
+                    except Exception:
+                        values.append(str(v))
+            line = "{} {}".format(timestamp, " ".join(values))
+            f.write(line + "\n")
+
+
+if __name__ == "__main__":
     cur_datetime = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
     year_month_day = time.strftime("%Y%m%d", time.gmtime())
     pth = f"/data/{year_month_day}"
@@ -98,10 +171,27 @@ if __name__ == "__main__":
         logger = BTTLogger(log_path, ports[beam_idx], last_cnt=0)
         loggers.append(logger)
         print(f"Logging BTT performance for beam {beam_idx} to {log_path}")
+
+    settings_loggers = []
+    for beam_idx in range(4):
+        settings_log_path = f"{pth}/btt_settings_{cur_datetime}.log"
+        settings_logger = BTTSettingLogger(settings_log_path, ports[beam_idx])
+        settings_loggers.append(settings_logger)
+        print(f"Logging BTT settings for beam {beam_idx} to {settings_log_path}")
+
+    last_settings_log_time = time.time()
+    setttings_cadence = 1.0  # log settings every 1 second
+
     while True:
         try:
             for logger in loggers:
                 logger.log_performance()
+
+            if time.time() - last_settings_log_time > setttings_cadence:
+                for settings_logger in settings_loggers:
+                    settings_logger.log_settings()
+                last_settings_log_time = time.time()
+
         except Exception as e:
             print(
                 f"[BTT Performance] Error logging performance: {e}. Retrying in 2s..."
