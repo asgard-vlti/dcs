@@ -1,4 +1,5 @@
 #include "heimdallr.h"
+#include <cstring>
 //#define PRINT_TIMING
 #define DARK_OFFSET 1000.0
 
@@ -43,7 +44,8 @@ ForwardFt::ForwardFt(IMAGE * subarray_in) {
     subim = (double*) fftw_malloc(sizeof(double) * subim_sz * subim_sz);
     ift_result = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * rft_sz * rft_sz);
     ift = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * rft_sz * rft_sz);
-    
+    std::memset(ift, 0, sizeof(fftw_complex) * rft_sz * rft_sz);
+
     // Allocate the memory for the boxcar averaged baseline power, and
     // fill with zeros. We allocate the boxcar arrays as a contiguous block of 
     // memory for each baseline, and then set the pointers.
