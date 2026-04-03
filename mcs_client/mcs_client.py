@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import zmq
 from datetime import datetime, timezone
 import socket
+import psutil
 
 # Following protocol described in
 # Top-Level Control Software
@@ -64,20 +65,26 @@ class ZmqReq:
         self.s.connect(endpoint)
 
     def send_payload(
-        self, payload: Dict[str, Any], is_str=False, decode_ascii=True
+        self, payload: Dict[str, Any], is_str=False, decode_ascii=True, jsonloads=True,
     ) -> Optional[Dict[str, Any]]:
         if not is_str:
             self.s.send_string(json.dumps(payload, sort_keys=True))
         else:
+            print("sending", payload)
             self.s.send_string(payload)
         try:
             if decode_ascii:
                 res = self.s.recv().decode("ascii")[:-1]
+                print("res", res)
             else:
                 res = self.s.recv_string()
+                print("res", res)
 
-            return json.loads(res)
-        except zmq.error.Again:
+            if jsonloads:
+                return json.loads(res)
+            return res
+        except zmq.error.Again as e:
+            print("zmq error")
             return None
         except json.decoder.JSONDecodeError:
             return None
@@ -191,7 +198,7 @@ class MCSClient:
         self.wag_wd_z = ZmqReq(wag_wd_endpoint)
         logging.info(f"WAG watchdog REQ set up on {wag_wd_endpoint}")
 
-        self.watchdog_last_check = time.time()
+        self.watchdog_last_check = time.time()-10
         # TODO: use file of all the endpoints everywhere
         self.watchdog_zmqs = {
             "MDS": ZmqReq("tcp://localhost:5555"),
@@ -254,47 +261,62 @@ class MCSClient:
         }
 
         """
+
+        def get_running_scripts(processes_of_interest):
+            status = {k: "closed" for k in processes_of_interest.keys()}
+            for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+                try:
+                    cmdline = " ".join(proc.info["cmdline"])
+                    if "xterm" in cmdline:
+                        for k, v in processes_of_interest.items():
+                            if v in cmdline:
+                                status[k] = "open"
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            return status
+        
         wd_status = {}
+        running_scripts = get_running_scripts(self.processes_of_interest)
 
         for proc_name, zmq_obj in self.watchdog_zmqs.items():
-            proc_status = "closed"
             zmq_status = "no-conn"
             custom_status = ""
 
-            if proc_name == "eng gui":
-                zmq_status = check_port(8501)
-                proc_status = "running" if zmq_status == "open" else "closed"
+            if isinstance(zmq_obj, ZmqReq):
+                # send "status" and use the reply as custom status
+                try:
+                    print("sending status to", proc_name)
+                    reply = zmq_obj.send_payload("status", is_str=True, decode_ascii=False, jsonloads=False)
+                    if reply is not None:
+                        print(proc_name, reply[:10],"...")
+                        custom_status = reply
+                        zmq_status = "open"
+                    else:
+                        print("error, reply None")
+
+                except zmq.Again as e:
+                    print(e)
+                except zmq.error.ZMQError as e:
+                    print(e)
+                
+
+                wd_status[proc_name] = {
+                    "process": running_scripts[proc_name],
+                    "zmq": zmq_status,
+                    "status": custom_status,
+                }
+            elif isinstance(zmq_obj, str):
+                zmq_status = check_port(int(zmq_obj.split(" ")[-1]))
+                port_status = "running" if zmq_status == "open" else "closed"
+                wd_status[proc_name] = {
+                    "process": running_scripts[proc_name],
+                    "status": port_status
+                }
             else:
-                if isinstance(zmq_obj, ZmqReq):
-                    zmq_status = (
-                        "open" if self._is_zmq_socket_open(zmq_obj.s) else "closed"
-                    )
-                    proc_status = "running" if zmq_status == "open" else "closed"
+                logging.warning(
+                    f"Unexpected type for watchdog zmq object for {proc_name}"
+                )
 
-                    if zmq_status == "open":
-                        # send "status" and use the reply as custom status
-                        try:
-                            zmq_obj.s.send_string("status", zmq.NOBLOCK)
-                            poller = zmq.Poller()
-                            poller.register(zmq_obj.s, zmq.POLLIN)
-                            socks = dict(poller.poll(300))
-                            if zmq_obj.s in socks and socks[zmq_obj.s] == zmq.POLLIN:
-                                reply = zmq_obj.s.recv_string()
-                                custom_status = reply
-                            else:
-                                custom_status = "no-reply"
-                        except zmq.Again:
-                            custom_status = "no-reply"
-                else:
-                    logging.warning(
-                        f"Unexpected type for watchdog zmq object for {proc_name}"
-                    )
-
-            wd_status[proc_name] = {
-                "process": proc_status,
-                "zmq": zmq_status,
-                "status": custom_status,
-            }
 
         try:
             self.wag_wd_z.send_payload(wd_status)
@@ -305,7 +327,7 @@ class MCSClient:
 
     def read_from_wag(self):
         """Read WAG parameters if connection is open, and update self.wag_reads. Only query if connection is open."""
-
+        return
         msg = {
             "command": {
                 "name": "read",

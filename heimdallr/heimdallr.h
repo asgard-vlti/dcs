@@ -18,7 +18,7 @@
 #include <semaphore.h>
 
 //----------Defines-----------
-#define SIMULATE
+//#define SIMULATE
 #define OPD_PER_DM_UNIT 6.0 
 #define OPD_PER_PIEZO_UNIT 0.15 //Should be 0.26 
 
