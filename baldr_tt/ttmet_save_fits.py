@@ -7,6 +7,7 @@ tx, ty, mx, my
 
 The "cnt" variable is returned each time.
 """
+
 import ZMQ_control_client as zmq_client
 import json
 import numpy as np
@@ -26,10 +27,10 @@ if __name__ == "__main__":
     mx_list = []
     my_list = []
     cnt = 0
-    while (len(tx_list) < n_points):
+    while len(tx_list) < n_points:
         data = zmq_client.send(f"ttmet {cnt}")
-        if (type(data) != dict):
-        	raise UserWarning("Incorrect response: " + data);
+        if type(data) != dict:
+            raise UserWarning("Incorrect response: " + data)
         tx_list += data["tx"]
         ty_list += data["ty"]
         mx_list += data["mx"]
@@ -38,8 +39,9 @@ if __name__ == "__main__":
         print(f"Got point {len(tx_list):04d}/{n_points}, cnt={cnt}", end="\r")
         time.sleep(0.01)
 
-    # Save the data to a fits file. 
+    # Save the data to a fits file.
     hdu = fits.PrimaryHDU()
-    hdu.data = np.array([tx_list[:n_points], ty_list[:n_points], mx_list[:n_points], my_list[:n_points]])
+    hdu.data = np.array(
+        [tx_list[:n_points], ty_list[:n_points], mx_list[:n_points], my_list[:n_points]]
+    )
     hdu.writeto("tt_metrology.fits", overwrite=True)
-
