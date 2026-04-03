@@ -338,7 +338,7 @@ class MCSClient:
         print(running_scripts)
 
         for proc_name, zmq_obj in self.watchdog_zmqs.items():
-            zmq_status = "no-conn"
+            zmq_status = "closed"
             custom_status = ""
 
             if proc_name == "eng gui":
@@ -346,25 +346,27 @@ class MCSClient:
                 proc_status = "running" if zmq_status == "open" else "closed"
             else:
                 if isinstance(zmq_obj, ZmqReq):
-                    zmq_status = (
-                        "open" if self._is_zmq_socket_open(zmq_obj.s) else "closed"
-                    )
-                    proc_status = "running" if zmq_status == "open" else "closed"
-
-                    if zmq_status == "open":
-                        # send "status" and use the reply as custom status
-                        try:
-                            zmq_obj.s.send_string("status", zmq.NOBLOCK)
-                            poller = zmq.Poller()
-                            poller.register(zmq_obj.s, zmq.POLLIN)
-                            socks = dict(poller.poll(300))
-                            if zmq_obj.s in socks and socks[zmq_obj.s] == zmq.POLLIN:
-                                reply = zmq_obj.s.recv_string()
-                                custom_status = reply
-                            else:
-                                custom_status = "no-reply"
-                        except zmq.Again:
+                    # send "status" and use the reply as custom status
+                    try:
+                        zmq_obj.s.send_string("status", zmq.NOBLOCK)
+                        poller = zmq.Poller()
+                        poller.register(zmq_obj.s, zmq.POLLIN)
+                        socks = dict(poller.poll(300))
+                        if zmq_obj.s in socks and socks[zmq_obj.s] == zmq.POLLIN:
+                            reply = zmq_obj.s.recv_string()
+                            custom_status = reply
+                            zmq_status = "open"
+                        else:
                             custom_status = "no-reply"
+                    except zmq.Again:
+                        custom_status = "no-reply"
+                elif isinstance(zmq_obj, str):
+                    zmq_status = check_port(int(zmq_obj.split(" ")[-1]))
+                    port_status = "running" if zmq_status == "open" else "closed"
+                    wd_status[proc_name] = {
+                        "process": running_scripts[proc_name],
+                        "status": port_status
+                    }
                 else:
                     logging.warning(
                         f"Unexpected type for watchdog zmq object for {proc_name}"
@@ -375,19 +377,8 @@ class MCSClient:
                     "zmq": zmq_status,
                     "status": custom_status,
                 }
-            elif isinstance(zmq_obj, str):
-                zmq_status = check_port(int(zmq_obj.split(" ")[-1]))
-                port_status = "running" if zmq_status == "open" else "closed"
-                wd_status[proc_name] = {
-                    "process": running_scripts[proc_name],
-                    "status": port_status
-                }
-            else:
-                logging.warning(
-                    f"Unexpected type for watchdog zmq object for {proc_name}"
-                )
 
-
+        print(wd_status)
         try:
             self.wag_wd_z.send_payload(wd_status)
         except zmq.error.ZMQError as e:
