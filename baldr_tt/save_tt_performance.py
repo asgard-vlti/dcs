@@ -41,10 +41,6 @@ settings_to_log = [
     "ttyo",
 ]
 
-# reqs = [
-#     ZmqReq("tcp://
-# ]
-
 
 def get_zmq(port):
     while True:
@@ -197,26 +193,3 @@ if __name__ == "__main__":
                 f"[BTT Performance] Error logging performance: {e}. Retrying in 2s..."
             )
             time.sleep(2)
-
-    # if len(sys.argv) > 1:
-    #     n_points = int(sys.argv[1])
-    # else:
-    #     n_points = 4096
-
-    # print(f"Saving {n_points} tip/tilt metrology points to fits file.")
-    # tx_list = []
-    # ty_list = []
-    # mx_list = []
-    # my_list = []
-    # cnt = 0
-    # while len(tx_list) < n_points:
-    #     data = zmq_client.send(f"ttmet {cnt}")
-    #     if type(data) != dict:
-    #         raise UserWarning("Incorrect response: " + data)
-    #     tx_list += data["tx"]
-    #     ty_list += data["ty"]
-    #     mx_list += data["mx"]
-    #     my_list += data["my"]
-    #     cnt = data["cnt"]
-    #     print(f"Got point {len(tx_list):04d}/{n_points}, cnt={cnt}", end="\r")
-    #     time.sleep(0.01)
