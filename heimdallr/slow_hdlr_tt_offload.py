@@ -22,7 +22,10 @@ socket.setsockopt(zmq.RCVTIMEO, 10000)
 socket.connect("tcp://mimir:5555")
 connected = True
 
-devices = ['HTTI1', 'HTTI2', 'HTTI3', 'HTTI4']
+xdevices = ['HTTI1', 'HTTI2', 'HTPI3', 'HTTI4']
+xsigns = [1,1,-1,1]
+ydevices = ['HTPI1', 'HTPI2', 'HTPI3', 'HTPI4']
+ysigns = [1,1,1,1]
 M_lacour = np.array([[-1,1,0,0,], 
                      [-1,0,1,0],
                      [-1,0,0,1],
@@ -32,7 +35,7 @@ M_lacour = np.array([[-1,1,0,0,],
 M_tel_avg = np.abs(M_lacour) / 2
     
            
-def step_tt(cmds):
+def step_tt(cmds, devices, signs):
     if not connected:
         #Try to reconnect.
         try:
@@ -41,8 +44,8 @@ def step_tt(cmds):
         except:
             print("Failed to reconnect to MDS.")
             return
-    for cmd, device in zip(cmds, devices):
-        msg = f"tt_step {device} {cmd}"
+    for cmd, device, sign in zip(cmds, devices, signs):
+        msg = f"tt_step {device} {cmd * sign}"
         try:
             socket.send_string(msg)
             socket.recv_string()  # acknowledgement
@@ -84,8 +87,16 @@ def main_loop():
         centroid, snr = compute_snr_and_centroid(baseline_powers[i])
         baseline_centroids.append(centroid)
         snrs.append(snr)
-    telescope_cmds = telescope_centroids(baseline_centroids, snrs)
-    step_tt(telescope_cmds)
+    # Now we have the centroids and SNRs for each baseline, we can compute the telescope commands.
+    # Do x then y separately.
+    x_centroids = [c[0] for c in baseline_centroids]
+    y_centroids = [c[1] for c in baseline_centroids]
+    # First, x.
+    telescope_cmds = telescope_centroids(x_centroids, snrs)
+    step_tt(telescope_cmds, xdevices, xsigns)
+    # Then, y.
+    telescope_cmds = telescope_centroids(y_centroids, snrs)
+    step_tt(telescope_cmds, ydevices, ysigns)
 
 if __name__ == "__main__":
     main_loop()
