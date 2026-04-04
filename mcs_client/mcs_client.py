@@ -78,22 +78,23 @@ class ZmqReq:
         self.s.connect(self.endpoint)
 
     def send_payload(
-        self, payload: Dict[str, Any], is_str=False, decode_ascii=True
+        self, payload: Any, is_str=False, decode_ascii=True
     ) -> Optional[Dict[str, Any]]:
-        if not is_str:
-            self.s.send_string(json.dumps(payload, sort_keys=True))
-        else:
-            self.s.send_string(payload)
         try:
+            if not is_str:
+                self.s.send_string(json.dumps(payload, sort_keys=True))
+            else:
+                self.s.send_string(payload)
+
             if decode_ascii:
-                res = self.s.recv().decode("ascii")[:-1]
+                res = self.s.recv().decode("ascii").rstrip("\x00")
             else:
                 res = self.s.recv_string()
 
             return json.loads(res)
-        except zmq.error.Again:
+        except (zmq.error.Again, zmq.error.ZMQError):
             return None
-        except json.decoder.JSONDecodeError:
+        except (json.decoder.JSONDecodeError, UnicodeDecodeError):
             return None
 
 
@@ -175,7 +176,11 @@ class MCSClient:
         sleep_time: float = 1.0,
         script_only: bool = False,
     ):
-        self.req_z = ZmqReq(publish_endpoint)
+        self.wag_req_timeout_ms = 500
+        self.wag_req_retries = 2
+        self.wag_req_retry_delay_s = 0.05
+
+        self.req_z = ZmqReq(publish_endpoint, timeout_ms=self.wag_req_timeout_ms)
         logging.info(f"REQ publish set up on {publish_endpoint}")
 
         self.script_z = ScriptAdapter(script_endpoint)
@@ -214,37 +219,33 @@ class MCSClient:
             hdlr_adapter.z
             if hdlr_adapter is not None
             else ZmqReq(
-                self.dcs_endpoints.get("HDLR", "tcp://localhost:6660"),
+                self.dcs_endpoints.get("HDLR", "tcp://mimir:6660"),
                 timeout_ms=self.watchdog_fast_timeout_ms,
             )
         )
         # TODO: use file of all the endpoints everywhere
         self.watchdog_zmqs = {
-            "MDS": ZmqReq(
-                "tcp://localhost:5555", timeout_ms=self.watchdog_fast_timeout_ms
-            ),
+            "MDS": ZmqReq("tcp://mimir:5555", timeout_ms=self.watchdog_fast_timeout_ms),
             "Eng gui": "checkport 8501",  # not zmq, use check_port function instead
             "CRED1": ZmqReq(
-                "tcp://localhost:6667", timeout_ms=self.watchdog_fast_timeout_ms
+                "tcp://mimir:6667", timeout_ms=self.watchdog_fast_timeout_ms
             ),
-            "DM": ZmqReq(
-                "tcp://localhost:6666", timeout_ms=self.watchdog_fast_timeout_ms
-            ),
+            "DM": ZmqReq("tcp://mimir:6666", timeout_ms=self.watchdog_fast_timeout_ms),
             "BTT1": ZmqReq(
-                "tcp://localhost:6671", timeout_ms=self.watchdog_fast_timeout_ms
+                "tcp://mimir:6671", timeout_ms=self.watchdog_fast_timeout_ms
             ),
             "BTT2": ZmqReq(
-                "tcp://localhost:6672", timeout_ms=self.watchdog_fast_timeout_ms
+                "tcp://mimir:6672", timeout_ms=self.watchdog_fast_timeout_ms
             ),
             "BTT3": ZmqReq(
-                "tcp://localhost:6673", timeout_ms=self.watchdog_fast_timeout_ms
+                "tcp://mimir:6673", timeout_ms=self.watchdog_fast_timeout_ms
             ),
             "BTT4": ZmqReq(
-                "tcp://localhost:6674", timeout_ms=self.watchdog_fast_timeout_ms
+                "tcp://mimir:6674", timeout_ms=self.watchdog_fast_timeout_ms
             ),
             "HDLR": hdlr_watchdog_zmq,
             "back_end": ZmqReq(
-                "tcp://localhost:7001", timeout_ms=self.watchdog_fast_timeout_ms
+                "tcp://mimir:7001", timeout_ms=self.watchdog_fast_timeout_ms
             ),
         }
 
@@ -300,13 +301,26 @@ class MCSClient:
 
         return "closed", "closed", "no-reply"
 
-    def _send(self, body: Dict[str, Any]) -> Tuple[bool, str]:
-        rep = self.req_z.send_payload(body)
-        print(rep)
-        if not rep or "reply" not in rep:
-            return False, "no-reply"
-        content = rep["reply"].get("content", "ERROR")
-        return (content == "OK" or content != "ERROR"), str(content)
+    def _send(self, body: Dict[str, Any]) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        for attempt in range(self.wag_req_retries):
+            if getattr(self.req_z.s, "closed", False):
+                self.req_z.reconnect()
+
+            rep = self.req_z.send_payload(body)
+            if rep and "reply" in rep:
+                content = rep["reply"].get("content", "ERROR")
+                return (content != "ERROR"), rep
+
+            logging.warning(
+                "WAG request timeout/invalid reply, reconnecting (%d/%d)",
+                attempt + 1,
+                self.wag_req_retries,
+            )
+            self.req_z.reconnect()
+            if attempt + 1 < self.wag_req_retries:
+                time.sleep(self.wag_req_retry_delay_s)
+
+        return False, None
 
     def run(self):
         """
@@ -377,7 +391,7 @@ class MCSClient:
             }
         }
         ok, rep = self._send(msg)
-        if not ok or "reply" not in rep:
+        if not ok or not rep or "reply" not in rep:
             logging.warning(f"failed to read from wag: {rep}")
             for param in WAG_PARAMS_TO_READ:
                 self.wag_reads[param] = None
@@ -524,9 +538,9 @@ class MCSClient:
         # logging.info(f"pushing: {str(body)[:20]}]...")
         logging.info(f"pushing: {str(body)}...")
         try:
-            ok, msg = self._send(body)
+            ok, rep = self._send(body)
             if not ok:
-                logging.warning(f"failed to write combined data to wag: {msg}")
+                logging.warning(f"failed to write combined data to wag: {rep}")
         except zmq.error.ZMQError as e:
             logging.error(f"ZMQ error to wag: {e}")
 
@@ -550,10 +564,10 @@ class MCSClient:
             prop["value"] = values
             body["parameter"].append(prop)
 
-        ok, msg = self._send(body)
+        ok, rep = self._send(body)
 
         if not ok:
-            logging.warning(f"failed to write script data to wag: {msg}")
+            logging.warning(f"failed to write script data to wag: {rep}")
 
     def publish_script_data(self):
         if self.script_z.has_new_data:
@@ -599,10 +613,10 @@ class MCSClient:
 
         # # write all fields to MCS in a single message
         body = self.ESO_format(data)
-        ok, msg = self._send(body)
+        ok, rep = self._send(body)
 
         if not ok:
-            logging.warning(f"failed to write script data to wag: {msg}")
+            logging.warning(f"failed to write script data to wag: {rep}")
 
     def ESO_format(self, content):
         return {
@@ -649,9 +663,9 @@ class MCSClient:
         # update body
         body["command"]["parameter"] = param_list
 
-        ok, msg = self._send(body)
+        ok, rep = self._send(body)
         if not ok:
-            logging.warning(f"failed to write baldr1_status to wag: {msg}")
+            logging.warning(f"failed to write baldr1_status to wag: {rep}")
 
     @staticmethod
     def ts():
