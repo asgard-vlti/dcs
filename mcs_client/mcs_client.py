@@ -895,8 +895,8 @@ def main():
             "HDLR": "tcp://mimir:6660",
         },
         script_endpoint="tcp://mimir:7019",
-        publish_endpoint="tcp://192.168.100.1:7050",
-        wag_wd_endpoint="tcp://192.168.100.1:7051",
+        publish_endpoint="tcp://wag:7050",
+        wag_wd_endpoint="tcp://wag:7051",
         sleep_time=1.0,
         script_only=args.script_only,
     )
