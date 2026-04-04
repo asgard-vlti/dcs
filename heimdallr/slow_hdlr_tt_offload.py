@@ -9,7 +9,7 @@ telescopes by weighted least squares.
 5) Via an MDS connection, move the HTXI motors!
 """
 
-from time import time
+import time
 import zmq
 import numpy as np
 import ZMQ_control_client as Z
@@ -24,8 +24,8 @@ connected = True
 
 xdevices = ['HTTI1', 'HTTI2', 'HTPI3', 'HTTI4']
 xsigns = [1,1,-1,1]
-ydevices = ['HTPI1', 'HTPI2', 'HTPI3', 'HTPI4']
-ysigns = [1,1,1,1]
+ydevices = ['HTPI1', 'HTPI2', 'HTTI3', 'HTPI4']
+ysigns = [-1,-1,-1,-1]
 M_lacour = np.array([[-1,1,0,0,], 
                      [-1,0,1,0],
                      [-1,0,0,1],
@@ -36,6 +36,7 @@ M_tel_avg = np.abs(M_lacour) / 2
     
            
 def step_tt(cmds, devices, signs):
+    global connected
     if not connected:
         #Try to reconnect.
         try:
@@ -45,29 +46,31 @@ def step_tt(cmds, devices, signs):
             print("Failed to reconnect to MDS.")
             return
     for cmd, device, sign in zip(cmds, devices, signs):
-        msg = f"tt_step {device} {cmd * sign}"
+        msg = f"tt_step {device} {int(round(-cmd * sign * 4))}"
+        print(msg)
         try:
             socket.send_string(msg)
-            socket.recv_string()  # acknowledgement
+            print(socket.recv_string())  # acknowledgement
         except zmq.Again:
             print(f"Timeout while sending command: {msg}.")
             return
-        time.sleep(0.01)
+        time.sleep(0.1)
         
 def get_baseline_powers():
     ims = np.zeros((6,8,8))
     for baseline in range(6):  
         for filter in ['K1', 'K2']:
-            ims[baseline] += Z.get_im("get_baseline_im {} {}".format(filter, baseline))
+            ims[baseline] += Z.get_im('get_baseline_im "{}", {}'.format(filter, baseline))
     return ims
 
 def compute_snr_and_centroid(im):
     noise = np.percentile(im, 15)
     snr = (np.max(im) - noise) / noise
-    y, x = np.indices(im.shape)
+    x = np.linspace(-3.5,3.5,8)
+    xy = np.meshgrid(x,x)
     total_power = np.sum(im)
-    x_centroid = np.sum(x * im) / total_power
-    y_centroid = np.sum(y * im) / total_power
+    x_centroid = np.sum(xy[0] * im) / total_power
+    y_centroid = np.sum(xy[1] * im) / total_power
     return (x_centroid, y_centroid), snr
 
 def telescope_centroids(baseline_centroids, snrs):
@@ -76,6 +79,8 @@ def telescope_centroids(baseline_centroids, snrs):
     A = M_tel_avg * np.sqrt(snrs)[:, np.newaxis]  # Weight by sqrt(SNR)
     b = np.array(baseline_centroids).flatten() * np.sqrt(snrs)
     x, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
+    print(baseline_centroids)
+    print(x)
     return x
 
 # Just once - not in a loop for now
@@ -93,10 +98,10 @@ def main_loop():
     y_centroids = [c[1] for c in baseline_centroids]
     # First, x.
     telescope_cmds = telescope_centroids(x_centroids, snrs)
-    step_tt(telescope_cmds, xdevices, xsigns)
+    #step_tt(telescope_cmds, xdevices, xsigns)
     # Then, y.
     telescope_cmds = telescope_centroids(y_centroids, snrs)
-    step_tt(telescope_cmds, ydevices, ysigns)
+    #step_tt(telescope_cmds, ydevices, ysigns)
 
 if __name__ == "__main__":
     main_loop()
