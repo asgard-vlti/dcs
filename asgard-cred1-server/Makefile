@@ -27,6 +27,7 @@ all: $(EXEC)
 debug: debug_kaya.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
+#A test program for thread priorities
 test: test.c
 	$(CC) -o test test.c -lpthread
 
