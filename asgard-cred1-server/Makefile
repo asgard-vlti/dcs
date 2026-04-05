@@ -27,6 +27,9 @@ all: $(EXEC)
 debug: debug_kaya.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
+test: test.c
+	$(CC) -o test test.c -lpthread
+
 asgard_cam_server: $(OBJECTS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
