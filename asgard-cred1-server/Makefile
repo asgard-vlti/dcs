@@ -46,4 +46,9 @@ mrproper: clean
 
 install:
 	install -D $(EXEC) $(PREFIX)/bin/
-	cp cred1_split.json ~/.config/
+	setcap 'cap_sys_nice=eip' $(PREFIX)/bin/$(EXEC)
+	cp cred1_split.json /home/asg/.config/
+
+install-test: test
+	setcap 'cap_sys_nice=eip' test
+

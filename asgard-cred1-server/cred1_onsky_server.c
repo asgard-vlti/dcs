@@ -510,7 +510,7 @@ void* save_cube_to_fits(void *dcube, long naxes[3],
 /* =========================================================================
  *                  Save ROI data-cubes as fits (thread)
  * ========================================================================= */
-void* save_roi_cubes(void *arg) {
+void* save_roi_cubes(void *) {
   struct timespec tnow;  // time since epoch
   struct tm *uttime;     // calendar time
   struct stat st;
@@ -558,8 +558,8 @@ void* save_roi_cubes(void *arg) {
 /* =========================================================================
  *                                Save a dark
  * ========================================================================= */
-void* save_dark(void *arg) {
-  long axis3 = 1;
+void* save_dark(void *) {
+  unsigned int axis3 = 1;
   if (camconf->ndmr_mode == 1)
     axis3 = camconf->nbreads - 1; //The -1 is a weird "feature" of the C-Red.
   long naxes[3] = {camconf->width, camconf->height, axis3};
@@ -583,9 +583,9 @@ void* save_dark(void *arg) {
   // We have 2 * nbpix_hlf frames in svdark. 
   // So nbr_hlf has to multiplied by 2 - to be refactored!!! 
   if (camconf->ndmr_mode == 0) {
-    for (int ii = 0; ii < camconf->nbpix_frm; ii++) {
+    for (unsigned int ii = 0; ii < camconf->nbpix_frm; ii++) {
       unsigned int sum = 0;
-      for (int jj = 0; jj < camconf->nbr_hlf * 2; jj++) {
+      for (unsigned int jj = 0; jj < camconf->nbr_hlf * 2; jj++) {
         sum += svdark[ii + jj*camconf->nbpix_frm];
       }
       svdark_av[ii] = sum / (camconf->nbr_hlf * 2);
@@ -593,16 +593,16 @@ void* save_dark(void *arg) {
     printf("Averaged GCDS mode dark.\n");
   } else {
     // Zero the sum arrays
-    for (int ii = 0; ii < axis3; ii++){
+    for (unsigned int ii = 0; ii < axis3; ii++){
       nbreads_cnt[ii] = 0;
-      for (int jj = 0; jj < camconf->nbpix_frm; jj++) {
+      for (unsigned int jj = 0; jj < camconf->nbpix_frm; jj++) {
         nbreads_sum[ii*camconf->nbpix_frm + jj] = 0;
         svdark_av[ii*camconf->nbpix_frm + jj] = 0;
       }
     }
 
     // in NDMR mode, we save the different reads separately, and also save the number of reads at each ramp setting
-    for (int ii = 0; ii < camconf->nbr_hlf * 2; ii++) {
+    for (unsigned int ii = 0; ii < camconf->nbr_hlf * 2; ii++) {
       // We find the relevant read from pixel 2 (0 indexed) of each dark frame.
       unsigned short reset_cntr = svdark[ii*camconf->nbpix_frm + 2]; 
       // Check this isn't camconf->nbread or higher. If it is there is an error!
@@ -611,15 +611,15 @@ void* save_dark(void *arg) {
         // Set to zero so at least we average something.
         reset_cntr = 0;
       }
-      for (int jj = 0; jj < camconf->nbpix_frm; jj++) {
+      for (unsigned int jj = 0; jj < camconf->nbpix_frm; jj++) {
         nbreads_sum[reset_cntr*camconf->nbpix_frm + jj] += svdark[ii*camconf->nbpix_frm + jj];
       }
       nbreads_cnt[reset_cntr] += 1;
     }
     // Now we average the sum arrays to get the average dark for each read.
-    for (int ii = 0; ii < axis3; ii++){
+    for (unsigned int ii = 0; ii < axis3; ii++){
       if (nbreads_cnt[ii] > 0)
-        for (int jj = 0; jj < camconf->nbpix_frm; jj++) {
+        for (unsigned int jj = 0; jj < camconf->nbpix_frm; jj++) {
           svdark_av[ii*camconf->nbpix_frm + jj] = nbreads_sum[ii*camconf->nbpix_frm + jj] / nbreads_cnt[ii];
         }
     }
@@ -737,7 +737,7 @@ void update_dark() {
 /* =========================================================================
  *                     Camera image fetching thread
  * ========================================================================= */
-void* fetch_imgs(void *arg) {
+void* fetch_imgs(void *) {
   // check if the thread is already running - should not be the case, 
   // but in principle this could occur (and did in the past!) 
   if (fetch_thread_started == 1) {
@@ -973,10 +973,20 @@ void* fetch_imgs(void *arg) {
  *          Trigger the thread fetching images to shared memory
  * ------------------------------------------------------------------------- */
 void fetch() {
+  pthread_attr_t attr;
+  struct sched_param param;
+  int policy;
   if (keepgoing == 0) {
     keepgoing = 1; // raise the flag
     printf("Triggering the fetching data\n");
-    pthread_create(&tid_fetch, NULL, fetch_imgs, NULL);
+    pthread_attr_init(&attr);
+    pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+    pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+    param.sched_priority=70;
+    pthread_attr_setschedparam(&attr, &param);
+    pthread_create(&tid_fetch, &attr, fetch_imgs, NULL);
+    pthread_getschedparam(tid_fetch, &policy, &param);
+    printf("Thread priority: %d  Priority policy: %d\n", param.sched_priority, policy); 
   }
   sprintf(status_cstr, "%s", "running");
 }
@@ -986,7 +996,7 @@ void fetch() {
  * ------------------------------------------------------------------------- */
 std::string cli(std::string cmd) {
   char out_cli[OUTSIZE];  // holder for CLI responses  
-  
+  camera_command(ed, cmd.c_str());
   read_pdv_cli(ed, out_cli);
   return out_cli;
 }
@@ -1084,6 +1094,7 @@ void update_gain(int gain) {
     keepgoing = 0; // to interrupt the fetching process
     wasrunning = 1; //
   }
+  usleep(100000);
   sprintf(cmd_cli, "set gain %d", gain);
   camera_command(ed, cmd_cli);
   read_pdv_cli(ed, out_cli);
@@ -1443,7 +1454,8 @@ int main(int argc, char **argv) {
   update_fps(500.0); // engineering startup configuration
   update_gain(1);   // engineering startup configuration
   show_cam_conf();
-  shm_setup(1);  // setup everything, including the ROI SHMs
+  shm_setup(1);  // setup everything, including the ROI SHMs  
+  usleep(100000); // Sleep - if we don't so this there are Kernel errors.
 
   // --------------------------
   // start the commander server
