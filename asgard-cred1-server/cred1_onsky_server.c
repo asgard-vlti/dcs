@@ -19,6 +19,8 @@
 #  endif
 #endif
 
+#define SCHED_PRIORITY 70
+
 //#define DEBUG_TIMING
 
 #include <commander/commander.h> // commander header
@@ -503,7 +505,7 @@ void* save_cube_to_fits(void *dcube, long naxes[3],
     fits_update_key(fptr, TSTRING, "RO_MODE", &camconf->readmode, "Camera readout mode", &status);
     fits_update_key(fptr, TINT, "OFFSET", &camconf->offset, "DC offset to subtract when processing", &status);
   }
-  fits_close_file(fptr, &status);
+  fits_close_file(fptr, &status); //This also flushes.
   return NULL;
 }
 
@@ -656,6 +658,8 @@ void* save_dark(void *) {
   save_cube_to_fits(svdark_av, naxes, fname, USHORT_IMG, 0);
   printf("%s was saved!\n", fname);
   camconf->valid_dark = 1;
+  
+  // This next line reads in the dark that was just saved.
   set_dark_sub_mode(1);
 
   // Free memory we don't need anymore
@@ -982,7 +986,7 @@ void fetch() {
     pthread_attr_init(&attr);
     pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
     pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
-    param.sched_priority=70;
+    param.sched_priority=SCHED_PRIORITY;
     pthread_attr_setschedparam(&attr, &param);
     pthread_create(&tid_fetch, &attr, fetch_imgs, NULL);
     pthread_getschedparam(tid_fetch, &policy, &param);
@@ -1077,8 +1081,10 @@ void update_fps(float fps) {
 
   camconf->fps = fps;
   update_dark();
-  if (wasrunning == 1)
+  if (wasrunning == 1){
+    usleep(400000); //Critical to avoid kernel errors
     fetch();
+  }
 }
 
 /* -------------------------------------------------------------------------
@@ -1177,12 +1183,9 @@ void trigger_save_dark() {
   // time of writing).
   double min_sleep_time = 2.0*camconf->nbr_hlf/camconf->fps; 
   printf("Sleeping this thread for %6.3lf seconds...\n", min_sleep_time);
-  usleep((int)((min_sleep_time + 0.5) * 1000000));
+  usleep((int)((min_sleep_time + 0.1) * 1000000));
   camconf->save_dark = 1;
-  printf("Because Frantz and Mike aren't smart enough, sleeping again for %6.3lf seconds...\n", min_sleep_time);
-  usleep((int)( (min_sleep_time + 0.5) * 1000000 ));
-  fflush(stdout);
-  set_dark_sub_mode(1);  
+  // The save_dark thread will set the dark_sub_mode to 1 at the end. 
 }
 
 /* -------------------------------------------------------------------------
@@ -1235,7 +1238,7 @@ void set_dark_sub_mode(int _mode) {
     }
     else {
       camconf->rt_dark_sub = 0;
-      printf("No live dark subtraction\n");
+      printf("No live dark subtraction, as no valid dark\n");
     }
   }
 }
@@ -1303,7 +1306,7 @@ void set_ndmr_mode(unsigned int _mode) {
     sprintf(cmd_cli, "set mode globalresetcds");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
-    usleep(100000);
+    usleep(500000);
     sprintf(cmd_cli, "set rawimages off");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
@@ -1311,17 +1314,17 @@ void set_ndmr_mode(unsigned int _mode) {
 
     sprintf(camconf->readmode, "GCDS");
   }
-  else {  // ------------------- science mode ------------------
+  else {  // ------------------- science mode ------------------    
     camconf->ndmr_mode = 1;
     sprintf(cmd_cli, "set rawimages on");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
-    usleep(200000);
+    usleep(100000);
 
     sprintf(cmd_cli, "set mode globalresetbursts");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
-    usleep(200000);
+    usleep(500000);
     
     camconf->nbreads = _mode;
     sprintf(cmd_cli, "set nbreadworeset %d", _mode); // _mode + 1 ??
