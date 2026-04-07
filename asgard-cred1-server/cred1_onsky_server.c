@@ -1115,8 +1115,18 @@ void update_gain(int gain) {
  *           server level command to query the current camera frame rate
  * ------------------------------------------------------------------------- */
 float query_fps() {
+  // This causes a kernel error if we don't stop.
+  // if the acquisition is running, interrupt it and remember it was running
+  int wasrunning=0;
+  if (keepgoing == 1) {
+    keepgoing = 0;  // interrupt the acquisition
+    wasrunning = 1; // keep that in mind
+    usleep(100000); // sleep for 100ms
+  }
   float val = camera_query_float(ed, "fps raw");
   camconf->fps = val;
+  if (wasrunning)
+  	keepgoing=1;
   return val;
 }
 
@@ -1386,7 +1396,7 @@ COMMANDER_REGISTER(m)
   m.def("stop", stop, "Stop fetching data from the. camera.");
   m.def("quit", quit, "Stops and closes the server.");
   m.def("set_fps", update_fps, "Updates the camera FPS and syncs SHM.");
-  m.def("get_fps", query_fps, "Prints the current camera frame rate.");
+  m.def("get_fps", query_fps, "Temporarily stops and restarts readout to ask the camera for it's set frame rate.\n Use 'status' for the internal saved rate.");
   m.def("get_gain", query_gain, "Prints the current camera gain.");
   m.def("get_det_temp", query_det_temp, "Prints the detector temperature.");
   m.def("get_water_temp", query_water_temp, "Prints the water temperature.");
