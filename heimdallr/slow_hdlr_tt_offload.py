@@ -54,7 +54,7 @@ def step_tt(cmds, devices, signs):
         except zmq.Again:
             print(f"Timeout while sending command: {msg}.")
             return
-        time.sleep(0.1)
+        time.sleep(0.01)
         
 def get_baseline_powers():
     ims = np.zeros((6,8,8))
@@ -66,7 +66,7 @@ def get_baseline_powers():
 def compute_snr_and_centroid(im):
     noise = np.percentile(im, 15)
     snr = (np.max(im) - noise) / noise
-    x = np.linspace(-3.5,3.5,8)
+    x = np.linspace(-4,3,8)
     xy = np.meshgrid(x,x)
     total_power = np.sum(im)
     x_centroid = np.sum(xy[0] * im) / total_power
@@ -98,10 +98,10 @@ def main_loop():
     y_centroids = [c[1] for c in baseline_centroids]
     # First, x.
     telescope_cmds = telescope_centroids(x_centroids, snrs)
-    #step_tt(telescope_cmds, xdevices, xsigns)
+    step_tt(telescope_cmds, xdevices, xsigns)
     # Then, y.
     telescope_cmds = telescope_centroids(y_centroids, snrs)
-    #step_tt(telescope_cmds, ydevices, ysigns)
+    step_tt(telescope_cmds, ydevices, ysigns)
 
 if __name__ == "__main__":
     main_loop()

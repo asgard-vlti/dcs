@@ -78,7 +78,7 @@ class ZmqReq:
         self.s.connect(self.endpoint)
 
     def send_payload(
-        self, payload: Any, is_str=False, decode_ascii=True
+        self, payload: Any, is_str=False, decode_ascii=True, loaddict=True,
     ) -> Optional[Dict[str, Any]]:
         try:
             if not is_str:
@@ -91,7 +91,10 @@ class ZmqReq:
             else:
                 res = self.s.recv_string()
 
-            return json.loads(res)
+            if loaddict:
+                return json.loads(res)
+            else:
+                return res
         except (zmq.error.Again, zmq.error.ZMQError):
             return None
         except (json.decoder.JSONDecodeError, UnicodeDecodeError):
@@ -207,6 +210,7 @@ class MCSClient:
 
         self.wag_reads = {param: None for param in WAG_PARAMS_TO_READ}
 
+        self.wag_wd_endpoint = wag_wd_endpoint
         self.wag_wd_z = ZmqReq(wag_wd_endpoint)
         logging.info(f"WAG watchdog REQ set up on {wag_wd_endpoint}")
 
@@ -280,6 +284,12 @@ class MCSClient:
                 socks = dict(poller.poll(self.watchdog_fast_timeout_ms))
                 if zmq_obj.s in socks and socks[zmq_obj.s] == zmq.POLLIN:
                     reply = zmq_obj.s.recv_string()
+                    if proc_name == "HDLR":
+                        reply = json.loads(reply)
+                        # remove all but cnt and locked
+                        reply = {k:v for k,v in reply.items() if k in ["cnt", "locked"]}
+                        reply = json.dumps(reply)
+
                     return "running", "open", reply
             except zmq.ZMQError:
                 pass
@@ -307,7 +317,7 @@ class MCSClient:
                 self.req_z.reconnect()
 
             rep = self.req_z.send_payload(body)
-            if rep and "reply" in rep:
+            if rep and "reply" :
                 content = rep["reply"].get("content", "ERROR")
                 return (content != "ERROR"), rep
 
@@ -328,10 +338,10 @@ class MCSClient:
         also poll the cpp databases for new data. Publish all at once.
         """
         while True:
-            self.read_from_wag()
-            self.publish_all_to_wag()
+            # self.read_from_wag()
+            # self.publish_all_to_wag()
 
-            if self.wag_wd_z is not None and time.time() - self.watchdog_last_check > 5:
+            if time.time() - self.watchdog_last_check > 5:
                 self.publish_wd()
 
             time.sleep(self.sleep_time)
@@ -347,6 +357,12 @@ class MCSClient:
 
         """
         wd_status = {}
+
+        logging.info(
+            "running wd status fn"
+        )
+        if self.wag_wd_z is None:
+            self.wag_wd_z = ZmqReq(self.wag_wd_endpoint)
 
         for proc_name, zmq_obj in self.watchdog_zmqs.items():
             proc_status = "closed"
@@ -373,7 +389,12 @@ class MCSClient:
             }
 
         try:
-            self.wag_wd_z.send_payload(wd_status)
+            res = self.wag_wd_z.send_payload(wd_status, loaddict=False)
+            if res is not None:
+                self.watchdog_last_check = time.time()
+            else:
+                self.wag_wd_z = None
+                logging.warning(f"Recieved no response from wag wd socket")
         except zmq.error.ZMQError as e:
             logging.error(f"ZMQ error sending watchdog status to WAG: {e}")
 
