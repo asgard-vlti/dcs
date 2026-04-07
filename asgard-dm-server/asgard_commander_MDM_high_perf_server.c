@@ -18,6 +18,8 @@
 #  endif
 #endif
 
+#define SCHED_PRIORITY 70
+
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -75,7 +77,7 @@ unsigned int targs[4] = {1, 2, 3, 4}; // thread integer arguments
  * ========================================================================= */
 int shm_setup();
 void* dm_control_loop(void *_dmid);
-void* dms_refresh(void *args);
+void* dms_refresh(void *);
 double* map2D_2_cmd(double *map2D);
 void MakeOpen(int dmid, DM* hdm);
 void logprintf(const char *fmt, ...);
@@ -190,23 +192,15 @@ double* map2D_2_cmd(double *map2D) {
  *                     DM surface control thread
  * ========================================================================= */
 void* dm_control_loop(void *_dmid) {
-  uint64_t cntrs[nch];
   int ii, kk;  // array indices
   double tmp_map[nvact];  // to store the combination of channels
 
   unsigned int dmid = *((unsigned int *) _dmid);
 
-  for (ii = 0; ii < nch; ii++)
-    cntrs[ii] = shmarray[dmid-1][nch].md->cnt0;  // init shm counters
-
   while (keepgoing > 0) {
 
     // all process must post semaphore 1
     ImageStreamIO_semwait(&shmarray[dmid-1][nch], 1);  // waiting for a DM update!
-
-    for (ii = 0; ii < nch; ii++) {
-      cntrs[ii] = shmarray[dmid-1][ii].md->cnt0; // update counter values
-    }
 
     // -------- combine the channels -----------
     for (ii = 0; ii < nvact; ii++) {
@@ -239,7 +233,7 @@ void* dm_control_loop(void *_dmid) {
 /* =========================================================================
  *                       DMs refresh cycle thread
  * ========================================================================= */
-void* dms_refresh(void *args) {
+void* dms_refresh(void *) {
   double *cmd;
   struct timespec now; // clock readout
   FILE* fd;
@@ -276,18 +270,28 @@ void start() {
    *          Starts the monitoring of shared memory data structures
    * ------------------------------------------------------------------------- */
   int kk;
+  pthread_attr_t attr;
+  struct sched_param param;
+  int policy;
 
   if (keepgoing == 0) {
     keepgoing = 1; // raise the flag
     logprintf("DM control loop START\n");
-
+	pthread_attr_init(&attr);
+    pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+    pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+    param.sched_priority=SCHED_PRIORITY;
+    pthread_attr_setschedparam(&attr, &param);
     // trigger the shm monitoring threads
     for (kk = 0; kk < ndm; kk++) {
-      pthread_create(&tid_loops[kk], NULL, dm_control_loop, &targs[kk]);
+      pthread_create(&tid_loops[kk], &attr, dm_control_loop, &targs[kk]);
     }
 
-    if (simmode != 1)
-      pthread_create(&tid_refresh, NULL, dms_refresh, NULL);
+    if (simmode != 1){
+      pthread_create(&tid_refresh, &attr, dms_refresh, NULL);
+      pthread_getschedparam(tid_refresh, &policy, &param);
+      printf("Thread priority: %d  Priority policy: %d\n", param.sched_priority, policy); 
+    }
     
   } else
     logprintf("DM control loop already running!\n");

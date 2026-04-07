@@ -97,7 +97,7 @@ class App(QtWidgets.QMainWindow):
 
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.refresh)
-        self.timer.start(100)
+        self.timer.start(200)
 
     # ------------------------------------------------------
     def refresh(self):
@@ -419,7 +419,7 @@ def main():
 
     proxy = pg.SignalProxy(
         gui.main_widget.gView_live.scene().sigMouseMoved,
-        rateLimit=60,
+        rateLimit=10,
         slot=gui.mouseMoved,
     )
 
