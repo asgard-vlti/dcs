@@ -8,8 +8,14 @@ import zmq
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Commander client (ZMQ REQ).")
-    ap.add_argument("--socket", required=True, help="Commander endpoint, e.g. tcp://127.0.0.1:3001")
-    ap.add_argument("message", nargs="+", help='Command string, e.g. "status" or \'readBDRConfig "./cfg.toml"\'')
+    ap.add_argument(
+        "--socket", required=True, help="Commander endpoint, e.g. tcp://127.0.0.1:3001"
+    )
+    ap.add_argument(
+        "message",
+        nargs="+",
+        help='Command string, e.g. "status" or \'readBDRConfig "./cfg.toml"\'',
+    )
 
     args = ap.parse_args()
     msg = " ".join(args.message).strip()
