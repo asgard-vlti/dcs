@@ -276,12 +276,8 @@ void start() {
 
   if (keepgoing == 0) {
     keepgoing = 1; // raise the flag
-    logprintf("DM control loop START\n");
-	pthread_attr_init(&attr);
-    pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
-    pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
-    param.sched_priority=SCHED_PRIORITY;
-    pthread_attr_setschedparam(&attr, &param);
+    printf("DM control loop START\n");
+
     // trigger the shm monitoring threads
     for (kk = 0; kk < ndm; kk++) {
       pthread_create(&tid_loops[kk], &attr, dm_control_loop, &targs[kk]);
@@ -290,7 +286,7 @@ void start() {
     if (simmode != 1){
       pthread_create(&tid_refresh, &attr, dms_refresh, NULL);
       pthread_getschedparam(tid_refresh, &policy, &param);
-      printf("Thread priority: %d  Priority policy: %d\n", param.sched_priority, policy); 
+      logprintf("Thread priority: %d  Priority policy: %d\n", param.sched_priority, policy); 
     }
     
   } else

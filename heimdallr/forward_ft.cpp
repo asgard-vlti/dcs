@@ -156,13 +156,14 @@ void ForwardFt::start() {
 void ForwardFt::stop() {
     mode = FT_STOPPING;
     if (thread.joinable()) thread.join();
+    if (reverse_thread.joinable()) reverse_thread.join();
 }
 
 void ForwardFt::loop() {
 #ifdef PRINT_TIMING
     timespec now, then;
 #endif
-    unsigned int ii_shift, jj_shift, szj;
+    unsigned int ii_shift, jj_shift, szj, last_logged=0;
     cnt = subarray->md->cnt0;
     catch_up_with_sem(subarray, 2);
     while (mode != FT_STOPPING) {
@@ -173,15 +174,21 @@ void ForwardFt::loop() {
             // Put this here just in case there is a re-start with a new size. Unlikely!
             szj = subim_sz/2 + 1;
             if ((subarray->md->cnt0 > cnt+2)  && (mode == FT_RUNNING)) {
-                std::cout << "Missed cam frames: " << subarray->md->cnt0 << " " << cnt << std::endl;
+                if (cnt - last_logged > 500){
+                    logprintf(LOG_WARNING, "Missed cam frames: %lu %lu\n",
+                    (unsigned long) subarray->md->cnt0,
+                    (unsigned long) cnt);
+                    last_logged = cnt;
+                }
                 catch_up_with_sem(subarray,2);
                 cnt = subarray->md->cnt0-1;
                 nerrors++;
             }
-            mode = FT_RUNNING;
+            // change from starting to running just once.
+            if (mode == FT_STARTING) mode = FT_RUNNING;
             // Check the write parameter. It really shouldn't be active.
             if (subarray->md->write) {
-                std::cout << "FT: Semaphore signalled but write flag is still set. Skipping frame." << std::endl;
+                logprintf(LOG_WARNING, "FT: Semaphore signalled but write flag is still set. Skipping frame.\n");
                 continue;
             }
             // In NDMR mode, the first pixel of the image contains the frame counter. 
@@ -234,7 +241,7 @@ void ForwardFt::loop() {
 #ifdef PRINT_TIMING
             clock_gettime(CLOCK_REALTIME, &now);
             if (then.tv_sec == now.tv_sec)
-                std::cout << "Window and FFT time: " << now.tv_nsec-then.tv_nsec << std::endl;
+                logprintf(LOG_INFO, "Window and FFT time: %ld\n", now.tv_nsec - then.tv_nsec);
             then = now;
 #endif
             // If the flux is negative, signal a bad frame.
@@ -281,7 +288,7 @@ void ForwardFt::loop() {
 #ifdef PRINT_TIMING
             clock_gettime(CLOCK_REALTIME, &now);
             if (then.tv_sec == now.tv_sec)
-                std::cout << "PS time: " << now.tv_nsec-then.tv_nsec << std::endl;
+                logprintf(LOG_DEBUG, "PS time: %ld\n", now.tv_nsec - then.tv_nsec);
             then = now;
 #endif
             // As long as this is the same type as cnt0, it should wrap around correctly
@@ -304,7 +311,7 @@ void ForwardFt::loop() {
             //std::cout << subarray->name << ": " << cnt << std::endl;
         } else {
             // This shouldn't happen, but if it does, just continue
-            std::cout << "FT: Semaphore signalled but no new frame" << std::endl;
+            logprintf(LOG_WARNING, "FT: Semaphore signalled but no new frame\n");
             nerrors++;
         }
     }
@@ -333,7 +340,7 @@ void ForwardFt::reverse_ft() {
                 x_px = lround(fs.x_px_K2[bl]) % K2ft->subim_sz;
                 y_px = lround(fs.y_px_K2[bl]) % K2ft->subim_sz;
             } else {
-                std::cout << "Wrong filternum! " << std::endl;
+                logprintf(LOG_ERROR, "Wrong filternum!\n");
                 continue;
             }
             // During the copying loop only, we need a lock
