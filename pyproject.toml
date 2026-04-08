@@ -17,6 +17,8 @@ mcs-client = "mcs_client.mcs_client:main"
 baldr-server = "baldr_python_rtc.scripts.baldr_server:main"
 baldr-start-all = "dcs.cmd_scripts.baldr_start_all:main"
 baldrtt-start-all = "dcs.cmd_scripts.baldrtt_start_all:main"
+flat-save = "dcs.cmd_scripts.flat_save:main"
+flat-load = "dcs.cmd_scripts.flat_load:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["dcs"]
