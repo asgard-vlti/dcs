@@ -21,36 +21,6 @@ import socket
 
 import subprocess
 
-"""
-Traceback (most recent call last):
-  File "/home/asg/.conda/envs/asgard/bin/mcs-client", line 8, in <module>
-    sys.exit(main())
-  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 951, in main
-    mcs.run()
-  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 249, in run
-    self.publish_all_to_wag()
-  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 403, in publish_all_to_wag
-    script_params = self.gather_script_parameters()
-  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 360, in gather_script_parameters
-    self.server_z.fetch()
-  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 868, in fetch
-    self.handle_message(msg)
-  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 882, in handle_message
-    stats = self.watchdog.collect_wd_status()
-  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 795, in collect_wd_status
-    self._watchdog_lazy_pirate_status(proc_name, zmq_obj)
-  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 762, in _watchdog_lazy_pirate_status
-    result = subprocess.run(
-  File "/home/asg/.conda/envs/asgard/lib/python3.10/subprocess.py", line 503, in run
-    with Popen(*popenargs, **kwargs) as process:
-  File "/home/asg/.conda/envs/asgard/lib/python3.10/subprocess.py", line 971, in __init__
-    self._execute_child(args, executable, preexec_fn, close_fds,
-  File "/home/asg/.conda/envs/asgard/lib/python3.10/subprocess.py", line 1762, in _execute_child
-    errpipe_read, errpipe_write = os.pipe()
-OSError: [Errno 24] Too many open files
-"""
-
-
 # Following protocol described in
 # Top-Level Control Software
 # User and Maintenance Manual
@@ -103,11 +73,16 @@ class ZmqReq:
             self.s.close()
         except zmq.ZMQError:
             pass
+        except Exception:
+            pass
 
-        self.s = self.ctx.socket(zmq.REQ)
-        self.s.RCVTIMEO = self.timeout_ms
-        self.s.SNDTIMEO = self.timeout_ms
-        self.s.connect(self.endpoint)
+        try:
+            self.s = self.ctx.socket(zmq.REQ)
+            self.s.RCVTIMEO = self.timeout_ms
+            self.s.SNDTIMEO = self.timeout_ms
+            self.s.connect(self.endpoint)
+        except Exception as e:
+            logging.error(f"Failed to reconnect to {self.endpoint}: {e}")
 
     def send_payload(
         self,
@@ -238,7 +213,6 @@ class MCSClient:
 
         self.dcs_endpoints = dcs_endpoints
 
-
         self.requester = "mimir"
 
         self.sleep_time = sleep_time
@@ -278,9 +252,7 @@ class MCSClient:
             self.read_from_wag()
             self.publish_all_to_wag()
 
-
             time.sleep(self.sleep_time)
-
 
     def read_from_wag(self):
         """Read WAG parameters if connection is open, and update self.wag_reads. Only query if connection is open."""
@@ -745,13 +717,18 @@ class Watchdog:
         }
 
     def _watchdog_lazy_pirate_status(
-        self, proc_name: str, zmq_obj: ZmqReq
+        self, proc_name: str, zmq_obj: ZmqReq, ps_output: Optional[str] = None
     ) -> Tuple[str, str, str]:
         """
         Fast Lazy Pirate probe for watchdog status requests.
         On timeout or socket state errors, reset the REQ socket and retry quickly.
 
         returns a tuple of (process_status, zmq_status, custom_status)
+
+        Args:
+            proc_name: Name of the process to check
+            zmq_obj: ZMQ socket object
+            ps_output: Cached output from 'ps aux' (if None, process status cannot be checked)
         """
         for attempt in range(self.watchdog_fast_retries):
             try:
@@ -770,33 +747,29 @@ class Watchdog:
                         reply = json.dumps(reply)
 
                     return "running", "open", reply
-            except zmq.ZMQError:
-                pass
-
-            logging.info(
-                "watchdog probe failed for %s, retry %d/%d",
-                proc_name,
-                attempt + 1,
-                self.watchdog_fast_retries,
-            )
-
-            try:
-                zmq_obj.reconnect()
-            except zmq.ZMQError:
-                pass
+            except zmq.ZMQError as e:
+                logging.debug(
+                    "watchdog ZMQ error for %s (attempt %d/%d): %s",
+                    proc_name,
+                    attempt + 1,
+                    self.watchdog_fast_retries,
+                    e,
+                )
 
             if attempt + 1 < self.watchdog_fast_retries:
+                try:
+                    zmq_obj.reconnect()
+                except Exception as e:
+                    logging.warning(f"Failed to reconnect for {proc_name}: {e}")
+
                 time.sleep(self.watchdog_retry_delay_s)
 
-        # check if process is running by looking for its name in the process list (ps aux)
-        result = subprocess.run(
-            ["ps", "aux"], stdout=subprocess.PIPE, text=True, check=True
-        )
-        if self.processes_of_interest.get(proc_name) in result.stdout:
-            return "running", "closed", "no-reply"   
+        # Check if process is running using cached ps output
+        if ps_output and self.processes_of_interest.get(proc_name) in ps_output:
+            return "running", "closed", "no-reply"
 
         return "closed", "closed", "no-reply"
-    
+
     def collect_wd_status(self):
         """
         { <process>: {
@@ -811,6 +784,18 @@ class Watchdog:
 
         logging.info("running wd status fn")
 
+        # Run ps aux once and cache the output for all process checks
+        ps_output = None
+        try:
+            result = subprocess.run(
+                ["ps", "aux"], stdout=subprocess.PIPE, text=True, check=True
+            )
+            ps_output = result.stdout
+        except OSError as e:
+            logging.error(f"OSError while running ps aux: {e}")
+        except Exception as e:
+            logging.error(f"Unexpected error running ps aux: {e}")
+
         for proc_name, zmq_obj in self.watchdog_zmqs.items():
             proc_status = "closed"
             zmq_status = "no-conn"
@@ -822,7 +807,7 @@ class Watchdog:
             else:
                 if isinstance(zmq_obj, ZmqReq):
                     proc_status, zmq_status, custom_status = (
-                        self._watchdog_lazy_pirate_status(proc_name, zmq_obj)
+                        self._watchdog_lazy_pirate_status(proc_name, zmq_obj, ps_output)
                     )
                 else:
                     logging.warning(
@@ -836,18 +821,6 @@ class Watchdog:
             }
 
         return wd_status
-        try:
-            res = self.wag_wd_z.send_payload(wd_status, loaddict=False)
-            if res is not None:
-                self.watchdog_last_check = time.time()
-            else:
-                self.wag_wd_z = None
-                logging.warning(f"Recieved no response from wag wd socket")
-        except zmq.error.ZMQError as e:
-            logging.error(f"ZMQ error sending watchdog status to WAG: {e}")
-
-            self.wag_wd_z = None
-
 
 
 class MCSServer:
