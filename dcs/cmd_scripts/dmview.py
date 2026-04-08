@@ -71,9 +71,17 @@ class DMshm:
 def _build_coolwarm_lut() -> np.ndarray:
     """Build a 256-color coolwarm LUT. Falls back to a fixed blue-red LUT if needed."""
     try:
-        from matplotlib import cm
+        import matplotlib
 
-        rgba = cm.get_cmap("coolwarm")(np.linspace(0.0, 1.0, 256))
+        # Matplotlib 3.7+: use the non-deprecated colormap registry API.
+        if hasattr(matplotlib, "colormaps"):
+            cmap = matplotlib.colormaps["coolwarm"]
+        else:
+            from matplotlib import cm
+
+            cmap = cm.get_cmap("coolwarm")
+
+        rgba = cmap(np.linspace(0.0, 1.0, 256))
         return (rgba[:, :3] * 255).astype(np.uint8)
     except ImportError:
         ramp = np.linspace(0.0, 1.0, 256)
