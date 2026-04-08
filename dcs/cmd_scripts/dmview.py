@@ -17,7 +17,7 @@ from typing import Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtCore, QtWidgets, QtGui
 from xaosim.shmlib import shm
 
 Frame = np.ndarray
@@ -81,19 +81,18 @@ class DMshm:
         return total, channels
 
 
-def _build_cmap_lut() -> np.ndarray:
+def _build_cmap_lut(name: str) -> np.ndarray:
     """Build a 256-color cmap LUT. Falls back to a fixed blue-red LUT if needed."""
     try:
         import matplotlib
 
-        cmap = "RdBu"
         # Matplotlib 3.7+: use the non-deprecated colormap registry API.
         if hasattr(matplotlib, "colormaps"):
-            cmap = matplotlib.colormaps[cmap]
+            cmap = matplotlib.colormaps[name]
         else:
             from matplotlib import cm
 
-            cmap = cm.get_cmap(cmap)
+            cmap = cm.get_cmap(name)
 
         rgba = cmap(np.linspace(0.0, 1.0, 256))
         return (rgba[:, :3] * 255).astype(np.uint8)
@@ -138,7 +137,8 @@ class DMView(QtWidgets.QMainWindow):
         beam_list = [str(beam) for beam in beams]
         self.setWindowTitle(f"DM SHM Viewer - beam {', '.join(beam_list)}")
 
-        self._lut = _build_cmap_lut()
+        self._cividis_lut = _build_cmap_lut("cividis")
+        self._rdbu_lut = _build_cmap_lut("RdBu")
 
         central = pg.GraphicsLayoutWidget()
         self.setCentralWidget(central)
@@ -161,7 +161,9 @@ class DMView(QtWidgets.QMainWindow):
                 plot.hideAxis("bottom")
 
                 image_item = pg.ImageItem(axisOrder="row-major")
-                image_item.setLookupTable(self._lut)
+                image_item.setLookupTable(
+                    self._cividis_lut if col_idx < 2 else self._rdbu_lut
+                )
                 image_item.setLevels((row.dm.VMIN, row.dm.VMAX))
                 plot.addItem(image_item)
                 row.image_items.append(image_item)
@@ -225,6 +227,20 @@ def main(argv=None):
     app = QtWidgets.QApplication.instance()
     if app is None:
         app = QtWidgets.QApplication([])
+
+    class GlobalHotkeyFilter(QtCore.QObject):
+        def eventFilter(self, a0, a1):
+            if isinstance(a1, QtGui.QKeyEvent) and a1.matches(
+                QtGui.QKeySequence.Cancel
+            ):
+                for widget in QtWidgets.QApplication.topLevelWidgets():
+                    widget.close()
+                QtCore.QCoreApplication.quit()
+                return True
+            return super().eventFilter(a0, a1)
+
+    hotkey_filter = GlobalHotkeyFilter(app)
+    app.installEventFilter(hotkey_filter)
 
     win = DMView(beams)
     win.resize(1100, 250 * max(1, len(beams)))
