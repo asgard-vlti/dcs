@@ -164,6 +164,10 @@ class DMView(QtWidgets.QMainWindow):
         low = self.dm.VMIN + self.SATURATION_EPS
         high = self.dm.VMAX - self.SATURATION_EPS
         mask = (frame <= low) | (frame >= high)
+        mask[0, 0] = False
+        mask[0, -1] = False
+        mask[-1, 0] = False
+        mask[-1, -1] = False
         overlay[mask] = (255, 0, 0, 255)
         return overlay
 
