@@ -68,7 +68,9 @@ static bool acquire_single_instance_lock(const char *lock_path) {
         char pid_buf[32];
         int n = std::snprintf(pid_buf, sizeof(pid_buf), "%ld\n", (long)getpid());
         if (n > 0) {
-            (void)write(single_instance_lock_fd, pid_buf, (size_t)n);
+            if (write(single_instance_lock_fd, pid_buf, (size_t)n) < 0) {
+                logprintf(LOG_WARNING, "Failed to write PID to lock file %s: %s", lock_path, std::strerror(errno));
+            }
         }
     }
 
@@ -93,8 +95,6 @@ void logprintf(int loglevel, const char *fmt, ...) {
   vprintf(fmt, args);
   va_end(args);
   printf("\n");
-  // Could flush here? !!!
-  fflush(stdout);
 }
 
 // Utility functions
@@ -732,6 +732,12 @@ COMMANDER_REGISTER(m)
 int main(int argc, char* argv[]) {
     IMAGE K1, K2;
 
+    // The loglevel is the first thing to set up!
+    settings.s.loglevel=3; // Default to INFO
+    if (config.contains("loglevel")) {
+        settings.s.loglevel = config["loglevel"].value_or(3);
+    }
+
     // Exit immediately if another instance of this server is running.
     if (!acquire_single_instance_lock("/tmp/asg.heimdallr.lock")) {
         return 1;
@@ -761,7 +767,6 @@ int main(int argc, char* argv[]) {
     settings.s.fixed_dl=3;
     settings.s.search_offset = {0.0, 0.0, 0.0, 0.0};
     settings.s.target_itime=0.0;
-    settings.s.loglevel=2;
 
 #ifndef SIMULATE
     // Initialise the DMs
