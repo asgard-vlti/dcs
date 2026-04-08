@@ -156,6 +156,7 @@ void ForwardFt::start() {
 void ForwardFt::stop() {
     mode = FT_STOPPING;
     if (thread.joinable()) thread.join();
+    if (reverse_thread.joinable()) reverse_thread.join();
 }
 
 void ForwardFt::loop() {
