@@ -44,7 +44,7 @@ void logprintf(int loglevel, const char *fmt, ...) {
   if (loglevel > settings.s.loglevel) {
     return;
   }
-  time_t now = time(NULL);
+  std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
   struct tm *tm_info = gmtime(&now);
   char timebuf[21];
   strftime(timebuf, sizeof(timebuf), "%Y-%m-%dT%H:%M:%SZ", tm_info);
