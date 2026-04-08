@@ -142,6 +142,8 @@ class DMView(QtWidgets.QMainWindow):
 
         central = pg.GraphicsLayoutWidget()
         self.setCentralWidget(central)
+        central.ci.setSpacing(2)
+        central.ci.setContentsMargins(2, 2, 2, 2)
 
         self._labels = ["total"] + [f"ch{i:02d}" for i in range(DMshm.N_CHANNELS)]
         self._rows: list[DMView._BeamRow] = []
@@ -151,8 +153,10 @@ class DMView(QtWidgets.QMainWindow):
             self._rows.append(row)
 
             for col_idx, label in enumerate(self._labels):
-                plot = central.addPlot(row=row_idx, col=col_idx, title=label)
+                title = label if len(beam_list) == 1 or row_idx == 0 else None
+                plot = central.addPlot(row=row_idx, col=col_idx, title=title)
                 plot.setAspectLocked(True)
+                plot.setContentsMargins(0, 0, 0, 0)
                 plot.hideAxis("left")
                 plot.hideAxis("bottom")
 
