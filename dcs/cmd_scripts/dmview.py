@@ -108,6 +108,14 @@ class DMView(QtWidgets.QMainWindow):
     UPDATE_MS = 200  # 5 Hz refresh for low bandwidth and stable CPU usage.
     SATURATION_EPS = 0.01
 
+    class _BeamRow:
+        def __init__(self, beam: str):
+            self.beam = beam
+            self.dm = DMshm(beam)
+            self.image_items: list[pg.ImageItem] = []
+            self.last_frames: list[Optional[Frame]] = [None] * (self.dm.N_CHANNELS + 1)
+            self.total_overlay: Optional[pg.ImageItem] = None
+
     @staticmethod
     def _frame_levels(frame: Frame) -> tuple[float, float]:
         low = float(np.nanmin(frame))
@@ -124,36 +132,39 @@ class DMView(QtWidgets.QMainWindow):
         pad = span * 0.02
         return low - pad, high + pad
 
-    def __init__(self, beam):
+    def __init__(self, beams):
         super().__init__()
-        self.setWindowTitle(f"DM SHM Viewer - beam {beam}")
+        beam_list = [str(beam) for beam in beams]
+        self.setWindowTitle(f"DM SHM Viewer - beam {', '.join(beam_list)}")
 
-        self.dm = DMshm(beam)
         self._lut = _build_cmap_lut()
 
         central = pg.GraphicsLayoutWidget()
         self.setCentralWidget(central)
 
-        self._image_items = []
-        self._labels = ["total"] + [f"ch{i:02d}" for i in range(self.dm.N_CHANNELS)]
-        self._last_frames: list[Optional[Frame]] = [None] * (self.dm.N_CHANNELS + 1)
+        self._labels = ["total"] + [f"ch{i:02d}" for i in range(DMshm.N_CHANNELS)]
+        self._rows: list[DMView._BeamRow] = []
 
-        for idx, label in enumerate(self._labels):
-            plot = central.addPlot(row=0, col=idx, title=label)
-            plot.setAspectLocked(True)
-            plot.hideAxis("left")
-            plot.hideAxis("bottom")
+        for row_idx, beam in enumerate(beam_list):
+            row = self._BeamRow(beam)
+            self._rows.append(row)
 
-            image_item = pg.ImageItem(axisOrder="row-major")
-            image_item.setLookupTable(self._lut)
-            image_item.setLevels((self.dm.VMIN, self.dm.VMAX))
-            plot.addItem(image_item)
-            self._image_items.append(image_item)
+            for col_idx, label in enumerate(self._labels):
+                plot = central.addPlot(row=row_idx, col=col_idx, title=label)
+                plot.setAspectLocked(True)
+                plot.hideAxis("left")
+                plot.hideAxis("bottom")
 
-            if idx == 0:
-                self._total_overlay = pg.ImageItem(axisOrder="row-major")
-                self._total_overlay.setZValue(10)
-                plot.addItem(self._total_overlay)
+                image_item = pg.ImageItem(axisOrder="row-major")
+                image_item.setLookupTable(self._lut)
+                image_item.setLevels((row.dm.VMIN, row.dm.VMAX))
+                plot.addItem(image_item)
+                row.image_items.append(image_item)
+
+                if col_idx == 0:
+                    row.total_overlay = pg.ImageItem(axisOrder="row-major")
+                    row.total_overlay.setZValue(10)
+                    plot.addItem(row.total_overlay)
 
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._refresh)
@@ -172,28 +183,33 @@ class DMView(QtWidgets.QMainWindow):
         return overlay
 
     def _refresh(self):
-        total, channels = self.dm.update()
-        frames = [total] + channels
+        for row in self._rows:
+            total, channels = row.dm.update()
+            frames = [total] + channels
 
-        for i, frame in enumerate(frames):
-            if frame is None:
-                frame = self._last_frames[i]
-            else:
-                self._last_frames[i] = frame
+            for i, frame in enumerate(frames):
+                if frame is None:
+                    frame = row.last_frames[i]
+                else:
+                    row.last_frames[i] = frame
 
-            if frame is not None:
-                self._image_items[i].setLevels(self._frame_levels(frame))
-                self._image_items[i].setImage(frame, autoLevels=False)
+                if frame is not None:
+                    row.image_items[i].setLevels(self._frame_levels(frame))
+                    row.image_items[i].setImage(frame, autoLevels=False)
 
-                if i == 0:
-                    self._total_overlay.setImage(
-                        self._total_saturation_overlay(frame), autoLevels=False
-                    )
+                    if i == 0 and row.total_overlay is not None:
+                        row.total_overlay.setImage(
+                            self._total_saturation_overlay(frame), autoLevels=False
+                        )
 
 
 def _parse_args(argv):
     parser = argparse.ArgumentParser(description="Low-bandwidth DM SHM viewer")
-    parser.add_argument("beam", help="Beam index used in dm<beam> shared-memory names")
+    parser.add_argument(
+        "beam",
+        nargs="+",
+        help="One or more beam indices used in dm<beam> shared-memory names",
+    )
     return parser.parse_args(argv)
 
 
@@ -205,7 +221,7 @@ def main(argv=None):
         app = QtWidgets.QApplication([])
 
     win = DMView(args.beam)
-    win.resize(1100, 250)
+    win.resize(1100, 250 * max(1, len(args.beam)))
     win.show()
     return app.exec_()
 
