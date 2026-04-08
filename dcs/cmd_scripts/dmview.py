@@ -85,7 +85,7 @@ def _build_cmap_lut() -> np.ndarray:
     try:
         import matplotlib
 
-        cmap = "cividis"
+        cmap = "RdBu"
         # Matplotlib 3.7+: use the non-deprecated colormap registry API.
         if hasattr(matplotlib, "colormaps"):
             cmap = matplotlib.colormaps[cmap]
