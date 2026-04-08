@@ -286,7 +286,7 @@ void start() {
     if (simmode != 1){
       pthread_create(&tid_refresh, &attr, dms_refresh, NULL);
       pthread_getschedparam(tid_refresh, &policy, &param);
-      printf("Thread priority: %d  Priority policy: %d\n", param.sched_priority, policy); 
+      logprintf("Thread priority: %d  Priority policy: %d\n", param.sched_priority, policy); 
     }
     
   } else

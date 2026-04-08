@@ -1,4 +1,5 @@
 #include <complex> 
+#include <stdarg.h>
 #include <fftw3.h>
 #include <ImageStreamIO.h>
 #include <stdlib.h>

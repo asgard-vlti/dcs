@@ -19,6 +19,7 @@ baldr-start-all = "dcs.cmd_scripts.baldr_start_all:main"
 baldrtt-start-all = "dcs.cmd_scripts.baldrtt_start_all:main"
 flat-save = "dcs.cmd_scripts.flat_save:main"
 flat-load = "dcs.cmd_scripts.flat_load:main"
+dmview = "dcs.cmd_scripts.dmview:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["dcs"]

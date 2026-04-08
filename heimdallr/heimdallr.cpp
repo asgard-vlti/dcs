@@ -819,6 +819,7 @@ int main(int argc, char* argv[]) {
     stop_camera_client();
     
     keep_offloading=false;
+    sem_post(&sem_offload);
     offloading_thread.join();
 
     // Join the fringe-tracking thread
