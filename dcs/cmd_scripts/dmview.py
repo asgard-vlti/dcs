@@ -201,7 +201,10 @@ class DMView(QtWidgets.QMainWindow):
                     row.last_frames[i] = frame
 
                 if frame is not None:
-                    row.image_items[i].setLevels(self._frame_levels(frame))
+                    if i == 0 or i == 1:
+                        row.image_items[i].setLevels((row.dm.VMIN, row.dm.VMAX))
+                    else:
+                        row.image_items[i].setLevels(self._frame_levels(frame))
                     row.image_items[i].setImage(frame, autoLevels=False)
 
                     if i == 0 and row.total_overlay is not None:
@@ -244,7 +247,7 @@ def main(argv=None):
 
     win = DMView(beams)
     if args.beam == ["-1"]:
-        win.resize(875,616)
+        win.resize(875, 616)
     else:
         win.resize(1100, 250 * max(1, len(beams)))
     win.show()
