@@ -94,6 +94,7 @@ void logprintf(int loglevel, const char *fmt, ...) {
   va_end(args);
   printf("\n");
   // Could flush here? !!!
+  fflush(stdout);
 }
 
 // Utility functions
