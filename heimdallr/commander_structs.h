@@ -38,6 +38,7 @@ template <> struct adl_serializer<Status> {
         j["test_ix"] = p.test_ix;
         j["test_n"] = p.test_n;
         j["cnt"] = p.cnt;
+        j["num_ft_frames_missed"] = p.num_ft_frames_missed;
         j["locked"] = p.locked;
         j["itime"] = p.itime;
     }
@@ -62,6 +63,7 @@ template <> struct adl_serializer<Status> {
         j.at("test_ix").get_to(p.test_ix);
         j.at("test_n").get_to(p.test_n);
         j.at("cnt").get_to(p.cnt);
+        j.at("num_ft_frames_missed").get_to(p.num_ft_frames_missed);
         j.at("locked").get_to(p.locked);
         j.at("itime").get_to(p.itime);
     }
@@ -83,6 +85,7 @@ template <> struct adl_serializer<Settings> {
         j["offload_mode"] = p.offload_mode;
         j["servo_mode"] = p.servo_mode;
         j["fixed_dl"] = p.fixed_dl;
+        j["loglevel"] = p.loglevel;
         j["search_offset"] = p.search_offset;
     }
     static void from_json(const json& j, Settings& p) {
@@ -101,6 +104,7 @@ template <> struct adl_serializer<Settings> {
         j.at("offload_mode").get_to(p.offload_mode);
         j.at("servo_mode").get_to(p.servo_mode);
         j.at("fixed_dl").get_to(p.fixed_dl);
+        j.at("loglevel").get_to(p.loglevel);
         j.at("search_offset").get_to(p.search_offset);
     }
    };

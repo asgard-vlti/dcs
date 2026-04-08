@@ -16,8 +16,15 @@
 #include <zmq.hpp>
 #include <chrono>
 #include <semaphore.h>
+#include <sstream>
 
 //----------Defines-----------
+// For logging
+#define LOG_ERROR 1
+#define LOG_WARNING 2
+#define LOG_INFO 3
+#define LOG_DEBUG 4
+
 //#define SIMULATE
 #define OPD_PER_DM_UNIT 6.0 
 #define OPD_PER_PIEZO_UNIT 0.15 //Should be 0.26 
@@ -225,7 +232,7 @@ struct Settings
     double search_delta;
     double target_itime;
     std::string delay_line_type;
-    int offload_mode, servo_mode, fixed_dl;
+    int offload_mode, servo_mode, fixed_dl, loglevel;
     std::vector<double> search_offset;
 };
 
@@ -331,20 +338,34 @@ private:
     void reverse_ft();
 };
 
+//The forward Fourier transforms
+extern ForwardFt *K1ft, *K2ft;
+
+// heimdallr.cpp primitives 
+void logprintf(int loglevel, const char *fmt, ...);
+
+template <typename T>
+inline std::string log_stringify(const T& value) {
+    std::ostringstream stream;
+    stream << value;
+    return stream.str();
+}
+
+// fringe_tracker.cpp functions
 // Main thread function for fringe tracking.
 void start_modulation();
 void end_modulation();
 void fringe_tracker();
 
-// Seeting the delay lines (needed form the main thread and from the commander)
-void set_delay_lines(Eigen::Vector4d dl);
-
-//The forward Fourier transforms
-extern ForwardFt *K1ft, *K2ft;
-
+// cam_client.cpp functions
 // Camera status polling client
 void start_camera_client();
 void stop_camera_client();
+
+
+// dl_offload.cpp functions
+// Seeting the delay lines (needed form the main thread and from the commander)
+void set_delay_lines(Eigen::Vector4d dl);
 
 // Delay line offloads
 extern sem_t sem_offload;
