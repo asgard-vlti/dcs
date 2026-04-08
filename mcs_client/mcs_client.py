@@ -21,6 +21,36 @@ import socket
 
 import subprocess
 
+"""
+Traceback (most recent call last):
+  File "/home/asg/.conda/envs/asgard/bin/mcs-client", line 8, in <module>
+    sys.exit(main())
+  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 951, in main
+    mcs.run()
+  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 249, in run
+    self.publish_all_to_wag()
+  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 403, in publish_all_to_wag
+    script_params = self.gather_script_parameters()
+  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 360, in gather_script_parameters
+    self.server_z.fetch()
+  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 868, in fetch
+    self.handle_message(msg)
+  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 882, in handle_message
+    stats = self.watchdog.collect_wd_status()
+  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 795, in collect_wd_status
+    self._watchdog_lazy_pirate_status(proc_name, zmq_obj)
+  File "/home/asg/Progs/repos/dcs/mcs_client/mcs_client.py", line 762, in _watchdog_lazy_pirate_status
+    result = subprocess.run(
+  File "/home/asg/.conda/envs/asgard/lib/python3.10/subprocess.py", line 503, in run
+    with Popen(*popenargs, **kwargs) as process:
+  File "/home/asg/.conda/envs/asgard/lib/python3.10/subprocess.py", line 971, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+  File "/home/asg/.conda/envs/asgard/lib/python3.10/subprocess.py", line 1762, in _execute_child
+    errpipe_read, errpipe_write = os.pipe()
+OSError: [Errno 24] Too many open files
+"""
+
+
 # Following protocol described in
 # Top-Level Control Software
 # User and Maintenance Manual
