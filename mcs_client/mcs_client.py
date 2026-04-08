@@ -19,7 +19,7 @@ import zmq
 from datetime import datetime, timezone
 import socket
 
-    import subprocess
+import subprocess
 
 # Following protocol described in
 # Top-Level Control Software
@@ -188,6 +188,16 @@ class MCSClient:
         self.wag_req_retries = 2
         self.wag_req_retry_delay_s = 0.05
 
+        self.dcs_adapters = {}
+        for dcs_name, endpoint in dcs_endpoints.items():
+            if dcs_name.startswith("BLD"):
+                self.dcs_adapters[dcs_name] = BaldrAdapter(endpoint)
+            elif dcs_name == "HDLR":
+                self.dcs_adapters[dcs_name] = HeimdallrAdapter(endpoint)
+            else:
+                logging.warning(f"Unknown DCS adapter name '{dcs_name}', skipping.")
+                continue
+
         self.req_z = ZmqReq(publish_endpoint, timeout_ms=self.wag_req_timeout_ms)
         logging.info(f"REQ publish set up on {publish_endpoint}")
 
@@ -198,15 +208,6 @@ class MCSClient:
 
         self.dcs_endpoints = dcs_endpoints
 
-        self.dcs_adapters = {}
-        for dcs_name, endpoint in dcs_endpoints.items():
-            if dcs_name.startswith("BLD"):
-                self.dcs_adapters[dcs_name] = BaldrAdapter(endpoint)
-            elif dcs_name == "HDLR":
-                self.dcs_adapters[dcs_name] = HeimdallrAdapter(endpoint)
-            else:
-                logging.warning(f"Unknown DCS adapter name '{dcs_name}', skipping.")
-                continue
 
         self.requester = "mimir"
 
@@ -877,6 +878,7 @@ class MCSServer:
 
     def handle_message(self, msg):
         if msg == "status":
+            logging.info("recieved status message from WAG")
             stats = self.watchdog.collect_wd_status()
             self.z.send_payload(stats)
         else:
