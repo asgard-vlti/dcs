@@ -65,7 +65,18 @@ class DMshm:
         """
 
         total = self._read_frame(self.total_s)
-        channels = [self._read_frame(ch) for ch in self.channel_s]
+        # channels = [self._read_frame(ch) for ch in self.channel_s]
+        channels = []
+        for i, ch in enumerate(
+            self.channel_s
+        ):  # channels 1-4 need to be scaled to be in [0,1] (currently [-0.5,0.5])
+            if i == 0:
+                channels.append(self._read_frame(ch))
+            else:
+                frame = self._read_frame(ch)
+                if frame is not None:
+                    frame = (frame + 0.5).clip(0.0, 1.0)
+                channels.append(frame)
         return total, channels
 
 
