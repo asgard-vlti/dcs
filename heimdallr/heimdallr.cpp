@@ -93,7 +93,6 @@ void logprintf(int loglevel, const char *fmt, ...) {
   vprintf(fmt, args);
   va_end(args);
   printf("\n");
-  // Could flush here? !!!
 }
 
 // Utility functions
@@ -731,6 +730,12 @@ COMMANDER_REGISTER(m)
 int main(int argc, char* argv[]) {
     IMAGE K1, K2;
 
+    // The loglevel is the first thing to set up!
+    settings.s.loglevel=3; // Default to INFO
+    if (config.contains("loglevel")) {
+        settings.s.loglevel = config["loglevel"].value_or(3);
+    }
+
     // Exit immediately if another instance of this server is running.
     if (!acquire_single_instance_lock("/tmp/asg.heimdallr.lock")) {
         return 1;
@@ -760,7 +765,6 @@ int main(int argc, char* argv[]) {
     settings.s.fixed_dl=3;
     settings.s.search_offset = {0.0, 0.0, 0.0, 0.0};
     settings.s.target_itime=0.0;
-    settings.s.loglevel=2;
 
 #ifndef SIMULATE
     // Initialise the DMs
