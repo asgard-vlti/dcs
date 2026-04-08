@@ -98,7 +98,7 @@ std::string send_mds_cmd(const std::string& message) {
     zmq::message_t reply;
     auto result = mds_zmq_socket.recv(reply, zmq::recv_flags::none);
     if (!result.has_value()) {
-        logprintf(LOG_ERROR, "Timeout or error receiving reply from MDS.\n");
+        logprintf(LOG_ERROR, "Timeout or error receiving reply from MDS.");
         mds_zmq_initialized=false;
         return "0.0";
     }
@@ -111,13 +111,13 @@ bool initialize_delay_line(std::string type){
     if (type == "piezo") {
         init_controllino();
         if (!controllino_initialized) {
-            logprintf(LOG_ERROR, "Failed to initialize Controllino for piezo delay lines.\n");
+            logprintf(LOG_ERROR, "Failed to initialize Controllino for piezo delay lines.");
             return false;
         }
     } else if (type == "hfo") {
         init_mds_zmq();
         if (!mds_zmq_initialized) {
-            logprintf(LOG_ERROR, "Failed to initialize ZMQ for MDS HFO delay lines.\n");
+            logprintf(LOG_ERROR, "Failed to initialize ZMQ for MDS HFO delay lines.");
             return false;
         }
         // Connect to MDS and find the delay line positions.
@@ -127,16 +127,16 @@ bool initialize_delay_line(std::string type){
             std::string reply = send_mds_cmd(message);
             logprintf(LOG_INFO, "%s", reply.c_str());
             hfo_offsets[i] = std::stod(reply);
-            logprintf(LOG_INFO, "HFO%d offset: %g\n", i + 1, hfo_offsets[i]);
+            logprintf(LOG_INFO, "HFO%d offset: %g", i + 1, hfo_offsets[i]);
         }
     } else if (type == "rmn") {
         init_wag_rmn();
         if (!wag_rmn_initialized) {
-            logprintf(LOG_ERROR, "Failed to initialize ZMQ for WAG RMN delay lines.\n");
+            logprintf(LOG_ERROR, "Failed to initialize ZMQ for WAG RMN delay lines.");
             return false;
         }
     } else if (type != "off") {
-        logprintf(LOG_ERROR, "Delay line type not recognised: %s\n", type.c_str());
+        logprintf(LOG_ERROR, "Delay line type not recognised: %s", type.c_str());
         return false;
     } 
  return true;
@@ -174,7 +174,7 @@ void add_to_delay_lines(Eigen::Vector4d dl) {
         auto now = std::chrono::high_resolution_clock::now();
         double seconds_since_last = std::chrono::duration<double>(now - last_hfo_offset).count();
         if (seconds_since_last < 0.5) {
-            logprintf(LOG_INFO, "Not enough time for a new offload.\n");
+            logprintf(LOG_INFO, "Not enough time for a new offload.");
             return;
         }
         // Check to find the total offload requested, adding all values of
@@ -193,7 +193,7 @@ void set_delay_line(int dl, double value) {
     // This function sets the delay line value for a specific telescope.
     // The value is in K1 wavelengths.
     if (dl == 0 || dl >= N_TEL) {
-        logprintf(LOG_INFO, "Delay line number out of range\n");
+        logprintf(LOG_INFO, "Delay line number out of range");
         return;
     }
     next_offload[dl-1] = value;
@@ -225,13 +225,13 @@ void move_piezos(){
             dl_value = 2048 + (int)( (next_offload(i) + search_offset(i) + mod_offload(i)) / OPD_PER_PIEZO_UNIT);
             sprintf(message, "a%d %d\n", i, dl_value);
             recv(controllinoSocket, buffer, sizeof(buffer), 0);
-            if (strlen(buffer) > 0) logprintf(LOG_INFO, "Before starting, controllino: %s\n", buffer);
+            if (strlen(buffer) > 0) logprintf(LOG_INFO, "Before starting, controllino: %s", buffer);
             send(controllinoSocket, message, strlen(message), 0);
-            logprintf(LOG_INFO, "Sending to controllino: %s\n", message);
+            logprintf(LOG_INFO, "Sending to controllino: %s", message);
             usleep(CONTROLLINO_USLEEP);
             recv(controllinoSocket, buffer, sizeof(buffer), 0);
             if (buffer[0] != 'S') {
-                logprintf(LOG_INFO, "Controllino error! Setting state uninitialised.\n");
+                logprintf(LOG_INFO, "Controllino error! Setting state uninitialised.");
                 controllino_initialized = false;
                 return;
             }
@@ -247,7 +247,7 @@ void move_hfo(){
             // Set the delay line value for the current telescope (value in mm of physical motion)
             double dl_value = hfo_offsets[i] - (next_offload(i) + search_offset(i) + mod_offload(i)) * 0.0005;
             std::string message = "moveabs HFO" + std::to_string(i+1) + " " + std::to_string(dl_value);
-            logprintf(LOG_INFO, "%s\n", message.c_str());
+            logprintf(LOG_INFO, "%s", message.c_str());
             {
                 std::string reply = send_mds_cmd(message);
                 logprintf(LOG_INFO, "%s", reply.c_str());
@@ -347,7 +347,7 @@ void move_main_dl()
         //fmt::print("WAG RMN reply: {}\n", reply_str);
     } else {
         wag_rmn_initialized=false;
-        logprintf(LOG_INFO, "Timeout or error receiving reply from WAG RMN.\n");
+        logprintf(LOG_INFO, "Timeout or error receiving reply from WAG RMN.");
     }
     last_offload = next_offload + search_offset + mod_offload;
 }
@@ -374,7 +374,7 @@ void dl_offload(){
                     std::string reply = send_mds_cmd(message);
                     logprintf(LOG_INFO, "%s", reply.c_str());
                     hfo_offsets[i] = std::stod(reply);
-                    logprintf(LOG_INFO, "HFO%d offset: %g\n", i + 1, hfo_offsets[i]);
+                    logprintf(LOG_INFO, "HFO%d offset: %g", i + 1, hfo_offsets[i]);
                     last_offload(i) = 0.0;
                     next_offload(i) = 0.0;
                 }
@@ -398,7 +398,7 @@ void dl_offload(){
                         max_snr = snr;
                     }
                 }
-                logprintf(LOG_INFO, "Search beam max SNR: %g\n", max_snr);
+                logprintf(LOG_INFO, "Search beam max SNR: %g", max_snr);
                 // Check if the SNR is above the threshold
                 if (max_snr > search_snr_threshold) {
                     search_length = 0;
@@ -434,7 +434,7 @@ void dl_offload(){
                 // Do nothing, but update last_offload to avoid repeated logging.
                 last_offload = next_offload + search_offset + mod_offload;
 		    } else {
-                logprintf(LOG_INFO, "Delay line type not recognised\n");
+                logprintf(LOG_INFO, "Delay line type not recognised");
 		    }
 		    // Log delay line type and values to file with timestamp
 		    std::ofstream log_file("/data/dl_offload.log", std::ios::app);

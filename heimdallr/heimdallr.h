@@ -281,6 +281,8 @@ public:
     // for reverse FT ready.
     sem_t sem_new_frame;
     sem_t sem_reverse_ft_ready;
+    // Public just so we set priorities in one place.
+    std::thread thread, reverse_thread; 
 
     // Count of the frame number that has been processed
     long unsigned int cnt=0;
@@ -333,7 +335,6 @@ private:
     double *window;
     fftw_complex *ift_result, *ift;
     fftw_plan plan, rplan;
-    std::thread thread, reverse_thread; 
     std::atomic<int> mode{FT_STARTING};
     void loop();
     void reverse_ft();
