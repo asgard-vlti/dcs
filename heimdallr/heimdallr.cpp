@@ -68,7 +68,9 @@ static bool acquire_single_instance_lock(const char *lock_path) {
         char pid_buf[32];
         int n = std::snprintf(pid_buf, sizeof(pid_buf), "%ld\n", (long)getpid());
         if (n > 0) {
-            (void)write(single_instance_lock_fd, pid_buf, (size_t)n);
+            if (write(single_instance_lock_fd, pid_buf, (size_t)n) < 0) {
+                logprintf(LOG_WARNING, "Failed to write PID to lock file %s: %s", lock_path, std::strerror(errno));
+            }
         }
     }
 
