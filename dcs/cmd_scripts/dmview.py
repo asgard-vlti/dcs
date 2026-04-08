@@ -227,7 +227,10 @@ def main(argv=None):
         app = QtWidgets.QApplication([])
 
     win = DMView(beams)
-    win.resize(1100, 250 * max(1, len(beams)))
+    if args.beam == ["-1"]:
+        win.resize(875,616)
+    else:
+        win.resize(1100, 250 * max(1, len(beams)))
     win.show()
     return app.exec_()
 
