@@ -6,6 +6,7 @@ and all individual channels to the right in a single row.
 
 Usage:
     python dmview.py <beam>
+    python dmview.py -1
 
 """
 
@@ -215,13 +216,14 @@ def _parse_args(argv):
 
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
+    beams = [str(beam) for beam in range(1, 5)] if args.beam == ["-1"] else args.beam
 
     app = QtWidgets.QApplication.instance()
     if app is None:
         app = QtWidgets.QApplication([])
 
-    win = DMView(args.beam)
-    win.resize(1100, 250 * max(1, len(args.beam)))
+    win = DMView(beams)
+    win.resize(1100, 250 * max(1, len(beams)))
     win.show()
     return app.exec_()
 
