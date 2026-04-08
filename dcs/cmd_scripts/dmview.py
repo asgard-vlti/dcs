@@ -84,9 +84,8 @@ def _build_cmap_lut() -> np.ndarray:
     """Build a 256-color cmap LUT. Falls back to a fixed blue-red LUT if needed."""
     try:
         import matplotlib
-        cmap = "cividis"
-        
 
+        cmap = "cividis"
         # Matplotlib 3.7+: use the non-deprecated colormap registry API.
         if hasattr(matplotlib, "colormaps"):
             cmap = matplotlib.colormaps[cmap]
@@ -107,6 +106,7 @@ def _build_cmap_lut() -> np.ndarray:
 
 class DMView(QtWidgets.QMainWindow):
     UPDATE_MS = 200  # 5 Hz refresh for low bandwidth and stable CPU usage.
+    SATURATION_EPS = 0.01
 
     @staticmethod
     def _frame_levels(frame: Frame) -> tuple[float, float]:
@@ -150,9 +150,22 @@ class DMView(QtWidgets.QMainWindow):
             plot.addItem(image_item)
             self._image_items.append(image_item)
 
+            if idx == 0:
+                self._total_overlay = pg.ImageItem(axisOrder="row-major")
+                self._total_overlay.setZValue(10)
+                plot.addItem(self._total_overlay)
+
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._refresh)
         self._timer.start(self.UPDATE_MS)
+
+    def _total_saturation_overlay(self, frame: Frame) -> np.ndarray:
+        overlay = np.zeros((*frame.shape, 4), dtype=np.uint8)
+        low = self.dm.VMIN + self.SATURATION_EPS
+        high = self.dm.VMAX - self.SATURATION_EPS
+        mask = (frame <= low) | (frame >= high)
+        overlay[mask] = (255, 0, 0, 255)
+        return overlay
 
     def _refresh(self):
         total, channels = self.dm.update()
@@ -167,6 +180,11 @@ class DMView(QtWidgets.QMainWindow):
             if frame is not None:
                 self._image_items[i].setLevels(self._frame_levels(frame))
                 self._image_items[i].setImage(frame, autoLevels=False)
+
+                if i == 0:
+                    self._total_overlay.setImage(
+                        self._total_saturation_overlay(frame), autoLevels=False
+                    )
 
 
 def _parse_args(argv):
@@ -183,7 +201,7 @@ def main(argv=None):
         app = QtWidgets.QApplication([])
 
     win = DMView(args.beam)
-    win.resize(1500, 300)
+    win.resize(1100, 250)
     win.show()
     return app.exec_()
 
