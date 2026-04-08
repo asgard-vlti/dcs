@@ -163,7 +163,7 @@ void ForwardFt::loop() {
 #ifdef PRINT_TIMING
     timespec now, then;
 #endif
-    unsigned int ii_shift, jj_shift, szj, last_bad=0;
+    unsigned int ii_shift, jj_shift, szj, last_logged=0;
     cnt = subarray->md->cnt0;
     catch_up_with_sem(subarray, 2);
     while (mode != FT_STOPPING) {
@@ -184,7 +184,8 @@ void ForwardFt::loop() {
                 cnt = subarray->md->cnt0-1;
                 nerrors++;
             }
-            mode = FT_RUNNING;
+            // change from starting to running just once.
+            if (mode == FT_STARTING) mode = FT_RUNNING;
             // Check the write parameter. It really shouldn't be active.
             if (subarray->md->write) {
                 logprintf(LOG_WARNING, "FT: Semaphore signalled but write flag is still set. Skipping frame.\n");
