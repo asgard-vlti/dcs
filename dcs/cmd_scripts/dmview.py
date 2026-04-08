@@ -37,8 +37,9 @@ class DMshm:
         self.total_s = shm(self.BASE_PTH / total_fname)
         self.channel_s = []
         for i in range(self.N_CHANNELS):
-            channel_fname = f"dm{beam}.ch{i:02d}.shm"
+            channel_fname = f"dm{beam}disp{i:02d}.im.shm"
             self.channel_s.append(shm(self.BASE_PTH / channel_fname))
+            print(f"Opened shm to: {self.BASE_PTH / channel_fname}")
 
     def _read_frame(self, shm_obj) -> Optional[Frame]:
         try:
@@ -68,18 +69,20 @@ class DMshm:
         return total, channels
 
 
-def _build_coolwarm_lut() -> np.ndarray:
-    """Build a 256-color coolwarm LUT. Falls back to a fixed blue-red LUT if needed."""
+def _build_cmap_lut() -> np.ndarray:
+    """Build a 256-color cmap LUT. Falls back to a fixed blue-red LUT if needed."""
     try:
         import matplotlib
+        cmap = "cividis"
+        
 
         # Matplotlib 3.7+: use the non-deprecated colormap registry API.
         if hasattr(matplotlib, "colormaps"):
-            cmap = matplotlib.colormaps["coolwarm"]
+            cmap = matplotlib.colormaps[cmap]
         else:
             from matplotlib import cm
 
-            cmap = cm.get_cmap("coolwarm")
+            cmap = cm.get_cmap(cmap)
 
         rgba = cmap(np.linspace(0.0, 1.0, 256))
         return (rgba[:, :3] * 255).astype(np.uint8)
@@ -99,7 +102,7 @@ class DMView(QtWidgets.QMainWindow):
         self.setWindowTitle(f"DM SHM Viewer - beam {beam}")
 
         self.dm = DMshm(beam)
-        self._lut = _build_coolwarm_lut()
+        self._lut = _build_cmap_lut()
 
         central = pg.GraphicsLayoutWidget()
         self.setCentralWidget(central)
