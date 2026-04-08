@@ -334,7 +334,7 @@ private:
     fftw_complex *ift_result, *ift;
     fftw_plan plan, rplan;
     std::thread thread, reverse_thread; 
-    int mode=FT_STARTING;
+    std::atomic<int> mode{FT_STARTING};
     void loop();
     void reverse_ft();
 };
