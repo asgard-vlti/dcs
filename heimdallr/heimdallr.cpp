@@ -1,8 +1,15 @@
 #define TOML_IMPLEMENTATION
+#define SCHED_PRIORITY 70
 #include "heimdallr.h"
 #include <commander/commander.h>
 #include <math.h>
 #include <unistd.h>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <pthread.h>
 // Commander struct definitions for json. This is in a separate file to keep the main code clean.
 #include "commander_structs.h"
 using namespace std::complex_literals;
@@ -36,6 +43,38 @@ Eigen::Vector4d search_offset = Eigen::Vector4d::Zero();
 IMAGE DMs[N_TEL];
 IMAGE master_DMs[N_TEL];
 
+static int single_instance_lock_fd = -1;
+
+static bool acquire_single_instance_lock(const char *lock_path) {
+    single_instance_lock_fd = open(lock_path, O_RDWR | O_CREAT, 0644);
+    if (single_instance_lock_fd < 0) {
+        logprintf(LOG_ERROR, "Failed to open lock file %s: %s. '", lock_path, std::strerror(errno));
+        return false;
+    }
+
+    if (flock(single_instance_lock_fd, LOCK_EX | LOCK_NB) != 0) {
+        if (errno == EWOULDBLOCK) {
+            logprintf(LOG_ERROR, "Another heimdallr server is already running (lock file: %s). ", lock_path);
+        } else {
+            logprintf(LOG_ERROR, "Failed to lock %s: %s", lock_path, std::strerror(errno));
+        }
+        close(single_instance_lock_fd);
+        single_instance_lock_fd = -1;
+        return false;
+    }
+
+    // Best-effort PID write for operator visibility.
+    if (ftruncate(single_instance_lock_fd, 0) == 0) {
+        char pid_buf[32];
+        int n = std::snprintf(pid_buf, sizeof(pid_buf), "%ld\n", (long)getpid());
+        if (n > 0) {
+            (void)write(single_instance_lock_fd, pid_buf, (size_t)n);
+        }
+    }
+
+    return true;
+}
+
 /* =========================================================================
  *         Like printf, but prepends an ISO 8601 UTC timestamp
  * ========================================================================= */
@@ -53,6 +92,8 @@ void logprintf(int loglevel, const char *fmt, ...) {
   va_start(args, fmt);
   vprintf(fmt, args);
   va_end(args);
+  printf("\n");
+  // Could flush here? !!!
 }
 
 // Utility functions
@@ -97,7 +138,7 @@ std::string encode(const char* input, unsigned int size)
 //----------commander functions from here---------------
 void linear_search(uint beam, double start, double stop, double rate, uint search_dt_ms, double search_snr_threashold) {
     if ((beam > N_TEL) || (beam == 0)) {
-        logprintf(LOG_INFO, "Beam number (arg 0) out of range (1 to %d)\n", N_TEL - 1);
+        logprintf(LOG_INFO, "Beam number (arg 0) out of range (1 to %d)", N_TEL - 1);
         return;
     }
     // Set the delay line to the start position
@@ -111,7 +152,7 @@ void linear_search(uint beam, double start, double stop, double rate, uint searc
 
     // Start the search.
     start_search(beam, start,  stop, rate, search_dt_ms, search_snr_threashold);
-    logprintf(LOG_INFO, "Starting search for beam %u from %g to %g at rate %g\n",
+    logprintf(LOG_INFO, "Starting search for beam %u from %g to %g at rate %g",
         beam, start, stop, rate);
     return;
 }
@@ -133,7 +174,7 @@ void set_servo_mode(std::string mode) {
         control_u.dl_offload.setZero();
         settings.s.offload_mode = OFFLOAD_NESTED;
     } else {
-        logprintf(LOG_INFO, "Servo mode not recognised\n");
+        logprintf(LOG_INFO, "Servo mode not recognised");
         settings.mutex.unlock();
         return;
     }
@@ -143,7 +184,7 @@ void set_servo_mode(std::string mode) {
     control_u.piezo.setZero();
     control_u.dm_piston.setZero();
     control_u.search_Nsteps=0;
-    logprintf(LOG_INFO, "Servo mode updated to %d\n", settings.s.servo_mode);
+    logprintf(LOG_INFO, "Servo mode updated to %d", settings.s.servo_mode);
     return;
 }
 
@@ -151,13 +192,13 @@ void set_servo_mode(std::string mode) {
 void set_offload_time(uint time) {
     settings.mutex.lock();
     if (time < 10 || time > 10000) {
-        logprintf(LOG_INFO, "Offload time out of range (0.01 to 10s)\n");
+        logprintf(LOG_INFO, "Offload time out of range (0.01 to 10s)");
         settings.mutex.unlock();
         return;
     }
     settings.s.offload_time_ms = time;
     settings.mutex.unlock();
-    logprintf(LOG_INFO, "Offload time updated to %u ms\n", settings.s.offload_time_ms);
+    logprintf(LOG_INFO, "Offload time updated to %u ms", settings.s.offload_time_ms);
     return;
 }
 
@@ -189,7 +230,7 @@ std::string set_offload_mode(std::string mode) {
     } else if ((mode == "man") || (mode =="manual")) {
         settings.s.offload_mode = OFFLOAD_MANUAL;
     } else {
-        logprintf(LOG_INFO, "Offload mode not recognised\n");
+        logprintf(LOG_INFO, "Offload mode not recognised");
         settings.mutex.unlock();
         return "ERROR: Offload mode not recognised";
     }
@@ -210,7 +251,7 @@ void set_search_offset(std::vector<double> offset_in_microns) {
             search_offset(i) = 0.0;
         }
     }
-    logprintf(LOG_INFO, "Search offset updated to %s\n", log_stringify(search_offset.transpose()).c_str());
+    logprintf(LOG_INFO, "Search offset updated to %s", log_stringify(search_offset.transpose()).c_str());
 }
 
 // Get the delay line offsets (from the servo loop)
@@ -285,9 +326,9 @@ void set_delay_line_type(std::string type) {
         settings.s.delay_line_type = type;
         settings.mutex.unlock();
         initialize_delay_line(type);
-        logprintf(LOG_INFO, "Delay line type updated to %s\n", settings.s.delay_line_type.c_str());
+        logprintf(LOG_INFO, "Delay line type updated to %s", settings.s.delay_line_type.c_str());
     } else {
-        logprintf(LOG_INFO, "Delay line type not recognised: %s\n", type.c_str());
+        logprintf(LOG_INFO, "Delay line type not recognised: %s", type.c_str());
     } 
 }
 
@@ -395,7 +436,7 @@ void test(uint beam, double value, int n) {
     // This is a test function that sets the DM piston to a value
     // and then waits for n seconds.
     if ((beam > N_TEL) || beam==0) {
-        logprintf(LOG_INFO, "Beam number (arg 0) out of range (1 to %d)\n", N_TEL - 1);
+        logprintf(LOG_INFO, "Beam number (arg 0) out of range (1 to %d)", N_TEL - 1);
         return;
     }
     beam_mutex.lock();
@@ -428,11 +469,11 @@ std::vector<double> get_gd_toml_offsets(void){
 // Set the parameters for the default fringe search. 
 void set_search_params(double delta, uint turnaround){
     if (delta <= 0.0 || delta > 10.0){
-        logprintf(LOG_INFO, "Search delta out of range (0.0 to 10.0 microns)\n");
+        logprintf(LOG_INFO, "Search delta out of range (0.0 to 10.0 microns)");
         return;
     }
     if (turnaround < 1 || turnaround > 100){
-        logprintf(LOG_INFO, "Search turnaround out of range (1 to 100 steps)\n");
+        logprintf(LOG_INFO, "Search turnaround out of range (1 to 100 steps)");
         return;
     }
     beam_mutex.lock();
@@ -440,7 +481,7 @@ void set_search_params(double delta, uint turnaround){
     control_u.steps_to_turnaround = turnaround;
     control_u.search_Nsteps = 0;
     beam_mutex.unlock();
-    logprintf(LOG_INFO, "Search parameters updated: delta = %g microns, turnaround = %u steps\n", delta, turnaround);
+    logprintf(LOG_INFO, "Search parameters updated: delta = %g microns, turnaround = %u steps", delta, turnaround);
 }
 
 bool foreground_in_place = false;
@@ -519,13 +560,13 @@ void beams_active(int b1, int b2, int b3, int b4) {
     for (uint i = 0; i < N_TEL; i++) {
         stream << control_u.beams_active[i] << " ";
     }
-    logprintf(LOG_INFO, "%s\n", stream.str().c_str());
+    logprintf(LOG_INFO, "%s", stream.str().c_str());
 }
 
 void set_itime(double itime) {
     // Set the integration time in seconds
     if ((itime < 0) || itime>1000) {
-        logprintf(LOG_INFO, "Target integration time out of range (0 to 1000)\n");
+        logprintf(LOG_INFO, "Target integration time out of range (0 to 1000)");
         return;
     }
     beam_mutex.lock();
@@ -534,7 +575,7 @@ void set_itime(double itime) {
     settings.mutex.lock();
     settings.s.target_itime=itime;
     settings.mutex.unlock();
-    logprintf(LOG_INFO, "New integration started for a total time of %g\n", itime);
+    logprintf(LOG_INFO, "New integration started for a total time of %g", itime);
 }
 
 std::string expstatus(void){
@@ -689,14 +730,19 @@ COMMANDER_REGISTER(m)
 
 int main(int argc, char* argv[]) {
     IMAGE K1, K2;
+
+    // Exit immediately if another instance of this server is running.
+    if (!acquire_single_instance_lock("/tmp/asg.heimdallr.lock")) {
+        return 1;
+    }
  
     // Read in the configuration file
     if (argc < 2) {
-        logprintf(LOG_INFO, "Usage: %s <config file>.toml [options]\n", argv[0]);
+        logprintf(LOG_INFO, "Usage: %s <config file>.toml [options]", argv[0]);
         return 1;
     } else {
         config = toml::parse_file(argv[1]);
-        logprintf(LOG_INFO, "Configuration file read: %s\n", log_stringify(config["name"]).c_str());
+        logprintf(LOG_INFO, "Configuration file read: %s", log_stringify(config["name"]).c_str());
     }
 
     // Fill in default settings (ideally from config file!)
@@ -729,7 +775,7 @@ int main(int argc, char* argv[]) {
 #else
     ImageStreamIO_openIm(&K1, "shei_k1");
     ImageStreamIO_openIm(&K2, "shei_k2");
-    logprintf(LOG_INFO, "Simulation mode!\n");
+    logprintf(LOG_INFO, "Simulation mode!");
    
 #endif
     K1ft = new ForwardFt(&K1);
@@ -741,6 +787,23 @@ int main(int argc, char* argv[]) {
 
     // Start the main fringe-tracking thread. 
     std::thread fringe_thread(fringe_tracker);
+    
+        // Prepare the thread atributes.
+    //pthread_attr_t attr;
+    struct sched_param param;
+    int policy;
+    //pthread_attr_init(&attr);
+    //pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+    //pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+    param.sched_priority=SCHED_PRIORITY;
+    //pthread_attr_setschedparam(&attr, &param);
+
+    // Set the K1ft, K2ft and fringe-tracking threads to real-time priority.
+    pthread_setschedparam(K1ft->thread.native_handle(), SCHED_FIFO, &param);
+    pthread_setschedparam(K2ft->thread.native_handle(), SCHED_FIFO, &param);
+    pthread_setschedparam(fringe_thread.native_handle(), SCHED_FIFO, &param);
+    pthread_getschedparam(fringe_thread.native_handle(), &policy, &param);
+    logprintf(LOG_INFO, "Fringe thread priority: %d  Priority policy: %d\n", param.sched_priority, policy); 
 
     // Set a delay line, and start the offloading thread.
     initialize_delay_line(config["servo"]["dl_type"].value_or("rmn"));
@@ -765,4 +828,9 @@ int main(int argc, char* argv[]) {
     // Join the FFTW threads. !!! Doesn't seem to work.
     K1ft->stop();
     K2ft->stop();
+
+    if (single_instance_lock_fd >= 0) {
+        close(single_instance_lock_fd);
+        single_instance_lock_fd = -1;
+    }
 }
