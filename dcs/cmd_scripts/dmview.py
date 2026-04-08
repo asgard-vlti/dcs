@@ -1,0 +1,153 @@
+"""
+dmview.py
+
+A simple viewer for the DM SHM data, with no buttons. Shows the total command on the left
+and all individual channels to the right in a single row.
+
+Usage:
+    python dmview.py <beam>
+
+"""
+
+import argparse
+import pathlib
+import sys
+from typing import Optional
+
+import numpy as np
+import pyqtgraph as pg
+from PyQt5 import QtCore, QtWidgets
+from xaosim.shmlib import shm
+
+Frame = np.ndarray
+
+
+class DMshm:
+    VMIN = 0
+    VMAX = 1
+
+    ARR_SHAPE = (12, 12)
+
+    N_CHANNELS = 5
+
+    BASE_PTH = pathlib.Path("/dev/shm/")
+
+    def __init__(self, beam):
+        total_fname = f"dm{beam}.im.shm"
+        self.total_s = shm(self.BASE_PTH / total_fname)
+        self.channel_s = []
+        for i in range(self.N_CHANNELS):
+            channel_fname = f"dm{beam}.ch{i:02d}.shm"
+            self.channel_s.append(shm(self.BASE_PTH / channel_fname))
+
+    def _read_frame(self, shm_obj) -> Optional[Frame]:
+        try:
+            data = shm_obj.get_data()
+        except (OSError, RuntimeError, ValueError, AttributeError):
+            return None
+
+        if data is None:
+            return None
+
+        arr = np.asarray(data)
+        if arr.size != self.ARR_SHAPE[0] * self.ARR_SHAPE[1]:
+            return None
+
+        return arr.reshape(self.ARR_SHAPE)
+
+    def update(self):
+        """
+        Read total + channel frames from shared memory.
+
+        Returns:
+            tuple[np.ndarray | None, list[np.ndarray | None]]: total frame and channel frames.
+        """
+
+        total = self._read_frame(self.total_s)
+        channels = [self._read_frame(ch) for ch in self.channel_s]
+        return total, channels
+
+
+def _build_coolwarm_lut() -> np.ndarray:
+    """Build a 256-color coolwarm LUT. Falls back to a fixed blue-red LUT if needed."""
+    try:
+        from matplotlib import cm
+
+        rgba = cm.get_cmap("coolwarm")(np.linspace(0.0, 1.0, 256))
+        return (rgba[:, :3] * 255).astype(np.uint8)
+    except ImportError:
+        ramp = np.linspace(0.0, 1.0, 256)
+        red = (255 * ramp).astype(np.uint8)
+        blue = (255 * (1.0 - ramp)).astype(np.uint8)
+        green = np.zeros_like(red, dtype=np.uint8)
+        return np.column_stack((red, green, blue))
+
+
+class DMView(QtWidgets.QMainWindow):
+    UPDATE_MS = 200  # 5 Hz refresh for low bandwidth and stable CPU usage.
+
+    def __init__(self, beam):
+        super().__init__()
+        self.setWindowTitle(f"DM SHM Viewer - beam {beam}")
+
+        self.dm = DMshm(beam)
+        self._lut = _build_coolwarm_lut()
+
+        central = pg.GraphicsLayoutWidget()
+        self.setCentralWidget(central)
+
+        self._image_items = []
+        self._labels = ["total"] + [f"ch{i:02d}" for i in range(self.dm.N_CHANNELS)]
+        self._last_frames: list[Optional[Frame]] = [None] * (self.dm.N_CHANNELS + 1)
+
+        for idx, label in enumerate(self._labels):
+            plot = central.addPlot(row=0, col=idx, title=label)
+            plot.setAspectLocked(True)
+            plot.hideAxis("left")
+            plot.hideAxis("bottom")
+
+            image_item = pg.ImageItem(axisOrder="row-major")
+            image_item.setLookupTable(self._lut)
+            image_item.setLevels((self.dm.VMIN, self.dm.VMAX))
+            plot.addItem(image_item)
+            self._image_items.append(image_item)
+
+        self._timer = QtCore.QTimer(self)
+        self._timer.timeout.connect(self._refresh)
+        self._timer.start(self.UPDATE_MS)
+
+    def _refresh(self):
+        total, channels = self.dm.update()
+        frames = [total] + channels
+
+        for i, frame in enumerate(frames):
+            if frame is None:
+                frame = self._last_frames[i]
+            else:
+                self._last_frames[i] = frame
+
+            if frame is not None:
+                self._image_items[i].setImage(frame, autoLevels=False)
+
+
+def _parse_args(argv):
+    parser = argparse.ArgumentParser(description="Low-bandwidth DM SHM viewer")
+    parser.add_argument("beam", help="Beam index used in dm<beam> shared-memory names")
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = _parse_args(sys.argv[1:] if argv is None else argv)
+
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        app = QtWidgets.QApplication([])
+
+    win = DMView(args.beam)
+    win.resize(1500, 300)
+    win.show()
+    return app.exec_()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
