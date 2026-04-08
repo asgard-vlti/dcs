@@ -162,7 +162,7 @@ void ForwardFt::loop() {
 #ifdef PRINT_TIMING
     timespec now, then;
 #endif
-    unsigned int ii_shift, jj_shift, szj;
+    unsigned int ii_shift, jj_shift, szj, last_bad=0;
     cnt = subarray->md->cnt0;
     catch_up_with_sem(subarray, 2);
     while (mode != FT_STOPPING) {
@@ -173,9 +173,12 @@ void ForwardFt::loop() {
             // Put this here just in case there is a re-start with a new size. Unlikely!
             szj = subim_sz/2 + 1;
             if ((subarray->md->cnt0 > cnt+2)  && (mode == FT_RUNNING)) {
-                logprintf(LOG_WARNING, "Missed cam frames: %llu %llu\n",
-                    (unsigned long long) subarray->md->cnt0,
-                    (unsigned long long) cnt);
+                if (cnt - last_logged > 500){
+                    logprintf(LOG_WARNING, "Missed cam frames: %lu %lu\n",
+                    (unsigned long) subarray->md->cnt0,
+                    (unsigned long) cnt);
+                    last_logged = cnt;
+                }
                 catch_up_with_sem(subarray,2);
                 cnt = subarray->md->cnt0-1;
                 nerrors++;
