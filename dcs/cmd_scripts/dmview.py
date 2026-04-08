@@ -179,8 +179,8 @@ class DMView(QtWidgets.QMainWindow):
 
     def _total_saturation_overlay(self, frame: Frame) -> np.ndarray:
         overlay = np.zeros((*frame.shape, 4), dtype=np.uint8)
-        low = self.dm.VMIN + self.SATURATION_EPS
-        high = self.dm.VMAX - self.SATURATION_EPS
+        low = DMshm.VMIN + self.SATURATION_EPS
+        high = DMshm.VMAX - self.SATURATION_EPS
         mask = (frame <= low) | (frame >= high)
         mask[0, 0] = False
         mask[0, -1] = False
@@ -243,7 +243,10 @@ def main(argv=None):
     app.installEventFilter(hotkey_filter)
 
     win = DMView(beams)
-    win.resize(1100, 250 * max(1, len(beams)))
+    if args.beam == ["-1"]:
+        win.resize(875,616)
+    else:
+        win.resize(1100, 250 * max(1, len(beams)))
     win.show()
     return app.exec_()
 
