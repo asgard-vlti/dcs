@@ -105,6 +105,22 @@ def _build_coolwarm_lut() -> np.ndarray:
 class DMView(QtWidgets.QMainWindow):
     UPDATE_MS = 200  # 5 Hz refresh for low bandwidth and stable CPU usage.
 
+    @staticmethod
+    def _frame_levels(frame: Frame) -> tuple[float, float]:
+        low = float(np.nanmin(frame))
+        high = float(np.nanmax(frame))
+
+        if not np.isfinite(low) or not np.isfinite(high):
+            return 0.0, 1.0
+
+        if high <= low:
+            pad = 0.05 if low == 0.0 else abs(low) * 0.05
+            return low - pad, high + pad
+
+        span = high - low
+        pad = span * 0.02
+        return low - pad, high + pad
+
     def __init__(self, beam):
         super().__init__()
         self.setWindowTitle(f"DM SHM Viewer - beam {beam}")
@@ -146,6 +162,7 @@ class DMView(QtWidgets.QMainWindow):
                 self._last_frames[i] = frame
 
             if frame is not None:
+                self._image_items[i].setLevels(self._frame_levels(frame))
                 self._image_items[i].setImage(frame, autoLevels=False)
 
 
