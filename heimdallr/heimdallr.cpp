@@ -95,6 +95,7 @@ void logprintf(int loglevel, const char *fmt, ...) {
   vprintf(fmt, args);
   va_end(args);
   printf("\n");
+  fflush(stdout);
 }
 
 // Utility functions

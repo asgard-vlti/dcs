@@ -673,7 +673,7 @@ class Watchdog:
     def __init__(self, hdlr_zmq):
         self.watchdog_last_check = time.time()
         self.watchdog_fast_timeout_ms = 80
-        self.watchdog_fast_retries = 1
+        self.watchdog_fast_retries = 2
         self.watchdog_retry_delay_s = 0.02
         # TODO: use file of all the endpoints everywhere
         self.watchdog_zmqs = {

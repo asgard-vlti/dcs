@@ -168,6 +168,7 @@ void ForwardFt::loop() {
     catch_up_with_sem(subarray, 2);
     while (mode != FT_STOPPING) {
         ImageStreamIO_semwait(subarray, 2);
+        catch_up_with_sem(subarray, 2);
         // At this point, subarray->md->cnt0 has been incremented by the camera thread, 
         // and the new frame is available in subarray->array.SI32. 
         if (subarray->md->cnt0 != cnt) {
@@ -185,12 +186,11 @@ void ForwardFt::loop() {
                     (unsigned long) cnt);
                     last_logged = cnt;
                 }
-                catch_up_with_sem(subarray,2);
-                cnt = current_cnt0;
                 // Signal to the fringe tracker that there is a 
                 // bad frame (i.e. this thread continuing, but no
                 // processing required)
                 bad_frame=true;
+                cnt = current_cnt0;
                 sem_post(&sem_new_frame);
                 nerrors++;
                 continue;
@@ -207,7 +207,7 @@ void ForwardFt::loop() {
             // control_u.nbreads - 1 - control_u.tsig_len
             if ( (control_u.nbreads > 1) && (subarray->array.SI32[0] > (int)(control_u.nbreads - 1 - control_u.tsig_len)) ) {
             	 bad_frame=true;
-                 cnt++;
+                 cnt = current_cnt0;
                  sem_post(&sem_new_frame);
                  continue;
             }
@@ -262,7 +262,7 @@ void ForwardFt::loop() {
             else
                 {
                     bad_frame=true;
-                    cnt++;
+                    cnt = current_cnt0;
                     sem_post(&sem_new_frame);
                     continue;
                 }
@@ -302,12 +302,9 @@ void ForwardFt::loop() {
                 logprintf(LOG_DEBUG, "PS time: %ld", now.tv_nsec - then.tv_nsec);
             then = now;
 #endif
-            // As long as this is the same type as cnt0, it should wrap around correctly
-            // The reason it is here and not before power spectrum computation is because we need at
-            // lease 1 power spectrum in order for the group delay.
-            cnt++;
-
-            // Signal that a new frame is available.
+            // Update cnt in a very robust simple way, and signal that a new frame is available.
+			// This is here and not earlier 
+            cnt = current_cnt0;
             sem_post(&sem_new_frame);
 
             // Copy the Fourier Transform to the place needed for reverse_ft

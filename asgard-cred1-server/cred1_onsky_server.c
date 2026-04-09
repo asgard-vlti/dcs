@@ -906,9 +906,9 @@ void* fetch_imgs(void *) {
 
           // ---------------- SHM house keeping ------------------
           shm_ROI_live[ri].md->write = 0;
-          ImageStreamIO_sempost(&shm_ROI_live[ri], -1);
           shm_ROI_live[ri].md->cnt0++;
           shm_ROI_live[ri].md->cnt1++;
+          ImageStreamIO_sempost(&shm_ROI_live[ri], -1);
 
           // -------------- writing to ROI cubes ----------------
           liveroi_index = shm_img->md->cnt0 % ROI[ri].nbs;
@@ -1468,7 +1468,9 @@ int main(int argc, char **argv) {
   update_gain(1);   // engineering startup configuration
   show_cam_conf();
   shm_setup(1);  // setup everything, including the ROI SHMs  
+  set_split_mode(1);
   usleep(100000); // Sleep - if we don't so this there are Kernel errors.
+  // Now set the split mode.
 
   // --------------------------
   // start the commander server
