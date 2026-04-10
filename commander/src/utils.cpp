@@ -16,15 +16,15 @@ static int single_instance_lock_fd = -1, printlevel=LOG_INFO;
 bool acquire_single_instance_lock(const char *lock_path) {
     single_instance_lock_fd = open(lock_path, O_RDWR | O_CREAT, 0644);
     if (single_instance_lock_fd < 0) {
-        logprintf(LOG_WARNING, LOG_ERROR, "Failed to open lock file %s: %s. '", lock_path, std::strerror(errno));
+        error("Failed to open lock file %s: %s. '", lock_path, std::strerror(errno));
         return false;
     }
 
     if (flock(single_instance_lock_fd, LOCK_EX | LOCK_NB) != 0) {
         if (errno == EWOULDBLOCK) {
-            logprintf(LOG_WARNING, LOG_ERROR, "Another server is already running (lock file: %s). ", lock_path);
+            error("Another server is already running (lock file: %s). ", lock_path);
         } else {
-            logprintf(LOG_WARNING, LOG_ERROR, "Failed to lock %s: %s", lock_path, std::strerror(errno));
+            error("Failed to lock %s: %s", lock_path, std::strerror(errno));
         }
         close(single_instance_lock_fd);
         single_instance_lock_fd = -1;
@@ -37,7 +37,7 @@ bool acquire_single_instance_lock(const char *lock_path) {
         int n = std::snprintf(pid_buf, sizeof(pid_buf), "%ld\n", (long)getpid());
         if (n > 0) {
             if (write(single_instance_lock_fd, pid_buf, (size_t)n) < 0) {
-                logprintf(LOG_WARNING, LOG_WARNING, "Failed to write PID to lock file %s: %s", lock_path, std::strerror(errno));
+                warn("Failed to write PID to lock file %s: %s", lock_path, std::strerror(errno));
             }
         }
     }
@@ -54,7 +54,7 @@ void unacquire_single_instance_lock(){
 
 int set_log_level(int level) {
     if (level < LOG_ERROR || level > LOG_DEBUG) {
-        logprintf(printlevel, LOG_WARNING, "Invalid log level %d. Valid levels are %d (ERROR) to %d (DEBUG).", level, LOG_ERROR, LOG_DEBUG);
+        warn("Invalid log level %d. Valid levels are %d (ERROR) to %d (DEBUG).", level, LOG_ERROR, LOG_DEBUG);
         return -1;
     }
     printlevel = level;
@@ -64,7 +64,7 @@ int set_log_level(int level) {
 /* =========================================================================
  *         Like printf, but prepends an ISO 8601 UTC timestamp
  * ========================================================================= */
-void logprintf(int printlevel, int loglevel, const char *fmt, ...) {
+void logprintf(int loglevel, const char *fmt, ...) {
   // Lower loglevels are more important. 
   if (loglevel > printlevel) {
     return;

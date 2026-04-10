@@ -87,14 +87,14 @@ void MakeOpen(int dmid, DM* hdm);
  * ========================================================================= */
 void MakeOpen(int dmid, DM* hdm) {
   memset(hdm, 0, sizeof(DM));
-  logprintf(LOG_INFO, LOG_INFO, "Attempting to open device %s", snumbers[dmid-1]);
+  info("Attempting to open device %s", snumbers[dmid-1]);
   rv = BMCOpen(hdm, snumbers[dmid-1]);
   
   if (rv) {
-    logprintf(LOG_INFO, LOG_INFO, "Error %d opening the driver type %u.", rv, (unsigned int)hdm->Driver_Type);
-    logprintf(LOG_INFO, LOG_INFO, "%s\n", BMCErrorString(rv));
+    error("Error %d opening the driver type %u.", rv, (unsigned int)hdm->Driver_Type);
+    error("%s\n", BMCErrorString(rv));
 
-    logprintf(LOG_INFO, LOG_INFO, "Press any key to exit.");
+    info("Press any key to exit.");
     getc(stdin);
     exit(0);
   }
