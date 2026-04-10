@@ -181,7 +181,7 @@ void ForwardFt::loop() {
             // This is bad - we shoudl catch up with the semafore and continue.
             if ((current_cnt0 > cnt+2)  && (mode == FT_RUNNING)) {
                 if (cnt - last_logged > 500){
-                    logprintf(settings.s.loglevel, LOG_WARNING, "Missed cam frames: %lu %lu",
+                    warn("Missed cam frames: %lu %lu",
                     (unsigned long) current_cnt0,
                     (unsigned long) cnt);
                     last_logged = cnt;
@@ -199,7 +199,7 @@ void ForwardFt::loop() {
             if (mode == FT_STARTING) mode = FT_RUNNING;
             // Check the write parameter. It really shouldn't be active.
             if (subarray->md->write) {
-                logprintf(settings.s.loglevel, LOG_WARNING, "FT: Semaphore signalled but write flag is still set. Skipping frame.");
+                warn("FT: Semaphore signalled but write flag is still set. Skipping frame.");
                 continue;
             }
             // In NDMR mode, the first pixel of the image contains the frame counter. 
@@ -252,7 +252,7 @@ void ForwardFt::loop() {
 #ifdef PRINT_TIMING
             clock_gettime(CLOCK_REALTIME, &now);
             if (then.tv_sec == now.tv_sec)
-                logprintf(settings.s.loglevel, LOG_INFO, "Window and FFT time: %ld", now.tv_nsec - then.tv_nsec);
+                info("Window and FFT time: %ld", now.tv_nsec - then.tv_nsec);
             then = now;
 #endif
             // If the flux is negative, signal a bad frame.
@@ -299,7 +299,7 @@ void ForwardFt::loop() {
 #ifdef PRINT_TIMING
             clock_gettime(CLOCK_REALTIME, &now);
             if (then.tv_sec == now.tv_sec)
-                logprintf(settings.s.loglevel, LOG_DEBUG, "PS time: %ld", now.tv_nsec - then.tv_nsec);
+                debug("PS time: %ld", now.tv_nsec - then.tv_nsec);
             then = now;
 #endif
             // Update cnt in a very robust simple way, and signal that a new frame is available.
@@ -319,7 +319,7 @@ void ForwardFt::loop() {
             //std::cout << subarray->name << ": " << cnt << std::endl;
         } else {
             // This shouldn't happen, but if it does, just continue
-            logprintf(settings.s.loglevel, LOG_WARNING, "FT: Semaphore signalled but no new frame");
+            warn("FT: Semaphore signalled but no new frame");
             nerrors++;
         }
     }
@@ -350,7 +350,7 @@ void ForwardFt::reverse_ft() {
                 x_px = lround(fs.x_px_K2[bl]) % K2ft->subim_sz;
                 y_px = lround(fs.y_px_K2[bl]) % K2ft->subim_sz;
             } else {
-                logprintf(settings.s.loglevel, LOG_ERROR, "Wrong filternum!");
+                error("Wrong filternum!");
                 continue;
             }
             // During the copying loop only, we need a lock

@@ -11,7 +11,7 @@
 #include <sys/file.h>
 #include <unistd.h>
 
-static int single_instance_lock_fd = -1;
+static int single_instance_lock_fd = -1, printlevel=LOG_INFO;
 
 bool acquire_single_instance_lock(const char *lock_path) {
     single_instance_lock_fd = open(lock_path, O_RDWR | O_CREAT, 0644);
@@ -52,6 +52,15 @@ void unacquire_single_instance_lock(){
     }
 }
 
+int set_log_level(int level) {
+    if (level < LOG_ERROR || level > LOG_DEBUG) {
+        logprintf(printlevel, LOG_WARNING, "Invalid log level %d. Valid levels are %d (ERROR) to %d (DEBUG).", level, LOG_ERROR, LOG_DEBUG);
+        return -1;
+    }
+    printlevel = level;
+    return printlevel;
+}
+
 /* =========================================================================
  *         Like printf, but prepends an ISO 8601 UTC timestamp
  * ========================================================================= */
@@ -65,6 +74,11 @@ void logprintf(int printlevel, int loglevel, const char *fmt, ...) {
   char timebuf[21];
   strftime(timebuf, sizeof(timebuf), "%Y-%m-%dT%H:%M:%SZ", tm_info);
   printf("%s ", timebuf);
+  if (loglevel >= LOG_ERROR && loglevel <= LOG_DEBUG) {
+      const char* level_names[] = LOG_LEVEL_NAMES;
+      const char* level_colors[] = LOG_LEVEL_COLORS;
+      printf("%s[%s]%s ", level_colors[loglevel - 1], level_names[loglevel - 1], "\033[0m");
+  }
   va_list args;
   va_start(args, fmt);
   vprintf(fmt, args);

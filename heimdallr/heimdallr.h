@@ -21,7 +21,6 @@
 // This shouldn't be here, but I put the logging stuff in commander.
 #include <commander/commander.h>
 
-
 //----------Defines-----------
 //#define SIMULATE
 #define OPD_PER_DM_UNIT 6.0 

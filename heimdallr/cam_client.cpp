@@ -70,7 +70,7 @@ void camera_poll_loop() {
                 auto status = nlohmann::json::parse(payload, nullptr, false);
                 if (!status.is_discarded()) {
                     update_camera_status(status);
-                } else logprintf(settings.s.loglevel, LOG_INFO, "Json ERROR!!!");
+                } else info("Json ERROR!!!");
             }
         } catch (const zmq::error_t&) {
             need_reconnect = true;
@@ -79,7 +79,7 @@ void camera_poll_loop() {
         }
 
         if (need_reconnect && keep_cam_polling.load()) {
-	        logprintf(settings.s.loglevel, LOG_INFO, "Reconnecting");
+	        info("Reconnecting");
             reconnect_cam_socket(socket, context);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(POLL_PERIOD_MS));
