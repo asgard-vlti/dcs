@@ -326,6 +326,8 @@ void ForwardFt::loop() {
             nerrors++;
         }
     }
+    // Make sure the reverse ft thread is also able to exit cleanly
+    sem_post(&sem_reverse_ft_ready);
 }
 
 void ForwardFt::reverse_ft() {
