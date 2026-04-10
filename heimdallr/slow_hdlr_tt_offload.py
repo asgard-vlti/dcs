@@ -12,7 +12,10 @@ telescopes by weighted least squares.
 import time
 import zmq
 import numpy as np
-import ZMQ_control_client as Z
+try:
+  import ZMQ_control_client as Z
+except:
+  import heimdallr.ZMQ_control_client as Z
 
 zmq_context = zmq.Context()
 

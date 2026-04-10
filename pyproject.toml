@@ -20,6 +20,7 @@ baldrtt-start-all = "dcs.cmd_scripts.baldrtt_start_all:main"
 flat-save = "dcs.cmd_scripts.flat_save:main"
 flat-load = "dcs.cmd_scripts.flat_load:main"
 dmview = "dcs.cmd_scripts.dmview:main"
+h-tilts = "heimdallr.slow_hdlr_tt_offload:main_loop"
 
 [tool.hatch.build.targets.wheel]
 packages = ["dcs"]

@@ -54,7 +54,7 @@ int nvact       = 144;   // number of "virtual" acutators of the DM
 int keepgoing   = 0;     // flag to control the DM update loop
 int nch_prev    = 0;     // keep track of the # of channels before a change
 char dashline[80] =
-  "-----------------------------------------------------------------------------\n";
+  "-----------------------------------------------------------------------------";
 
 int ndm = 4; // the number of DMs to be connected
 DM *hdms[4];  // the handles for the different deformable mirrors
@@ -87,18 +87,18 @@ void MakeOpen(int dmid, DM* hdm);
  * ========================================================================= */
 void MakeOpen(int dmid, DM* hdm) {
   memset(hdm, 0, sizeof(DM));
-  logprintf(LOG_INFO, LOG_INFO, "Attempting to open device %s\n", snumbers[dmid-1]);
+  logprintf(LOG_INFO, LOG_INFO, "Attempting to open device %s", snumbers[dmid-1]);
   rv = BMCOpen(hdm, snumbers[dmid-1]);
   
   if (rv) {
-    logprintf(LOG_INFO, LOG_INFO, "Error %d opening the driver type %u.\n", rv, (unsigned int)hdm->Driver_Type);
-    logprintf(LOG_INFO, LOG_INFO, "%s\n\n", BMCErrorString(rv));
+    logprintf(LOG_INFO, LOG_INFO, "Error %d opening the driver type %u.", rv, (unsigned int)hdm->Driver_Type);
+    logprintf(LOG_INFO, LOG_INFO, "%s\n", BMCErrorString(rv));
 
-    logprintf(LOG_INFO, LOG_INFO, "Press any key to exit.\n");
+    logprintf(LOG_INFO, LOG_INFO, "Press any key to exit.");
     getc(stdin);
     exit(0);
   }
-  logprintf(LOG_INFO, LOG_INFO, "Opened Device %d with %d actuators.\n", hdm->DevId, hdm->ActCount);
+  logprintf(LOG_INFO, LOG_INFO, "Opened Device %d with %d actuators.", hdm->DevId, hdm->ActCount);
   
   rv = BMCLoadMap(hdm, NULL, map_lut[dmid-1]);  // load the mapping into map_lut
 }
@@ -232,7 +232,7 @@ void* dms_refresh(void *) {
       cmd = map2D_2_cmd(shmarray[kk][nch].array.D);
       rv = BMCSetArray(hdms[kk], cmd, map_lut[kk]);  // send cmd to DM
       if (rv) {
-	logprintf(LOG_INFO, LOG_INFO, "%s\n\n", BMCErrorString(rv));
+	logprintf(LOG_INFO, LOG_INFO, "%s\n", BMCErrorString(rv));
       }
       free(cmd);
     }
@@ -261,7 +261,12 @@ void start() {
 
   if (keepgoing == 0) {
     keepgoing = 1; // raise the flag
-    printf("DM control loop START\n");
+    logprintf(LOG_INFO, LOG_INFO, "DM control loop START");
+    pthread_attr_init(&attr);
+    pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+    pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+    param.sched_priority=SCHED_PRIORITY;
+    pthread_attr_setschedparam(&attr, &param);
 
     // trigger the shm monitoring threads
     for (kk = 0; kk < ndm; kk++) {
@@ -271,11 +276,11 @@ void start() {
     if (simmode != 1){
       pthread_create(&tid_refresh, &attr, dms_refresh, NULL);
       pthread_getschedparam(tid_refresh, &policy, &param);
-      logprintf(LOG_INFO, LOG_INFO, "Thread priority: %d  Priority policy: %d\n", param.sched_priority, policy); 
+      logprintf(LOG_INFO, LOG_INFO, "Thread priority: %d  Priority policy: %d", param.sched_priority, policy); 
     }
     
   } else
-    logprintf(LOG_INFO, LOG_INFO, "DM control loop already running!\n");
+    logprintf(LOG_INFO, LOG_INFO, "DM control loop already running!");
   sprintf(drv_status, "%s", "running");
 
 }
@@ -287,7 +292,7 @@ void stop() {
   if (keepgoing == 1)
     keepgoing = 0;
   else
-    logprintf(LOG_INFO, LOG_INFO, "DM control loop already off\n");
+    logprintf(LOG_INFO, LOG_INFO, "DM control loop already off");
   sprintf(drv_status, "%s", "idle");
 }
 
@@ -332,7 +337,7 @@ void set_nch(int ival) {
   nch_prev = nch; // memory of the previous number of channels
   nch = ival;
   shm_setup();
-  logprintf(LOG_INFO, LOG_INFO, "Success: # channels = %d\n", ival);
+  logprintf(LOG_INFO, LOG_INFO, "Success: # channels = %d", ival);
 }
 
 void reset(int dmid, int channel) {
@@ -346,7 +351,7 @@ void reset(int dmid, int channel) {
   if (dmid <= ndm) {
     if (dmid > 0) {
       if (channel < 0) {
-	logprintf(LOG_INFO, LOG_INFO, "Reset all virtual channels of DM %d!\n", dmid);
+	logprintf(LOG_INFO, LOG_INFO, "Reset all virtual channels of DM %d!", dmid);
 	for (int kk = 0; kk < nch; kk++) {
 	  live_channel = shmarray[dmid-1][kk].array.D;  // live pointer
 	  shmarray[dmid-1][kk].md->write = 1;  // signaling about to write
@@ -359,7 +364,7 @@ void reset(int dmid, int channel) {
 	}
       }
       else if (channel < nch) {
-	logprintf(LOG_INFO, LOG_INFO, "Reset virtual channel %d of DM %d\n", channel, dmid);
+	logprintf(LOG_INFO, LOG_INFO, "Reset virtual channel %d of DM %d", channel, dmid);
 	live_channel = shmarray[dmid-1][channel].array.D;  // live pointer
 	shmarray[dmid-1][channel].md->write = 1;  // signaling about to write
 	memcpy(live_channel,
@@ -370,12 +375,12 @@ void reset(int dmid, int channel) {
 	shmarray[dmid-1][channel].md->write = 0;  // done writing
       }
       else {
-	logprintf(LOG_INFO, LOG_INFO, "Virtual channels 0-%d have been set-up!\n", nch);
+	logprintf(LOG_INFO, LOG_INFO, "Virtual channels 0-%d have been set-up!", nch);
       }
     }
   }
   else
-    logprintf(LOG_INFO, LOG_INFO, "Only %d DMs on Asgard\n", ndm);
+    logprintf(LOG_INFO, LOG_INFO, "Only %d DMs on Asgard", ndm);
 }
 
 void quit() {
@@ -385,23 +390,23 @@ void quit() {
   int kk, ii;
   if (keepgoing == 1) stop();
   
-  logprintf(LOG_INFO, LOG_INFO, "DM driver server shutting down!\n");
+  logprintf(LOG_INFO, LOG_INFO, "DM driver server shutting down!");
     
   if (simmode != 1) {
     for (kk = 0; kk < ndm; kk++)
       rv = BMCClearArray(hdms[kk]);
     if (rv) {
-      logprintf(LOG_INFO, LOG_INFO, "%s\n\n", BMCErrorString(rv));
-      logprintf(LOG_INFO, LOG_INFO, "Error %d clearing voltages.\n", rv);
+      logprintf(LOG_INFO, LOG_INFO, "%s\n", BMCErrorString(rv));
+      logprintf(LOG_INFO, LOG_INFO, "Error %d clearing voltages.", rv);
     }
     
     for (kk = 0; kk < ndm; kk++) {
       rv = BMCClose(hdms[kk]);
       if (rv) {
-	logprintf(LOG_INFO, LOG_INFO, "%s\n\n", BMCErrorString(rv));
-	logprintf(LOG_INFO, LOG_INFO, "Error %d closing the driver.\n", rv);
+	logprintf(LOG_INFO, LOG_INFO, "%s\n", BMCErrorString(rv));
+	logprintf(LOG_INFO, LOG_INFO, "Error %d closing the driver.", rv);
       }
-      logprintf(LOG_INFO, LOG_INFO, "%s\n\n", BMCErrorString(rv));
+      logprintf(LOG_INFO, LOG_INFO, "%s\n", BMCErrorString(rv));
     }
     for (ii = 0; ii < ndm; ii++) {
       free(map_lut[ii]);
@@ -455,20 +460,20 @@ int main(int argc, char **argv) {
       usleep(1000);
     }
   else {
-    logprintf(LOG_INFO, LOG_INFO, "Simulated DM scenario: the drivers are not connected\n");
+    logprintf(LOG_INFO, LOG_INFO, "Simulated DM scenario: the drivers are not connected");
     for (ii = 0; ii < ndm; ii++)
-      logprintf(LOG_INFO, LOG_INFO, "Simulated DM id = %d - serial number = %s.\n", ii+1, snumbers[ii]);
+      logprintf(LOG_INFO, LOG_INFO, "Simulated DM id = %d - serial number = %s.", ii+1, snumbers[ii]);
   }
   shm_setup();  // set up startup configuration
  
 
   // --------------------- set-up the prompt --------------------
   logprintf(LOG_INFO, LOG_INFO, "%s", dashline);
-  logprintf(LOG_INFO, LOG_INFO, "    _    ____   ____    _    ____  ____        ____  __  __ \n");
-  logprintf(LOG_INFO, LOG_INFO, "   / \\  / ___| / ___|  / \\  |  _ \\|  _ \\      |  _ \\|  \\/  |\n");
-  logprintf(LOG_INFO, LOG_INFO, "  / _ \\ \\___ \\| |  _  / _ \\ | |_) | | | |_____| | | | |\\/| |\n");
-  logprintf(LOG_INFO, LOG_INFO, " / ___ \\ ___) | |_| |/ ___ \\|  _ <| |_| |_____| |_| | |  | |\n");
-  logprintf(LOG_INFO, LOG_INFO, "/_/   \\_\\____/ \\____/_/   \\_\\_| \\_\\____/      |____/|_|  |_|\n");
+  logprintf(LOG_INFO, LOG_INFO, "    _    ____   ____    _    ____  ____        ____  __  __ ");
+  logprintf(LOG_INFO, LOG_INFO, "   / \\  / ___| / ___|  / \\  |  _ \\|  _ \\      |  _ \\|  \\/  |");
+  logprintf(LOG_INFO, LOG_INFO, "  / _ \\ \\___ \\| |  _  / _ \\ | |_) | | | |_____| | | | |\\/| |");
+  logprintf(LOG_INFO, LOG_INFO, " / ___ \\ ___) | |_| |/ ___ \\|  _ <| |_| |_____| |_| | |  | |");
+  logprintf(LOG_INFO, LOG_INFO, "/_/   \\_\\____/ \\____/_/   \\_\\_| \\_\\____/      |____/|_|  |_|");
   logprintf(LOG_INFO, LOG_INFO, "%s", dashline);
 
   start();  // start the DM with the default number of channels
