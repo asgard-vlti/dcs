@@ -151,6 +151,10 @@ void set_offload_time(uint time) {
 
 // Set the offload mode
 std::string set_offload_mode(std::string mode) {
+    if ((mode != "off")) && (settings.s.delay_line_type == "off")) {
+        error("Can not set offload mode when delay line type is ""off"".");
+        return "ERROR: Can not set offload mode when delay line type is ""off"".";
+    }
     settings.mutex.lock();
     if (settings.s.offload_mode == OFFLOAD_MOD) {
         // If we are currently in modulation mode, zero 
@@ -159,11 +163,7 @@ std::string set_offload_mode(std::string mode) {
     }
     if (mode == "off") {
         settings.s.offload_mode = OFFLOAD_OFF;
-    } else if (settings.s.delay_line_type == "off"){
-        return 
-            "ERROR: Can not offload when dl_type is ""off"".";
-    } 
-    if ((mode == "nested") || (mode == "nest")) {
+    } else if ((mode == "nested") || (mode == "nest")) {
         settings.s.offload_mode = OFFLOAD_NESTED;
         // Reset the offload to zero.
         control_u.dl_offload.setZero();
