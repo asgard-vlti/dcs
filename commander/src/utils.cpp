@@ -16,15 +16,15 @@ static int single_instance_lock_fd = -1;
 bool acquire_single_instance_lock(const char *lock_path) {
     single_instance_lock_fd = open(lock_path, O_RDWR | O_CREAT, 0644);
     if (single_instance_lock_fd < 0) {
-        logprintf(LOG_ERROR, "Failed to open lock file %s: %s. '", lock_path, std::strerror(errno));
+        logprintf(LOG_WARNING, LOG_ERROR, "Failed to open lock file %s: %s. '", lock_path, std::strerror(errno));
         return false;
     }
 
     if (flock(single_instance_lock_fd, LOCK_EX | LOCK_NB) != 0) {
         if (errno == EWOULDBLOCK) {
-            logprintf(LOG_ERROR, "Another heimdallr server is already running (lock file: %s). ", lock_path);
+            logprintf(LOG_WARNING, LOG_ERROR, "Another server is already running (lock file: %s). ", lock_path);
         } else {
-            logprintf(LOG_ERROR, "Failed to lock %s: %s", lock_path, std::strerror(errno));
+            logprintf(LOG_WARNING, LOG_ERROR, "Failed to lock %s: %s", lock_path, std::strerror(errno));
         }
         close(single_instance_lock_fd);
         single_instance_lock_fd = -1;
@@ -37,7 +37,7 @@ bool acquire_single_instance_lock(const char *lock_path) {
         int n = std::snprintf(pid_buf, sizeof(pid_buf), "%ld\n", (long)getpid());
         if (n > 0) {
             if (write(single_instance_lock_fd, pid_buf, (size_t)n) < 0) {
-                logprintf(LOG_WARNING, "Failed to write PID to lock file %s: %s", lock_path, std::strerror(errno));
+                logprintf(LOG_WARNING, LOG_WARNING, "Failed to write PID to lock file %s: %s", lock_path, std::strerror(errno));
             }
         }
     }
@@ -45,12 +45,19 @@ bool acquire_single_instance_lock(const char *lock_path) {
     return true;
 }
 
+void unacquire_single_instance_lock(){
+    if (single_instance_lock_fd >= 0) {
+        close(single_instance_lock_fd);
+        single_instance_lock_fd = -1;
+    }
+}
+
 /* =========================================================================
  *         Like printf, but prepends an ISO 8601 UTC timestamp
  * ========================================================================= */
-void logprintf(int loglevel, const char *fmt, ...) {
+void logprintf(int printlevel, int loglevel, const char *fmt, ...) {
   // Lower loglevels are more important. 
-  if (loglevel > settings.s.loglevel) {
+  if (loglevel > printlevel) {
     return;
   }
   std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

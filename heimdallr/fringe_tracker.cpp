@@ -72,7 +72,7 @@ Eigen::Matrix4d make_pinv(Eigen::Matrix<double, N_BL, 1> W, double threshold){
 #ifdef PRINT_TIMING_ALL
     clock_gettime(CLOCK_REALTIME, &now);
     if (then.tv_sec == now.tv_sec)
-        logprintf(LOG_INFO, "SVD time: %ld", now.tv_nsec - then.tv_nsec);
+        logprintf(settings.s.loglevel, LOG_INFO, "SVD time: %ld", now.tv_nsec - then.tv_nsec);
     then = now;
 #endif
     // Start with a diagonal vector of 4 zeros.
@@ -88,7 +88,7 @@ Eigen::Matrix4d make_pinv(Eigen::Matrix<double, N_BL, 1> W, double threshold){
 #ifdef PRINT_TIMING_ALL
     clock_gettime(CLOCK_REALTIME, &now);
     if (then.tv_sec == now.tv_sec)
-        logprintf(LOG_INFO, "Thresholding time: %ld", now.tv_nsec - then.tv_nsec);
+        logprintf(settings.s.loglevel, LOG_INFO, "Thresholding time: %ld", now.tv_nsec - then.tv_nsec);
 #endif
     return  es.eigenvectors() * singularDiag * es.eigenvectors().transpose();
 }
@@ -276,7 +276,7 @@ Eigen::Matrix<double, N_BL, 1> filter6(Eigen::Matrix<double, N_BL, N_BL> I6, Eig
     }
 #ifdef DEBUG_FILTER6
     // For debugging, print the best combination found, x_best, and y_best
-    logprintf(LOG_INFO, "%s", fmt::format("Best i {:b}", i_best).c_str());
+    logprintf(settings.s.loglevel, LOG_INFO, "%s", fmt::format("Best i {:b}", i_best).c_str());
     // Print Eigen vectors as comma-separated values
     {
         std::ostringstream stream;
@@ -284,7 +284,7 @@ Eigen::Matrix<double, N_BL, 1> filter6(Eigen::Matrix<double, N_BL, N_BL> I6, Eig
         for (int k = 0; k < x.size(); ++k) {
             stream << fmt::format("{:.4f}", x(k)) << ((k < x.size()-1) ? ", " : "");
         }
-        logprintf(LOG_INFO, "%s", stream.str().c_str());
+        logprintf(settings.s.loglevel, LOG_INFO, "%s", stream.str().c_str());
     }
     {
         std::ostringstream stream;
@@ -292,7 +292,7 @@ Eigen::Matrix<double, N_BL, 1> filter6(Eigen::Matrix<double, N_BL, N_BL> I6, Eig
         for (int k = 0; k < x_best.size(); ++k) {
             stream << fmt::format("{:.4f}", x_best(k)) << ((k < x_best.size()-1) ? ", " : "");
         }
-        logprintf(LOG_INFO, "%s", stream.str().c_str());
+        logprintf(settings.s.loglevel, LOG_INFO, "%s", stream.str().c_str());
     }
     {
         std::ostringstream stream;
@@ -300,7 +300,7 @@ Eigen::Matrix<double, N_BL, 1> filter6(Eigen::Matrix<double, N_BL, N_BL> I6, Eig
         for (int k = 0; k < y_best.size(); ++k) {
             stream << fmt::format("{:.4f}", y_best(k)) << ((k < y_best.size()-1) ? ", " : "");
         }
-        logprintf(LOG_INFO, "%s", stream.str().c_str());
+        logprintf(settings.s.loglevel, LOG_INFO, "%s", stream.str().c_str());
     }
     //y_best = I6 * x;
 #endif
@@ -341,13 +341,13 @@ void fringe_tracker(){
         // If we are here, then a new frame is available in both K1 and K2. 
         // Check that there has not been a counting error.
         if(K1ft->cnt == ft_cnt || K2ft->cnt == ft_cnt){
-            logprintf(LOG_INFO, "FT: Semaphore signalled but no new frame");
+            logprintf(settings.s.loglevel, LOG_INFO, "FT: Semaphore signalled but no new frame");
             nerrors++;
             continue;
         }
         // Check for missed frames
         if (K1ft->cnt > ft_cnt+2 || K2ft->cnt > ft_cnt+2){
-            logprintf(LOG_INFO, "Missed FT frames! K1: %lu K2: %lu FT: %lu",
+            logprintf(settings.s.loglevel, LOG_INFO, "Missed FT frames! K1: %lu K2: %lu FT: %lu",
                 K1ft->cnt, K2ft->cnt, ft_cnt);
             // Catch up!
             while (sem_trywait(&K1ft->sem_new_frame)==0);
@@ -482,7 +482,7 @@ void fringe_tracker(){
 #ifdef PRINT_TIMING_ALL
     clock_gettime(CLOCK_REALTIME, &now_all);
     if (then_all.tv_sec == now_all.tv_sec)
-    logprintf(LOG_INFO, "PD filtering time: %ld", now_all.tv_nsec - then_all.tv_nsec);
+    logprintf(settings.s.loglevel, LOG_INFO, "PD filtering time: %ld", now_all.tv_nsec - then_all.tv_nsec);
 #endif
 
         // Filter the average phase delay. !!! This doesn't work. Removing for now. !!!
@@ -504,7 +504,7 @@ void fringe_tracker(){
             for (int k = 0; k < var_gd.size(); ++k) {
                 stream << fmt::format("{:.6f}", var_gd(k)) << ((k < var_gd.size()-1) ? ", " : "]");
             }
-            logprintf(LOG_INFO, "%s", stream.str().c_str());
+            logprintf(settings.s.loglevel, LOG_INFO, "%s", stream.str().c_str());
         }
         {
             std::ostringstream stream;
@@ -512,7 +512,7 @@ void fringe_tracker(){
             for (int k = 0; k < Wgd.size(); ++k) {
                 stream << fmt::format("{:.6f}", Wgd(k)) << ((k < Wgd.size()-1) ? ", " : "]");
             }
-            logprintf(LOG_INFO, "%s", stream.str().c_str());
+            logprintf(settings.s.loglevel, LOG_INFO, "%s", stream.str().c_str());
         }
         {
             std::ostringstream stream;
@@ -521,7 +521,7 @@ void fringe_tracker(){
                 stream << fmt::format("{:.6f}", cov_gd_tel.diagonal()(k))
                        << ((k < cov_gd_tel.diagonal().size()-1) ? ", " : "]");
             }
-            logprintf(LOG_INFO, "%s", stream.str().c_str());
+            logprintf(settings.s.loglevel, LOG_INFO, "%s", stream.str().c_str());
         }
         {
             std::ostringstream stream;
@@ -534,7 +534,7 @@ void fringe_tracker(){
                 stream << "]" << ((i < I6gd.rows()-1) ? "," : "") << "\n";
             }
             stream << "]";
-            logprintf(LOG_INFO, "%s", stream.str().c_str());
+            logprintf(settings.s.loglevel, LOG_INFO, "%s", stream.str().c_str());
         }
 #endif
 
@@ -608,7 +608,7 @@ void fringe_tracker(){
 #ifdef PRINT_TIMING
         clock_gettime(CLOCK_REALTIME, &now);
         if (then.tv_sec == now.tv_sec)
-            logprintf(LOG_INFO, "FT Computation time: %ld", now.tv_nsec - then.tv_nsec);
+            logprintf(settings.s.loglevel, LOG_INFO, "FT Computation time: %ld", now.tv_nsec - then.tv_nsec);
         then = now;
 #endif
         // Phew! Now on to the less time-critical delay line control.
@@ -624,11 +624,11 @@ void fringe_tracker(){
         if ((settings.s.offload_mode == OFFLOAD_MOD) && (gd_ix == (int)baselines.n_gd_boxcar-1)){
             // In mod mode, we fill the group delay SNR matrix.
             gd_snr_during_mod.col(mod_ix) = baselines.gd_snr;
-            logprintf(LOG_INFO, "%s", log_stringify(baselines.gd_snr.transpose()).c_str());
+            logprintf(settings.s.loglevel, LOG_INFO, "%s", log_stringify(baselines.gd_snr.transpose()).c_str());
             mod_ix = (mod_ix + 1) % N_MOD;
             set_mod(MODULATION_AMPLITUDE * modulation_matrix.col(mod_ix));
             // DEBUG
-            logprintf(LOG_INFO, "Modulating: %s", log_stringify(modulation_matrix.col(mod_ix).transpose()).c_str());
+            logprintf(settings.s.loglevel, LOG_INFO, "Modulating: %s", log_stringify(modulation_matrix.col(mod_ix).transpose()).c_str());
             if (mod_ix==0){
                 // Now find the fringe peak. We iterate over baselines, 
                 // and accumulate the SNR for zero, plus and minus modulation.
@@ -649,7 +649,7 @@ void fringe_tracker(){
                     snr_plus /= 4;
                     snr_minus /= 4;
                     // DEBUG
-                    logprintf(LOG_INFO, "%.1f %.1f %.1f", snr_minus, snr_zero, snr_plus);
+                    logprintf(settings.s.loglevel, LOG_INFO, "%.1f %.1f %.1f", snr_minus, snr_zero, snr_plus);
                     // Find max SNR and corresponding delay.
                     double max_snr = std::max({snr_zero, snr_plus, snr_minus});
                     if (max_snr > settings.s.gd_threshold){
@@ -662,12 +662,12 @@ void fringe_tracker(){
                 // by this to find the new control signal. There is regularisation just like
                 // the normal fringe tracking above.
                 //DEBUG 
-                logprintf(LOG_INFO, "Delays: %s", log_stringify(delays.transpose()).c_str());
-                logprintf(LOG_INFO, "Valid: %s", log_stringify(valid.transpose()).c_str());
+                logprintf(settings.s.loglevel, LOG_INFO, "Delays: %s", log_stringify(delays.transpose()).c_str());
+                logprintf(settings.s.loglevel, LOG_INFO, "Valid: %s", log_stringify(valid.transpose()).c_str());
                 I6gd = M_lacour * make_pinv(valid, 0) * M_lacour.transpose() * valid.asDiagonal();
                 control_u.dl_offload = M_lacour_dag * I6gd * delays;
-                logprintf(LOG_INFO, "Regularised: %s", log_stringify((I6gd * delays).transpose()).c_str());
-                logprintf(LOG_INFO, "Telescope Space: %s", log_stringify(control_u.dl_offload.transpose()).c_str());
+                logprintf(settings.s.loglevel, LOG_INFO, "Regularised: %s", log_stringify((I6gd * delays).transpose()).c_str());
+                logprintf(settings.s.loglevel, LOG_INFO, "Telescope Space: %s", log_stringify(control_u.dl_offload.transpose()).c_str());
                 add_to_delay_lines(control_u.search - control_u.dl_offload);
             }
         } else if (time_since_last_offload_ms > settings.s.offload_time_ms) {

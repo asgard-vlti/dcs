@@ -18,6 +18,9 @@
 #include <chrono>
 #include <semaphore.h>
 #include <sstream>
+// This shouldn't be here, but I put the logging stuff in commander.
+#include <commander/commander.h>
+
 
 //----------Defines-----------
 //#define SIMULATE
@@ -255,6 +258,7 @@ extern Bispectrum bispectra_K2[N_CP];
 extern double gd_to_K1;
 extern long unsigned int ft_cnt;
 extern int mod_ix;
+extern long unsigned int nerrors;
 extern bool foreground_in_place;
 
 // Generally, we either work with beams or baselines, so have a separate lock for each.
@@ -336,9 +340,6 @@ private:
 
 //The forward Fourier transforms
 extern ForwardFt *K1ft, *K2ft;
-
-// heimdallr.cpp primitives 
-void logprintf(int loglevel, const char *fmt, ...);
 
 template <typename T>
 inline std::string log_stringify(const T& value) {

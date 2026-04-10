@@ -11,5 +11,6 @@
 #define LOG_INFO 3
 #define LOG_DEBUG 4
 
-void logprintf(int loglevel, const char *fmt, ...);
+void logprintf(int printlevel, int loglevel, const char *fmt, ...);
 bool acquire_single_instance_lock(const char *lock_path);
+void unacquire_single_instance_lock();
