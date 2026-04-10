@@ -32,7 +32,7 @@ auto last_hfo_offset = std::chrono::high_resolution_clock::now();
 zmq::context_t mds_zmq_context(1);
 int timeout_ms = 1000;
 zmq::socket_t mds_zmq_socket(mds_zmq_context, zmq::socket_type::req);
-const std::string mds_host_str = "tcp://mimir:5555";
+const std::string mds_host_str = "tcp://192.168.100.2:5555";
 zmq::context_t wag_rmn_context(1);
 zmq::socket_t wag_rmn_socket(wag_rmn_context, zmq::socket_type::req);
 #ifndef SIMULATE

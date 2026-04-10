@@ -122,7 +122,7 @@ class Heimdallr():
 
         # connecting to HPOLs
         # ===================
-        self.cc = co.Controllino("192.168.100.12", init_motors=False)
+        self.cc = co.RotationMotorTeensy("192.168.100.12")
         self.hpol_IDs = [4,5,6,7]  # check first w/ Mike
         self.hpol_pos = np.zeros(self.ndm, dtype=int)
         for ii in range(self.ndm):
