@@ -45,7 +45,7 @@ class BaldrAO:
         img = self.cam.get_img()
 
         self.iter += 1
-        if self.iter == 10000:
+        if self.iter == 1000:
             elapsed = time.time() - self.start_time
             print(f"\rFPS: {self.iter / elapsed:.2f}", end="")
             self.iter = 0
