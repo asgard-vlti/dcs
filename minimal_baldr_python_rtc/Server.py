@@ -71,7 +71,6 @@ class BAOServer:
         }
 
     def run(self):
-
         while True:
             msg = self.sock.recv_string()
             parts = msg.strip().split()
