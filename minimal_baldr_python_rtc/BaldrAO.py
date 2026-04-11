@@ -69,10 +69,15 @@ class BaldrAO:
             self.is_closed = False
 
     def take_dark(self):
-        self.MDS.send_and_recv(f"b_shut close {self.beam}")
+        # TODO: change to use BMY instead of shutters
+        # self.MDS.send_and_recv(f"b_shut close {self.beam}")
+        cur_bmy = self.MDS.send_and_recv(f"read BMY{self.beam}")
+        self.MDS.send_and_recv(f"moveabs BMY{self.beam} 1000.0")
         time.sleep(3)
         self.cam.take_dark(256)
-        self.MDS.send_and_recv(f"b_shut open {self.beam}")
+        # self.MDS.send_and_recv(f"b_shut open {self.beam}")
+        self.MDS.send_and_recv(f"moveabs BMY{self.beam} {cur_bmy}")
+        time.sleep(3)
 
     def take_pupil_img(self):
         self.MDS.send_and_recv(f"movrel BMX{self.beam} -200.0")
