@@ -108,7 +108,7 @@ class BaldrAO:
         self.controller = AO.LeakyIntegrator(
             self.dm.n_acts,
             gains=np.full(self.dm.n_acts, 0.0, dtype=float),
-            leaks=np.full(self.dm.n_acts, 0.9, dtype=float),
+            leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
         )
         print(f"\n made new controller {self.controller}")
 

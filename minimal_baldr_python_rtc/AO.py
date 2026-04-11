@@ -50,7 +50,7 @@ class LeakyIntegrator(Controller):
         else:
             self.gains = gains
         if leaks is None:
-            self.leaks = np.ones(n) * 0.9
+            self.leaks = np.ones(n) * 0.99
         else:
             self.leaks = leaks
 
