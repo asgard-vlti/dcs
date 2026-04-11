@@ -10,6 +10,7 @@ import Cam
 import DM
 import AO
 import LazyPirateZMQ
+from BaldrAO import BaldrAO
 
 
 @dataclass
@@ -27,15 +28,14 @@ class Command:
 
 
 class BAOServer:
-    def __init__(self, BAO, port):
+    def __init__(self, BAO: BaldrAO, port):
         self.BAO = BAO
 
         ctx = zmq.Context()
         self.sock = ctx.socket(zmq.REP)
         self.sock.bind(f"tcp://192.168.10.2:{port}")
 
-    def run(self):
-        commands = {
+        self.commands = {
             "servo": Command(
                 info="Start the AO loop servo",
                 func=self.BAO.servo,
@@ -60,7 +60,17 @@ class BAOServer:
                 info="Take reference image",
                 func=self.BAO.take_ref,
             ),
+            "save_state": Command(
+                info="Save current state to a timestamped pickle file",
+                func=self.BAO.save_state,
+            ),
+            "load_state": Command(
+                info="Load state from a pickle file",
+                func=self.BAO.load_state,
+            ),
         }
+
+    def run(self):
 
         while True:
             msg = self.sock.recv_string()
@@ -72,10 +82,10 @@ class BAOServer:
                 continue
 
             cmd_name = parts[0]
-            cmd = commands.get(cmd_name)
+            cmd = self.commands.get(cmd_name)
             if cmd is None:
                 self.sock.send_string(
-                    f"Unknown command '{cmd_name}'. Available: {', '.join(sorted(commands))}"
+                    f"Unknown command '{cmd_name}'. Available: {', '.join(sorted(self.commands))}"
                 )
                 self.BAO.run_iteration()
                 continue
@@ -169,3 +179,20 @@ class BAOServer:
             return f"array shape={result.shape} dtype={result.dtype}"
         return str(result)
 
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="BAO ZMQ Server")
+    parser.add_argument("--beam", type=int, help="Beam number to control")
+    args = parser.parse_args()
+
+    if args.beam is None:
+        print("Error: --beam argument is required")
+        parser.print_help()
+        exit(1)
+
+    bao = BaldrAO(args.beam)
+    server = BAOServer(bao, port=5555)
+    print("Starting BAO server...")
+    server.run()

@@ -10,10 +10,16 @@ import Cam
 import DM
 import AO
 import LazyPirateZMQ
-
+import pickle
+import pathlib
+import datetime
 
 # TODO: saving/loading of class and subclass from pickle
 # TODO: ignore pix in BAO, needs pupil fitting and thinking about that, maybe fine tuning offload to detector
+
+
+savepth = pathlib.Path("~/.config/minimal_baldr_rtc/").expanduser()
+
 
 class BaldrAO:
     recon: Optional[AO.Reconstructor]
@@ -74,7 +80,6 @@ class BaldrAO:
         self.MDS.send_and_recv(f"movrel BMX{self.beam} 200.0")
         return pupil
 
-
     def create_reconstructor(self, ref_stack_nframes=1000, rcond=1e-3):
         ref = self.take_ref(ref_stack_nframes)
         im = self.take_interaction_matrix(amp=0.02, n_im=10, n_pokes=5, n_discard=2)
@@ -122,3 +127,42 @@ class BaldrAO:
         imgs = self.cam.take_stack(nframes)
         ref = imgs.mean(0)
         return self.cam.normalise(ref)
+
+    def save_state(self, filename):
+        state = {
+            "recon": self.recon,
+            "controller": self.controller,
+        }
+        filename_with_time = (
+            savepth
+            / f"beam_{self.beam}"
+            / f"bao_state_{datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')}.pkl"
+        )
+        with open(filename_with_time, "wb") as f:
+            pickle.dump(state, f)
+
+    def load_state(self, filename):
+        """
+        Can take the filename (timestring excluded )as a string or an
+        integer index to load the nth most recent state.
+        """
+        try:
+            filename = int(filename)
+        except ValueError:
+            pass
+
+        if isinstance(filename, int):
+            files = sorted(
+                (savepth / f"beam_{self.beam}").glob("bao_state_*.pkl"), reverse=True
+            )
+            if not files:
+                raise FileNotFoundError(f"No saved states found for beam {self.beam}")
+            filename_with_time = files[filename]
+        else:
+            filename_with_time = savepth / f"beam_{self.beam}" / filename
+
+        with open(filename_with_time, "rb") as f:
+            state = pickle.load(f)
+
+        self.recon = state["recon"]
+        self.controller = state["controller"]
