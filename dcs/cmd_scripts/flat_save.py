@@ -14,6 +14,7 @@ categories = [
 ]
 
 file_naming_format = "{category}_{timestamp}.npy"
+valid_beam_ids = [1, 2, 3, 4]
 
 
 def read_dm_total(beam_idx):
@@ -28,6 +29,32 @@ def push_to_archive(pth, file):
     file.rename(archive_pth / file.name)
 
 
+def save_flat_for_beam(beam_id, category):
+    # Get the current DM shape
+    dm_shape = read_dm_total(beam_id)
+
+    # Create the directory for the beam if it doesn't exist
+    beam_pth = base_pth.expanduser() / f"beam{beam_id}"
+    beam_pth.mkdir(parents=True, exist_ok=True)
+
+    # Create the filename with the current timestamp
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = file_naming_format.format(category=category, timestamp=timestamp)
+    file_pth = beam_pth / filename
+
+    # Save the DM shape to a .npy file
+    np.save(file_pth, dm_shape)
+    print(f"Saved DM shape for beam {beam_id} to {file_pth}")
+
+    # move the older file to the archive if it exists
+    existing_files = glob.glob(str(beam_pth / f"{category}_*.npy"))
+    for existing_file in existing_files:
+        existing_file_pth = pathlib.Path(existing_file)
+        if existing_file_pth != file_pth:
+            push_to_archive(beam_pth, existing_file_pth)
+            print(f"Moved old file {existing_file_pth} to archive.")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Save the current DM shape to a flat file."
@@ -35,8 +62,8 @@ def main():
     parser.add_argument(
         "beam_id",
         type=int,
-        choices=[1, 2, 3, 4],
-        help="The beam ID of the DM to save (1-4).",
+        choices=[-1, *valid_beam_ids],
+        help="The beam ID of the DM to save (1-4), or -1 to save all beams.",
     )
     parser.add_argument(
         "category",
@@ -46,26 +73,6 @@ def main():
     )
     args = parser.parse_args()
 
-    # Get the current DM shape
-    dm_shape = read_dm_total(args.beam_id)
-
-    # Create the directory for the beam if it doesn't exist
-    beam_pth = base_pth.expanduser() / f"beam{args.beam_id}"
-    beam_pth.mkdir(parents=True, exist_ok=True)
-
-    # Create the filename with the current timestamp
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = file_naming_format.format(category=args.category, timestamp=timestamp)
-    file_pth = beam_pth / filename
-
-    # Save the DM shape to a .npy file
-    np.save(file_pth, dm_shape)
-    print(f"Saved DM shape to {file_pth}")
-
-    # move the older file to the archive if it exists
-    existing_files = glob.glob(str(beam_pth / f"{args.category}_*.npy"))
-    for existing_file in existing_files:
-        existing_file_pth = pathlib.Path(existing_file)
-        if existing_file_pth != file_pth:
-            push_to_archive(beam_pth, existing_file_pth)
-            print(f"Moved old file {existing_file_pth} to archive.")
+    beam_ids_to_save = valid_beam_ids if args.beam_id == -1 else [args.beam_id]
+    for beam_id in beam_ids_to_save:
+        save_flat_for_beam(beam_id, args.category)

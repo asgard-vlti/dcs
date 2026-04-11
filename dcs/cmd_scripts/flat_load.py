@@ -23,6 +23,7 @@ factory_flat_cmd_files = {
 
 # files are saved in base_pth/beam{beam_id}/{category}_{timestamp}.npy
 file_naming_format = "{category}_{timestamp}.npy"
+valid_beam_ids = [1, 2, 3, 4]
 
 
 def load_factory_flat(beam_no):
@@ -30,15 +31,17 @@ def load_factory_flat(beam_no):
     flat_file = factory_flat_cmd_files[beam_no]
     return load_from_txt(flat_pth / flat_file)
 
+
 def load_from_txt(file_name):
     data = np.loadtxt(file_name)
     data = np.insert(data, [0, 10, 130, 140], 0.0).reshape((12, 12))
     return data
 
 
-def load_from_npy(file_name):    
+def load_from_npy(file_name):
     data = np.load(file_name)
     return data
+
 
 def load_flat(beam_no, category):
     # construct the file path from the category and beam id
@@ -75,8 +78,8 @@ def main():
     parser.add_argument(
         "beam_id",
         type=int,
-        choices=[1, 2, 3, 4],
-        help="The beam ID of the DM to load (1-4).",
+        choices=[-1, *valid_beam_ids],
+        help="The beam ID of the DM to load (1-4), or -1 to load all beams.",
     )
     parser.add_argument(
         "category",
@@ -92,34 +95,38 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.file is not None:
-        file_pth = args.file
-        if file_pth.endswith("npy"):
-            data = load_from_npy(file_pth)
-        else:
-            data = load_from_txt(file_pth)
-    elif args.category == "factory":
-        data = load_factory_flat(args.beam_id)
-        file_pth = "factory"
-    else:
-        # construct the file path from the category and beam id
-        beam_pth = base_pth.expanduser() / f"beam{args.beam_id}"
-        # find the most recent file in the category
-        category_files = glob.glob(str(beam_pth / f"{args.category}_*.npy"))
-        if not category_files:
-            print(
-                f"No files found for category {args.category} and beam {args.beam_id}."
-            )
-            return
-        # if more than one file, raise a warning and take the most recent one
-        if len(category_files) > 1:
-            print(
-                f"Warning: multiple files found for category {args.category} and beam {args.beam_id}. Loading the most recent one."
-            )
-        file_pth = max(category_files, key=os.path.getctime)
-        print(file_pth)
-        data= load_from_npy(file_pth)
+    beam_ids_to_load = valid_beam_ids if args.beam_id == -1 else [args.beam_id]
 
-    s = command_dm(args.beam_id, data)
-    if s:
-        print(f"Loaded flat file {file_pth} to DM{args.beam_id}.")
+    for beam_id in beam_ids_to_load:
+        if args.file is not None:
+            file_pth = args.file
+            if file_pth.suffix == ".npy":
+                data = load_from_npy(file_pth)
+            else:
+                data = load_from_txt(file_pth)
+        elif args.category == "factory":
+            data = load_factory_flat(beam_id)
+            file_pth = "factory"
+        else:
+            # construct the file path from the category and beam id
+            beam_pth = base_pth.expanduser() / f"beam{beam_id}"
+            # find the most recent file in the category
+            category_files = glob.glob(str(beam_pth / f"{args.category}_*.npy"))
+            if not category_files:
+                print(
+                    f"No files found for category {args.category} and beam {beam_id}."
+                )
+                continue
+            # if more than one file, raise a warning and take the most recent one
+            if len(category_files) > 1:
+                print(
+                    f"Warning: multiple files found for category {args.category} "
+                    f"and beam {beam_id}. Loading the most recent one."
+                )
+            file_pth = max(category_files, key=os.path.getctime)
+            print(file_pth)
+            data = load_from_npy(file_pth)
+
+        s = command_dm(beam_id, data)
+        if s:
+            print(f"Loaded flat file {file_pth} to DM{beam_id}.")
