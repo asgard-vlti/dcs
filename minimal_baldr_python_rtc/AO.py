@@ -55,3 +55,21 @@ class LeakyIntegrator(Controller):
     def compute_command(self, error):
         self.command = self.leaks * self.command + self.gains * error
         return self.command
+
+
+class StrehlEstimator:
+    def __init__(self, mask, close_threshold, open_threshold):
+        self.mask = mask
+        self.close_threshold = close_threshold
+        self.open_threshold = open_threshold
+
+    def update_mask(self, pupil_img):
+        
+
+    def should_close(self, normed_img):
+        masked_img = normed_img[self.mask]
+        return masked_img.sum() < self.close_threshold
+
+    def should_open(self, normed_img):
+        masked_img = normed_img[self.mask]
+        return masked_img.sum() > self.open_threshold

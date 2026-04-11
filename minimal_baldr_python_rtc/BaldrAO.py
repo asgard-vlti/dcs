@@ -12,6 +12,8 @@ import AO
 import LazyPirateZMQ
 
 
+# TODO: saving/loading of class and subclass from pickle
+# TODO: ignore pix in BAO, needs pupil fitting and thinking about that, maybe fine tuning offload to detector
 
 class BaldrAO:
     recon: Optional[AO.Reconstructor]
@@ -45,6 +47,7 @@ class BaldrAO:
             return
 
         if self.is_closed:
+            # AO time
             img = self.cam.get_img()
             normed_img = self.cam.normalise(img)
             error = self.recon.reconstruct(normed_img)
@@ -63,6 +66,14 @@ class BaldrAO:
         time.sleep(3)
         self.cam.take_dark(256)
         self.MDS.send_and_recv(f"b_shut open {self.beam}")
+
+    def take_pupil_img(self):
+        self.MDS.send_and_recv(f"movrel BMX{self.beam} -200.0")
+        time.sleep(3)
+        pupil = self.cam.take_stack(256)
+        self.MDS.send_and_recv(f"movrel BMX{self.beam} 200.0")
+        return pupil
+
 
     def create_reconstructor(self, ref_stack_nframes=1000, rcond=1e-3):
         ref = self.take_ref(ref_stack_nframes)
