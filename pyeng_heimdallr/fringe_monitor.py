@@ -489,7 +489,7 @@ class MyMainWidget(QWidget):
     def update_scan_step(self):
         "Control of the scan step in microns"
         if self.chB_fine_scan.isChecked():
-            self.scan_step = 1.0
+            self.scan_step = 0.5
         else:
             self.scan_step = 5.0
 

@@ -151,7 +151,7 @@ void set_offload_time(uint time) {
 
 // Set the offload mode
 std::string set_offload_mode(std::string mode) {
-    if ((mode != "off")) && (settings.s.delay_line_type == "off")) {
+    if ((mode != "off") && (settings.s.delay_line_type == "off")) {
         error("Can not set offload mode when delay line type is ""off"".");
         return "ERROR: Can not set offload mode when delay line type is ""off"".";
     }
