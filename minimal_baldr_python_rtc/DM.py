@@ -61,7 +61,7 @@ class DM:
         self.shm0.post_sems(1)
 
     def flatten(self):
-        cmd = np.zeros(self.n_acts)
+        cmd = np.zeros(consts.act_shape)
         for ii, ss in enumerate(self.shms):
             ss.set_data(cmd)
 
