@@ -98,7 +98,7 @@ void MakeOpen(int dmid, DM* hdm) {
     getc(stdin);
     exit(0);
   }
-  logprintf(LOG_INFO, LOG_INFO, "Opened Device %d with %d actuators.", hdm->DevId, hdm->ActCount);
+  info("Opened Device %d with %d actuators.", hdm->DevId, hdm->ActCount);
   
   rv = BMCLoadMap(hdm, NULL, map_lut[dmid-1]);  // load the mapping into map_lut
 }
@@ -232,7 +232,7 @@ void* dms_refresh(void *) {
       cmd = map2D_2_cmd(shmarray[kk][nch].array.D);
       rv = BMCSetArray(hdms[kk], cmd, map_lut[kk]);  // send cmd to DM
       if (rv) {
-	logprintf(LOG_INFO, LOG_INFO, "%s\n", BMCErrorString(rv));
+		error("%s\n", BMCErrorString(rv));
       }
       free(cmd);
     }
@@ -261,7 +261,7 @@ void start() {
 
   if (keepgoing == 0) {
     keepgoing = 1; // raise the flag
-    logprintf(LOG_INFO, LOG_INFO, "DM control loop START");
+    info("DM control loop START");
     pthread_attr_init(&attr);
     pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
     pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
@@ -276,11 +276,11 @@ void start() {
     if (simmode != 1){
       pthread_create(&tid_refresh, &attr, dms_refresh, NULL);
       pthread_getschedparam(tid_refresh, &policy, &param);
-      logprintf(LOG_INFO, LOG_INFO, "Thread priority: %d  Priority policy: %d", param.sched_priority, policy); 
+      info("Thread priority: %d  Priority policy: %d", param.sched_priority, policy); 
     }
     
   } else
-    logprintf(LOG_INFO, LOG_INFO, "DM control loop already running!");
+    warn("DM control loop already running!");
   sprintf(drv_status, "%s", "running");
 
 }
@@ -292,7 +292,7 @@ void stop() {
   if (keepgoing == 1)
     keepgoing = 0;
   else
-    logprintf(LOG_INFO, LOG_INFO, "DM control loop already off");
+    warn("DM control loop already off");
   sprintf(drv_status, "%s", "idle");
 }
 
@@ -337,7 +337,7 @@ void set_nch(int ival) {
   nch_prev = nch; // memory of the previous number of channels
   nch = ival;
   shm_setup();
-  logprintf(LOG_INFO, LOG_INFO, "Success: # channels = %d", ival);
+  info("Success: # channels = %d", ival);
 }
 
 void reset(int dmid, int channel) {
@@ -351,7 +351,7 @@ void reset(int dmid, int channel) {
   if (dmid <= ndm) {
     if (dmid > 0) {
       if (channel < 0) {
-	logprintf(LOG_INFO, LOG_INFO, "Reset all virtual channels of DM %d!", dmid);
+	info("Reset all virtual channels of DM %d!", dmid);
 	for (int kk = 0; kk < nch; kk++) {
 	  live_channel = shmarray[dmid-1][kk].array.D;  // live pointer
 	  shmarray[dmid-1][kk].md->write = 1;  // signaling about to write
@@ -364,7 +364,7 @@ void reset(int dmid, int channel) {
 	}
       }
       else if (channel < nch) {
-	logprintf(LOG_INFO, LOG_INFO, "Reset virtual channel %d of DM %d", channel, dmid);
+	info("Reset virtual channel %d of DM %d", channel, dmid);
 	live_channel = shmarray[dmid-1][channel].array.D;  // live pointer
 	shmarray[dmid-1][channel].md->write = 1;  // signaling about to write
 	memcpy(live_channel,
@@ -375,12 +375,12 @@ void reset(int dmid, int channel) {
 	shmarray[dmid-1][channel].md->write = 0;  // done writing
       }
       else {
-	logprintf(LOG_INFO, LOG_INFO, "Virtual channels 0-%d have been set-up!", nch);
+	info("Virtual channels 0-%d have been set-up!", nch);
       }
     }
   }
   else
-    logprintf(LOG_INFO, LOG_INFO, "Only %d DMs on Asgard", ndm);
+    error("Only %d DMs on Asgard", ndm);
 }
 
 void quit() {
@@ -390,23 +390,22 @@ void quit() {
   int kk, ii;
   if (keepgoing == 1) stop();
   
-  logprintf(LOG_INFO, LOG_INFO, "DM driver server shutting down!");
+  info("DM driver server shutting down!");
     
   if (simmode != 1) {
     for (kk = 0; kk < ndm; kk++)
       rv = BMCClearArray(hdms[kk]);
     if (rv) {
-      logprintf(LOG_INFO, LOG_INFO, "%s\n", BMCErrorString(rv));
-      logprintf(LOG_INFO, LOG_INFO, "Error %d clearing voltages.", rv);
+      error("%s\n", BMCErrorString(rv));
+      error("Error %d clearing voltages.", rv);
     }
     
     for (kk = 0; kk < ndm; kk++) {
       rv = BMCClose(hdms[kk]);
       if (rv) {
-	logprintf(LOG_INFO, LOG_INFO, "%s\n", BMCErrorString(rv));
-	logprintf(LOG_INFO, LOG_INFO, "Error %d closing the driver.", rv);
+		error("%s\n", BMCErrorString(rv));
+		error("Error %d closing the driver.", rv);
       }
-      logprintf(LOG_INFO, LOG_INFO, "%s\n", BMCErrorString(rv));
     }
     for (ii = 0; ii < ndm; ii++) {
       free(map_lut[ii]);
@@ -460,21 +459,21 @@ int main(int argc, char **argv) {
       usleep(1000);
     }
   else {
-    logprintf(LOG_INFO, LOG_INFO, "Simulated DM scenario: the drivers are not connected");
+    info("Simulated DM scenario: the drivers are not connected");
     for (ii = 0; ii < ndm; ii++)
-      logprintf(LOG_INFO, LOG_INFO, "Simulated DM id = %d - serial number = %s.", ii+1, snumbers[ii]);
+      info("Simulated DM id = %d - serial number = %s.", ii+1, snumbers[ii]);
   }
   shm_setup();  // set up startup configuration
  
 
   // --------------------- set-up the prompt --------------------
-  logprintf(LOG_INFO, LOG_INFO, "%s", dashline);
-  logprintf(LOG_INFO, LOG_INFO, "    _    ____   ____    _    ____  ____        ____  __  __ ");
-  logprintf(LOG_INFO, LOG_INFO, "   / \\  / ___| / ___|  / \\  |  _ \\|  _ \\      |  _ \\|  \\/  |");
-  logprintf(LOG_INFO, LOG_INFO, "  / _ \\ \\___ \\| |  _  / _ \\ | |_) | | | |_____| | | | |\\/| |");
-  logprintf(LOG_INFO, LOG_INFO, " / ___ \\ ___) | |_| |/ ___ \\|  _ <| |_| |_____| |_| | |  | |");
-  logprintf(LOG_INFO, LOG_INFO, "/_/   \\_\\____/ \\____/_/   \\_\\_| \\_\\____/      |____/|_|  |_|");
-  logprintf(LOG_INFO, LOG_INFO, "%s", dashline);
+  info("%s", dashline);
+  info("    _    ____   ____    _    ____  ____        ____  __  __ ");
+  info("   / \\  / ___| / ___|  / \\  |  _ \\|  _ \\      |  _ \\|  \\/  |");
+  info("  / _ \\ \\___ \\| |  _  / _ \\ | |_) | | | |_____| | | | |\\/| |");
+  info(" / ___ \\ ___) | |_| |/ ___ \\|  _ <| |_| |_____| |_| | |  | |");
+  info("/_/   \\_\\____/ \\____/_/   \\_\\_| \\_\\____/      |____/|_|  |_|");
+  info("%s", dashline);
 
   start();  // start the DM with the default number of channels
   co::Server s(argc, argv);    // start the commander server
