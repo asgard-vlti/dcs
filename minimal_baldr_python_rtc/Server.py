@@ -85,6 +85,10 @@ class BAOServer:
                 info="Flatten the DM (zero all actuators)",
                 func=self.BAO.dm.flatten,
             ),
+            "set_ki_gains": Command(
+                info="Set integrator gains (ki) for all modes. ",
+                func=self.BAO.set_ki_gains,
+            ),
             "command_names": Command(
                 info="command_names - list all available commands",
                 func=lambda: json.dumps(

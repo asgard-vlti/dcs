@@ -105,6 +105,32 @@ class BaldrAO:
         self.controller = AO.LeakyIntegrator(self.dm.n_acts, gains=0.0, leaks=0.9)
         print(f"\n made new controller {self.controller}")
 
+    def set_ki_gains(self, idxs, values):
+        """
+        Set the ki gains of the controller
+        idxs can be a single number, comma separated list or a slice string like 0:10
+        values can be a single number or a comma separated list of values to set the gains to
+        """
+        if self.controller is None:
+            raise ValueError("Controller not created yet")
+
+        if isinstance(idxs, str):
+            if ":" in idxs:
+                start, stop = map(int, idxs.split(":"))
+                idxs = range(start, stop)
+            else:
+                idxs = list(map(int, idxs.split(",")))
+
+        if isinstance(values, str):
+            values = list(map(float, values.split(",")))
+            if len(values) == 1:
+                values = values * len(idxs)
+
+        for idx, value in zip(idxs, values):
+            self.controller.gains[idx] = value
+
+            print(f"\n set gain of mode {idx} to {value}")
+
     def take_interaction_matrix(
         self,
         amp,
