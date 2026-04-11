@@ -53,7 +53,7 @@ class LeakyIntegrator(Controller):
         self.command = np.zeros(n)
 
     def compute_command(self, error):
-        self.command = self.leaks * self.command + self.gains * error
+        self.command = self.leaks * self.command - self.gains * error
         return self.command
 
 
