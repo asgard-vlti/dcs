@@ -166,3 +166,10 @@ class BaldrAO:
 
         self.recon = state["recon"]
         self.controller = state["controller"]
+
+    def get_status(self):
+        status = {
+            "servo": "on" if self.is_closed else "off",
+            "cnt": self.iter,
+        }
+        return status

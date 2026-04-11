@@ -11,14 +11,16 @@ import DM
 import AO
 import LazyPirateZMQ
 from BaldrAO import BaldrAO
+import json
 import argparse
 
 BEAM_TO_PORT = {
-    1 : "6662",
-    2 : "6663",
-    3 : "6664",
-    4 : "6665",
+    1: "6662",
+    2: "6663",
+    3: "6664",
+    4: "6665",
 }
+
 
 @dataclass
 class Command:
@@ -74,6 +76,10 @@ class BAOServer:
             "load_state": Command(
                 info="Load state from a pickle file",
                 func=self.BAO.load_state,
+            ),
+            "status": Command(
+                info="Get current status of the system",
+                func=self.BAO.get_status,
             ),
         }
 
@@ -181,6 +187,8 @@ class BAOServer:
     def _format_result(result: Any) -> str:
         if result is None:
             return "OK"
+        if isinstance(result, dict):
+            return json.dumps(result)
         if isinstance(result, np.ndarray):
             return f"array shape={result.shape} dtype={result.dtype}"
         return str(result)
