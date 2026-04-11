@@ -11,7 +11,14 @@ import DM
 import AO
 import LazyPirateZMQ
 from BaldrAO import BaldrAO
+import argparse
 
+BEAM_TO_PORT = {
+    1 : "6662",
+    2 : "6663",
+    3 : "6664",
+    4 : "6665",
+}
 
 @dataclass
 class Command:
@@ -33,7 +40,7 @@ class BAOServer:
 
         ctx = zmq.Context()
         self.sock = ctx.socket(zmq.REP)
-        self.sock.bind(f"tcp://192.168.10.2:{port}")
+        self.sock.bind(f"tcp://mimir:{port}")
 
         self.commands = {
             "servo": Command(
@@ -180,7 +187,6 @@ class BAOServer:
 
 
 if __name__ == "__main__":
-    import argparse
 
     parser = argparse.ArgumentParser(description="BAO ZMQ Server")
     parser.add_argument("--beam", type=int, help="Beam number to control")
@@ -192,6 +198,6 @@ if __name__ == "__main__":
         exit(1)
 
     bao = BaldrAO(args.beam)
-    server = BAOServer(bao, port=5555)
+    server = BAOServer(bao, port=BEAM_TO_PORT[args.beam])
     print("Starting BAO server...")
     server.run()
