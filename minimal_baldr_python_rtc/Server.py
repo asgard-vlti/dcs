@@ -111,7 +111,7 @@ class BAOServer:
                 func=lambda: json.dumps(
                     [cmd_name for cmd_name in self.commands.keys()]
                 ),
-                is_short=False,
+                is_short=True,
             ),
         }
 
