@@ -90,5 +90,6 @@ class FourierDM(DM):
             start_HO,
             orthogonalise,
             pin_edges,
-        ).transformation_matrix
+        )
+        basis = basis.transformation_matrix
         super().__init__(beam_id, main_chn, basis)
