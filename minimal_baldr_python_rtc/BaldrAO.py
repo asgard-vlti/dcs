@@ -74,6 +74,8 @@ class BaldrAO:
             self.is_closed = True
         else:
             self.is_closed = False
+            self.dm.flatten()
+            self.controller.reset()
 
     def take_dark(self):
         # TODO: change to use BMY instead of shutters

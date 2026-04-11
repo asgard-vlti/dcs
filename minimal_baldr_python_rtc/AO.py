@@ -37,6 +37,10 @@ class Controller(abc.ABC):
     def compute_command(self, error):
         pass
 
+    @abc.abstractmethod
+    def reset(self):
+        pass
+
 
 class LeakyIntegrator(Controller):
     def __init__(self, n, gains=None, leaks=None):
@@ -55,6 +59,9 @@ class LeakyIntegrator(Controller):
     def compute_command(self, error):
         self.command = self.leaks * self.command - self.gains * error
         return self.command
+
+    def reset(self):
+        self.command = np.zeros(self.n)
 
 
 class StrehlEstimator:
