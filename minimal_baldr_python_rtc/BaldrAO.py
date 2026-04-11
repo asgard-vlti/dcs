@@ -102,7 +102,11 @@ class BaldrAO:
         print(f"\n made new recon {self.recon}")
 
     def create_controller(self):
-        self.controller = AO.LeakyIntegrator(self.dm.n_acts, gains=0.0, leaks=0.9)
+        self.controller = AO.LeakyIntegrator(
+            self.dm.n_acts,
+            gains=np.full(self.dm.n_acts, 0.0, dtype=float),
+            leaks=np.full(self.dm.n_acts, 0.9, dtype=float),
+        )
         print(f"\n made new controller {self.controller}")
 
     def set_ki_gains(self, idxs, values):
@@ -117,14 +121,27 @@ class BaldrAO:
         if isinstance(idxs, str):
             if ":" in idxs:
                 start, stop = map(int, idxs.split(":"))
-                idxs = range(start, stop)
+                idxs = list(range(start, stop))
             else:
                 idxs = list(map(int, idxs.split(",")))
+        elif np.isscalar(idxs):
+            idxs = [int(idxs)]
+        else:
+            idxs = list(idxs)
 
         if isinstance(values, str):
             values = list(map(float, values.split(",")))
-            if len(values) == 1:
-                values = values * len(idxs)
+        elif np.isscalar(values):
+            values = [float(values)]
+        else:
+            values = [float(v) for v in values]
+
+        if len(values) == 1:
+            values = values * len(idxs)
+        elif len(values) != len(idxs):
+            raise ValueError(
+                f"Number of values ({len(values)}) must be 1 or match number of indices ({len(idxs)})"
+            )
 
         for idx, value in zip(idxs, values):
             self.controller.gains[idx] = value
