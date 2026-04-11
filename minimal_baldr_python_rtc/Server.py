@@ -91,30 +91,31 @@ class BAOServer:
 
     def run(self):
         while True:
-            msg = self.sock.recv_string()
+            try:
+                msg = self.sock.recv_string(flags=zmq.NOBLOCK)
+            except zmq.Again:
+                self.BAO.run_iteration()
+                continue
+
             parts = msg.strip().split()
 
             if not parts:
                 self.sock.send_string("Empty command")
-                self.BAO.run_iteration()
-                continue
-
-            cmd_name = parts[0]
-            cmd = self.commands.get(cmd_name)
-            if cmd is None:
-                self.sock.send_string(
-                    f"Unknown command '{cmd_name}'. Available: {', '.join(sorted(self.commands))}"
-                )
-                self.BAO.run_iteration()
-                continue
-
-            try:
-                args, kwargs = self._parse_args(parts[1:])
-                cast_args, cast_kwargs = self._coerce_types(cmd, args, kwargs)
-                result = cmd.func(*cast_args, **cast_kwargs)
-                self.sock.send_string(self._format_result(result))
-            except Exception as exc:
-                self.sock.send_string(f"Error: {exc}")
+            else:
+                cmd_name = parts[0]
+                cmd = self.commands.get(cmd_name)
+                if cmd is None:
+                    self.sock.send_string(
+                        f"Unknown command '{cmd_name}'. Available: {', '.join(sorted(self.commands))}"
+                    )
+                else:
+                    try:
+                        args, kwargs = self._parse_args(parts[1:])
+                        cast_args, cast_kwargs = self._coerce_types(cmd, args, kwargs)
+                        result = cmd.func(*cast_args, **cast_kwargs)
+                        self.sock.send_string(self._format_result(result))
+                    except Exception as exc:
+                        self.sock.send_string(f"Error: {exc}")
 
             self.BAO.run_iteration()
 
