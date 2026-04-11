@@ -218,6 +218,7 @@ class BaldrAO:
         state = {
             "recon": self.recon,
             "controller": self.controller,
+            "cam_dark": self.cam.dark,
         }
         filename_with_time = (
             savepth
@@ -255,6 +256,8 @@ class BaldrAO:
 
         self.recon = state["recon"]
         self.controller = state["controller"]
+        if "cam_dark" in state:
+            self.cam.dark = np.asarray(state["cam_dark"])
 
     def get_status(self):
         status = {
