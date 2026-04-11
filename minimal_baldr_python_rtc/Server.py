@@ -81,6 +81,10 @@ class BAOServer:
                 info="Get current status of the system",
                 func=self.BAO.get_status,
             ),
+            "flatten_dm": Command(
+                info="Flatten the DM (zero all actuators)",
+                func=self.BAO.dm.flatten,
+            ),
             "command_names": Command(
                 info="command_names - list all available commands",
                 func=lambda: json.dumps(
