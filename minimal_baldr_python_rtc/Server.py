@@ -28,6 +28,7 @@ class Command:
 
     info: str
     func: Callable
+    is_short: bool  # if long, the response should be "ok" immediately
     signature: inspect.Signature = field(init=False)
     parameters: list[inspect.Parameter] = field(init=False)
 
@@ -48,56 +49,69 @@ class BAOServer:
             "servo": Command(
                 info="Start the AO loop servo",
                 func=self.BAO.servo,
+                is_short=True,
             ),
             "take_dark": Command(
                 info="Take a dark frame",
                 func=self.BAO.take_dark,
+                is_short=False,
             ),
             "take_interaction_matrix": Command(
                 info="Acquire interaction matrix",
                 func=self.BAO.take_interaction_matrix,
+                is_short=False,
             ),
             "create_reconstructor": Command(
                 info="Build linear reconstructor",
                 func=self.BAO.create_reconstructor,
+                is_short=False,
             ),
             "create_controller": Command(
                 info="Create controller",
                 func=self.BAO.create_controller,
+                is_short=True,
             ),
             "take_ref": Command(
                 info="Take reference image",
                 func=self.BAO.take_ref,
+                is_short=False,
             ),
             "save_state": Command(
                 info="Save current state to a timestamped pickle file",
                 func=self.BAO.save_state,
+                is_short=True,
             ),
             "load_state": Command(
                 info="Load state from a pickle file",
                 func=self.BAO.load_state,
+                is_short=True,
             ),
             "status": Command(
                 info="Get current status of the system",
                 func=self.BAO.get_status,
+                is_short=True,
             ),
             "flatten_dm": Command(
                 info="Flatten the DM (zero all actuators)",
                 func=self.BAO.dm.flatten,
+                is_short=True,
             ),
             "set_ki_gains": Command(
                 info="Set integrator gains (ki) for all modes. ",
                 func=self.BAO.set_ki_gains,
+                is_short=True,
             ),
             "set_leaks": Command(
                 info="Set leak factors for all modes. ",
                 func=self.BAO.set_leaks,
+                is_short=True,
             ),
             "command_names": Command(
                 info="command_names - list all available commands",
                 func=lambda: json.dumps(
                     [cmd_name for cmd_name in self.commands.keys()]
                 ),
+                is_short=False,
             ),
         }
 
@@ -122,10 +136,13 @@ class BAOServer:
                     )
                 else:
                     try:
+                        if not cmd.is_short:
+                            self.sock.send_string("OK")
                         args, kwargs = self._parse_args(parts[1:])
                         cast_args, cast_kwargs = self._coerce_types(cmd, args, kwargs)
                         result = cmd.func(*cast_args, **cast_kwargs)
-                        self.sock.send_string(self._format_result(result))
+                        if cmd.is_short:
+                            self.sock.send_string(self._format_result(result))
                     except Exception as exc:
                         self.sock.send_string(f"Error: {exc}")
                         print(exc)
