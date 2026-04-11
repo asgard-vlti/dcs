@@ -42,6 +42,8 @@ class BaldrAO:
         self.start_time = time.time()
 
     def run_iteration(self):
+        img = self.cam.get_img()
+
         self.iter += 1
         if self.iter == 10000:
             elapsed = time.time() - self.start_time
@@ -54,7 +56,6 @@ class BaldrAO:
 
         if self.is_closed:
             # AO time
-            img = self.cam.get_img()
             normed_img = self.cam.normalise(img)
             error = self.recon.reconstruct(normed_img)
             command = self.controller.compute_command(error)
