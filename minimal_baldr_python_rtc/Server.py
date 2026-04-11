@@ -81,6 +81,12 @@ class BAOServer:
                 info="Get current status of the system",
                 func=self.BAO.get_status,
             ),
+            "command_names": Command(
+                info="command_names - list all available commands",
+                func=lambda: json.dumps(
+                    [cmd_name for cmd_name in self.commands.keys()]
+                ),
+            ),
         }
 
     def run(self):
