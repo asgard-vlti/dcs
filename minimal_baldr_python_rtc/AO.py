@@ -25,7 +25,7 @@ class Reconstructor:
 
 class LinearReconstructor(Reconstructor):
     def __init__(self, IM, ref, rcond=1e-3):
-        self.recon_matrix = hcipy.inverse_tikhonov(IM, rcond=rcond)
+        self.recon_matrix = hcipy.inverse_tikhonov(IM.T, rcond=rcond)
         self.ref = ref
 
     def reconstruct(self, normed_img):

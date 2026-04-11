@@ -120,6 +120,7 @@ class BAOServer:
                         self.sock.send_string(self._format_result(result))
                     except Exception as exc:
                         self.sock.send_string(f"Error: {exc}")
+                        print(exc)
 
             self.BAO.run_iteration()
 

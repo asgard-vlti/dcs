@@ -51,12 +51,18 @@ class BaldrAO:
             self.iter = 0
             self.start_time = time.time()
 
+            if self.recon is None:
+                print(" ... no recon", end="")
+
+            if self.controller is None:
+                print(" ... no controller", end="")
+
         if self.recon is None or self.controller is None:
             return
 
         if self.is_closed:
             # AO time
-            normed_img = self.cam.normalise(img)
+            normed_img = self.cam.normalise(img).flatten()
             error = self.recon.reconstruct(normed_img)
             command = self.controller.compute_command(error)
             self.dm.set_data(command)
@@ -87,12 +93,17 @@ class BaldrAO:
         return pupil
 
     def create_reconstructor(self, ref_stack_nframes=1000, rcond=1e-3):
-        ref = self.take_ref(ref_stack_nframes)
-        im = self.take_interaction_matrix(amp=0.02, n_im=10, n_pokes=5, n_discard=2)
+        ref = self.take_ref(ref_stack_nframes).flatten()
+        print(f"\n making new recon...")
+        im = self.take_interaction_matrix(amp=0.02, n_im=10, n_pokes=1, n_discard=2)
+        print(f"\n IM has shape {im.shape}")
         self.recon = AO.LinearReconstructor(im, ref, rcond=rcond)
+
+        print(f"\n made new recon {self.recon}")
 
     def create_controller(self):
         self.controller = AO.LeakyIntegrator(self.dm.n_acts, gains=0.0, leaks=0.9)
+        print(f"\n made new controller {self.controller}")
 
     def take_interaction_matrix(
         self,
@@ -125,7 +136,7 @@ class BaldrAO:
 
         self.dm.flatten()
 
-        return np.array(responses)
+        return np.array(responses).reshape(n_modes, -1)
 
     def take_ref(self, nframes=1000):
         self.dm.flatten()
@@ -170,7 +181,8 @@ class BaldrAO:
         with open(filename_with_time, "rb") as f:
             state = pickle.load(f)
 
-        print(f"read from {filename_with_time}")
+        print(f"\nread from {filename_with_time}")
+        print(state)
 
         self.recon = state["recon"]
         self.controller = state["controller"]
