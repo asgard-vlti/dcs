@@ -95,7 +95,7 @@ class BaldrAO:
     def create_reconstructor(self, ref_stack_nframes=1000, rcond=1e-3):
         ref = self.take_ref(ref_stack_nframes).flatten()
         print(f"\n making new recon...")
-        im = self.take_interaction_matrix(amp=0.02, n_im=10, n_pokes=1, n_discard=2)
+        im = self.take_interaction_matrix(amp=0.02, n_im=3, n_pokes=10, n_discard=2)
         print(f"\n IM has shape {im.shape}")
         self.recon = AO.LinearReconstructor(im, ref, rcond=rcond)
 
