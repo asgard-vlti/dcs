@@ -1,75 +1,21 @@
-from typing import Callable
+from typing import Any, Callable, Optional
+from dataclasses import dataclass, field
+import inspect
 
 import numpy as np
 import zmq
 import time
-import toml
-import os
-import argparse
-import datetime
-import glob
-
-from parse import parse
-
-from xaosim.shmlib import shm
-from asgard_alignment.DM_shm_ctrl import dmclass
-from asgard_alignment import FLI_Cameras as FLI
-import matplotlib.pyplot as plt
 
 import Cam
 import DM
 import AO
 import LazyPirateZMQ
-import pickle
 
-
-@dataclass
-class Command:
-    """Metadata for a command"""
-
-    info: str
-    format_str: str
-    func: Callable
-
-
-class BAOServer:
-    def __init__(self, BAO, port):
-        self.BAO = BAO
-
-        ctx = zmq.Context()
-        self.sock = ctx.socket(zmq.REP)
-        self.sock.bind(f"tcp://192.168.10.2:{port}")
-
-    def run(self):
-        commands = {
-            "servo": Command(
-                info="Start the AO loop servo",
-                format_str="servo {}",
-                func=self.BAO.servo,
-            ),
-            "take_dark": Command(
-                info="Take a dark frame",
-                format_str="take dark",
-                func=self.BAO.take_dark,
-            ),
-        }
-
-        while True:
-            msg = self.sock.recv_string()
-            first_word = msg.split(" ")[0]
-            if first_word in commands:
-                cmd = commands[first_word]
-                result = parse(cmd.format_str, msg)
-                return cmd.func(*result)
-            else:
-                self.sock.send_string("Unknown command")
-
-            self.BAO.run_iteration()
 
 
 class BaldrAO:
-    recon: AO.Reconstructor
-    controller: AO.Controller
+    recon: Optional[AO.Reconstructor]
+    controller: Optional[AO.Controller]
 
     def __init__(self, beam):
         self.beam = beam
@@ -106,7 +52,7 @@ class BaldrAO:
             self.dm.set_data(command)
 
     def servo(self, new_state: str):
-        # TODO: include estimator that tells you when to lock the loop
+        # Future improvement: add a lock-state estimator before enabling closed loop.
         if new_state == "on":
             self.is_closed = True
         else:
@@ -139,7 +85,7 @@ class BaldrAO:
 
         for mode_idx in range(n_modes):
             res = 0.0
-            for pk_idx in range(n_pokes):
+            for _ in range(n_pokes):
                 imgs = []
                 for sp in [-1, 1]:
                     cmd = np.zeros((n_modes, 1))
