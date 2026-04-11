@@ -66,18 +66,7 @@ class DMshm:
         """
 
         total = self._read_frame(self.total_s)
-        # channels = [self._read_frame(ch) for ch in self.channel_s]
-        channels = []
-        for i, ch in enumerate(
-            self.channel_s
-        ):  # channels 1-4 need to be scaled to be in [0,1] (currently [-0.5,0.5])
-            if i == 0:
-                channels.append(self._read_frame(ch))
-            else:
-                frame = self._read_frame(ch)
-                if frame is not None:
-                    frame = (frame + 0.5).clip(0.0, 1.0)
-                channels.append(frame)
+        channels = [self._read_frame(ch) for ch in self.channel_s]
         return total, channels
 
 
@@ -131,6 +120,17 @@ class DMView(QtWidgets.QMainWindow):
         span = high - low
         pad = span * 0.02
         return low - pad, high + pad
+
+    @staticmethod
+    def _frame_levels_centered(frame: Frame) -> tuple[float, float]:
+        """Calculate symmetric levels around 0 for centered colormaps (e.g., RdBu)."""
+        abs_max = float(np.nanmax(np.abs(frame)))
+
+        if not np.isfinite(abs_max) or abs_max == 0:
+            return -0.5, 0.5
+
+        pad = abs_max * 0.02
+        return -abs_max - pad, abs_max + pad
 
     def __init__(self, beams):
         super().__init__()
@@ -204,7 +204,8 @@ class DMView(QtWidgets.QMainWindow):
                     if i == 0 or i == 1:
                         row.image_items[i].setLevels((row.dm.VMIN, row.dm.VMAX))
                     else:
-                        row.image_items[i].setLevels(self._frame_levels(frame))
+                        # Use centered levels for RdBu colormap (channels 1-4)
+                        row.image_items[i].setLevels(self._frame_levels_centered(frame))
                     row.image_items[i].setImage(frame, autoLevels=False)
 
                     if i == 0 and row.total_overlay is not None:
