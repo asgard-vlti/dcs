@@ -77,6 +77,8 @@ class BaldrAO:
             self.is_closed = True
         else:
             self.is_closed = False
+            self.dm.flatten()
+            self.controller.reset()
 
     def take_dark(self):
         # TODO: change to use BMY instead of shutters
@@ -109,7 +111,7 @@ class BaldrAO:
         self.controller = AO.LeakyIntegrator(
             self.dm.n_acts,
             gains=np.full(self.dm.n_acts, 0.0, dtype=float),
-            leaks=np.full(self.dm.n_acts, 0.9, dtype=float),
+            leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
         )
         print(f"\n made new controller {self.controller}")
 
@@ -221,6 +223,7 @@ class BaldrAO:
         state = {
             "recon": self.recon,
             "controller": self.controller,
+            "cam_dark": self.cam.dark,
         }
         filename_with_time = (
             savepth
@@ -258,6 +261,8 @@ class BaldrAO:
 
         self.recon = state["recon"]
         self.controller = state["controller"]
+        if "cam_dark" in state:
+            self.cam.dark = np.asarray(state["cam_dark"])
 
     def get_status(self):
         status = {
