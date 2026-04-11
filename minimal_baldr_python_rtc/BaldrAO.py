@@ -110,6 +110,36 @@ class BaldrAO:
         )
         print(f"\n made new controller {self.controller}")
 
+    def _parse_indices(self, idxs):
+        if isinstance(idxs, str):
+            if ":" in idxs:
+                start, stop = map(int, idxs.split(":"))
+                return list(range(start, stop))
+            return list(map(int, idxs.split(",")))
+        if isinstance(idxs, (int, float, np.integer, np.floating)):
+            return [int(idxs)]
+        return list(idxs)
+
+    def _parse_values(self, values):
+        if isinstance(values, str):
+            return list(map(float, values.split(",")))
+        if isinstance(values, (int, float, np.integer, np.floating)):
+            return [float(values)]
+        return [float(v) for v in values]
+
+    def _normalise_idx_value_inputs(self, idxs, values):
+        idxs = self._parse_indices(idxs)
+        values = self._parse_values(values)
+
+        if len(values) == 1:
+            values = values * len(idxs)
+        elif len(values) != len(idxs):
+            raise ValueError(
+                f"Number of values ({len(values)}) must be 1 or match number of indices ({len(idxs)})"
+            )
+
+        return idxs, values
+
     def set_ki_gains(self, idxs, values):
         """
         Set the ki gains of the controller
@@ -119,35 +149,30 @@ class BaldrAO:
         if self.controller is None:
             raise ValueError("Controller not created yet")
 
-        if isinstance(idxs, str):
-            if ":" in idxs:
-                start, stop = map(int, idxs.split(":"))
-                idxs = list(range(start, stop))
-            else:
-                idxs = list(map(int, idxs.split(",")))
-        elif np.isscalar(idxs):
-            idxs = [int(idxs)]
-        else:
-            idxs = list(idxs)
-
-        if isinstance(values, str):
-            values = list(map(float, values.split(",")))
-        elif np.isscalar(values):
-            values = [float(values)]
-        else:
-            values = [float(v) for v in values]
-
-        if len(values) == 1:
-            values = values * len(idxs)
-        elif len(values) != len(idxs):
-            raise ValueError(
-                f"Number of values ({len(values)}) must be 1 or match number of indices ({len(idxs)})"
-            )
+        idxs, values = self._normalise_idx_value_inputs(idxs, values)
+        gains = getattr(self.controller, "gains")
 
         for idx, value in zip(idxs, values):
-            self.controller.gains[idx] = value
+            gains[idx] = value
 
             print(f"\n set gain of mode {idx} to {value}")
+
+    def set_leaks(self, idxs, values):
+        """
+        Set the leak values of the controller
+        idxs can be a single number, comma separated list or a slice string like 0:10
+        values can be a single number or a comma separated list of values to set the leaks to
+        """
+        if self.controller is None:
+            raise ValueError("Controller not created yet")
+
+        idxs, values = self._normalise_idx_value_inputs(idxs, values)
+        leaks = getattr(self.controller, "leaks")
+
+        for idx, value in zip(idxs, values):
+            leaks[idx] = value
+
+            print(f"\n set leak of mode {idx} to {value}")
 
     def take_interaction_matrix(
         self,
