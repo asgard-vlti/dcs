@@ -62,7 +62,7 @@ class DM:
 
     def flatten(self):
         cmd = np.zeros(consts.act_shape)
-        for ii, ss in enumerate(self.shms):
+        for ii, ss in enumerate(self.shms[1:]):
             ss.set_data(cmd)
 
             print(f"zero'd {self.shmfs[ii]}")
