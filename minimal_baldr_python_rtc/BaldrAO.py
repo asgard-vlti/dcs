@@ -170,6 +170,8 @@ class BaldrAO:
         with open(filename_with_time, "rb") as f:
             state = pickle.load(f)
 
+        print(f"read from {filename_with_time}")
+
         self.recon = state["recon"]
         self.controller = state["controller"]
 
