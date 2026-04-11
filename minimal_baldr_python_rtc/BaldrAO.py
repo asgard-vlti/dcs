@@ -57,7 +57,10 @@ class BaldrAO:
             if self.controller is None:
                 print(" ... no controller", end="")
 
-        if self.recon is None or self.controller is None:
+            if np.all(np.abs(self.cam.dark)<1e-2):
+                print(" ... no dark", end="")
+
+        if self.recon is None or self.controller is None or self.cam.dark is None:
             return
 
         if self.is_closed:
@@ -96,7 +99,7 @@ class BaldrAO:
     def create_reconstructor(self, ref_stack_nframes=1000, rcond=1e-3):
         ref = self.take_ref(ref_stack_nframes).flatten()
         print(f"\n making new recon...")
-        im = self.take_interaction_matrix(amp=0.02, n_im=3, n_pokes=10, n_discard=2)
+        im = self.take_interaction_matrix(amp=0.03, sleep=0.01, n_im=2,n_discard=1, n_pokes=10)
         print(f"\n IM has shape {im.shape}")
         self.recon = AO.LinearReconstructor(im, ref, rcond=rcond)
 
