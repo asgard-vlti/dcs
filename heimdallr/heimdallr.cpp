@@ -1,7 +1,6 @@
 #define TOML_IMPLEMENTATION
 #define SCHED_PRIORITY 70
 #include "heimdallr.h"
-#include <commander/commander.h>
 #include <math.h>
 #include <unistd.h>
 #include <cerrno>
@@ -43,59 +42,6 @@ Eigen::Vector4d search_offset = Eigen::Vector4d::Zero();
 IMAGE DMs[N_TEL];
 IMAGE master_DMs[N_TEL];
 
-static int single_instance_lock_fd = -1;
-
-static bool acquire_single_instance_lock(const char *lock_path) {
-    single_instance_lock_fd = open(lock_path, O_RDWR | O_CREAT, 0644);
-    if (single_instance_lock_fd < 0) {
-        logprintf(LOG_ERROR, "Failed to open lock file %s: %s. '", lock_path, std::strerror(errno));
-        return false;
-    }
-
-    if (flock(single_instance_lock_fd, LOCK_EX | LOCK_NB) != 0) {
-        if (errno == EWOULDBLOCK) {
-            logprintf(LOG_ERROR, "Another heimdallr server is already running (lock file: %s). ", lock_path);
-        } else {
-            logprintf(LOG_ERROR, "Failed to lock %s: %s", lock_path, std::strerror(errno));
-        }
-        close(single_instance_lock_fd);
-        single_instance_lock_fd = -1;
-        return false;
-    }
-
-    // Best-effort PID write for operator visibility.
-    if (ftruncate(single_instance_lock_fd, 0) == 0) {
-        char pid_buf[32];
-        int n = std::snprintf(pid_buf, sizeof(pid_buf), "%ld\n", (long)getpid());
-        if (n > 0) {
-            if (write(single_instance_lock_fd, pid_buf, (size_t)n) < 0) {
-                logprintf(LOG_WARNING, "Failed to write PID to lock file %s: %s", lock_path, std::strerror(errno));
-            }
-        }
-    }
-
-    return true;
-}
-
-/* =========================================================================
- *         Like printf, but prepends an ISO 8601 UTC timestamp
- * ========================================================================= */
-void logprintf(int loglevel, const char *fmt, ...) {
-  // Lower loglevels are more important. 
-  if (loglevel > settings.s.loglevel) {
-    return;
-  }
-  std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-  struct tm *tm_info = gmtime(&now);
-  char timebuf[21];
-  strftime(timebuf, sizeof(timebuf), "%Y-%m-%dT%H:%M:%SZ", tm_info);
-  printf("%s ", timebuf);
-  va_list args;
-  va_start(args, fmt);
-  vprintf(fmt, args);
-  va_end(args);
-  printf("\n");
-}
 
 // Utility functions
 
@@ -139,7 +85,7 @@ std::string encode(const char* input, unsigned int size)
 //----------commander functions from here---------------
 void linear_search(uint beam, double start, double stop, double rate, uint search_dt_ms, double search_snr_threashold) {
     if ((beam > N_TEL) || (beam == 0)) {
-        logprintf(LOG_INFO, "Beam number (arg 0) out of range (1 to %d)", N_TEL - 1);
+        info("Beam number (arg 0) out of range (1 to %d)", N_TEL - 1);
         return;
     }
     // Set the delay line to the start position
@@ -153,7 +99,7 @@ void linear_search(uint beam, double start, double stop, double rate, uint searc
 
     // Start the search.
     start_search(beam, start,  stop, rate, search_dt_ms, search_snr_threashold);
-    logprintf(LOG_INFO, "Starting search for beam %u from %g to %g at rate %g",
+    info("Starting search for beam %u from %g to %g at rate %g",
         beam, start, stop, rate);
     return;
 }
@@ -175,7 +121,7 @@ void set_servo_mode(std::string mode) {
         control_u.dl_offload.setZero();
         settings.s.offload_mode = OFFLOAD_NESTED;
     } else {
-        logprintf(LOG_INFO, "Servo mode not recognised");
+        info("Servo mode not recognised");
         settings.mutex.unlock();
         return;
     }
@@ -185,7 +131,7 @@ void set_servo_mode(std::string mode) {
     control_u.piezo.setZero();
     control_u.dm_piston.setZero();
     control_u.search_Nsteps=0;
-    logprintf(LOG_INFO, "Servo mode updated to %d", settings.s.servo_mode);
+    info("Servo mode updated to %d", settings.s.servo_mode);
     return;
 }
 
@@ -193,18 +139,22 @@ void set_servo_mode(std::string mode) {
 void set_offload_time(uint time) {
     settings.mutex.lock();
     if (time < 10 || time > 10000) {
-        logprintf(LOG_INFO, "Offload time out of range (0.01 to 10s)");
+        info("Offload time out of range (0.01 to 10s)");
         settings.mutex.unlock();
         return;
     }
     settings.s.offload_time_ms = time;
     settings.mutex.unlock();
-    logprintf(LOG_INFO, "Offload time updated to %u ms", settings.s.offload_time_ms);
+     info("Offload time updated to %u ms", settings.s.offload_time_ms);
     return;
 }
 
 // Set the offload mode
 std::string set_offload_mode(std::string mode) {
+    if ((mode != "off")) && (settings.s.delay_line_type == "off")) {
+        error("Can not set offload mode when delay line type is ""off"".");
+        return "ERROR: Can not set offload mode when delay line type is ""off"".";
+    }
     settings.mutex.lock();
     if (settings.s.offload_mode == OFFLOAD_MOD) {
         // If we are currently in modulation mode, zero 
@@ -213,11 +163,7 @@ std::string set_offload_mode(std::string mode) {
     }
     if (mode == "off") {
         settings.s.offload_mode = OFFLOAD_OFF;
-    } else if (settings.s.delay_line_type == "off"){
-        return 
-            "ERROR: Can not offload when dl_type is ""off"".";
-    } 
-    if ((mode == "nested") || (mode == "nest")) {
+    } else if ((mode == "nested") || (mode == "nest")) {
         settings.s.offload_mode = OFFLOAD_NESTED;
         // Reset the offload to zero.
         control_u.dl_offload.setZero();
@@ -231,7 +177,7 @@ std::string set_offload_mode(std::string mode) {
     } else if ((mode == "man") || (mode =="manual")) {
         settings.s.offload_mode = OFFLOAD_MANUAL;
     } else {
-        logprintf(LOG_INFO, "Offload mode not recognised");
+         info("Offload mode not recognised");
         settings.mutex.unlock();
         return "ERROR: Offload mode not recognised";
     }
@@ -252,7 +198,7 @@ void set_search_offset(std::vector<double> offset_in_microns) {
             search_offset(i) = 0.0;
         }
     }
-    logprintf(LOG_INFO, "Search offset updated to %s", log_stringify(search_offset.transpose()).c_str());
+     info("Search offset updated to %s", log_stringify(search_offset.transpose()).c_str());
 }
 
 // Get the delay line offsets (from the servo loop)
@@ -327,9 +273,9 @@ void set_delay_line_type(std::string type) {
         settings.s.delay_line_type = type;
         settings.mutex.unlock();
         initialize_delay_line(type);
-        logprintf(LOG_INFO, "Delay line type updated to %s", settings.s.delay_line_type.c_str());
+         info("Delay line type updated to %s", settings.s.delay_line_type.c_str());
     } else {
-        logprintf(LOG_INFO, "Delay line type not recognised: %s", type.c_str());
+         info("Delay line type not recognised: %s", type.c_str());
     } 
 }
 
@@ -417,6 +363,7 @@ Status get_status() {
         status.closure_phase_K2[i] = std::round(bispectra_K2[i].closure_phase* 1000.0)/1000.0;
     }
     status.locked = control_u.fringe_found;
+    status.num_ft_frames_missed = nerrors + K1ft->nerrors + K2ft->nerrors;
     // Count modulo 10000. This is mostly to look for skipped 
     // frames. 
     status.cnt = ft_cnt % 10000; 
@@ -437,7 +384,7 @@ void test(uint beam, double value, int n) {
     // This is a test function that sets the DM piston to a value
     // and then waits for n seconds.
     if ((beam > N_TEL) || beam==0) {
-        logprintf(LOG_INFO, "Beam number (arg 0) out of range (1 to %d)", N_TEL - 1);
+         info("Beam number (arg 0) out of range (1 to %d)", N_TEL - 1);
         return;
     }
     beam_mutex.lock();
@@ -470,11 +417,11 @@ std::vector<double> get_gd_toml_offsets(void){
 // Set the parameters for the default fringe search. 
 void set_search_params(double delta, uint turnaround){
     if (delta <= 0.0 || delta > 10.0){
-        logprintf(LOG_INFO, "Search delta out of range (0.0 to 10.0 microns)");
+         info("Search delta out of range (0.0 to 10.0 microns)");
         return;
     }
     if (turnaround < 1 || turnaround > 100){
-        logprintf(LOG_INFO, "Search turnaround out of range (1 to 100 steps)");
+         info("Search turnaround out of range (1 to 100 steps)");
         return;
     }
     beam_mutex.lock();
@@ -482,7 +429,7 @@ void set_search_params(double delta, uint turnaround){
     control_u.steps_to_turnaround = turnaround;
     control_u.search_Nsteps = 0;
     beam_mutex.unlock();
-    logprintf(LOG_INFO, "Search parameters updated: delta = %g microns, turnaround = %u steps", delta, turnaround);
+     info("Search parameters updated: delta = %g microns, turnaround = %u steps", delta, turnaround);
 }
 
 bool foreground_in_place = false;
@@ -561,13 +508,13 @@ void beams_active(int b1, int b2, int b3, int b4) {
     for (uint i = 0; i < N_TEL; i++) {
         stream << control_u.beams_active[i] << " ";
     }
-    logprintf(LOG_INFO, "%s", stream.str().c_str());
+     info("%s", stream.str().c_str());
 }
 
 void set_itime(double itime) {
     // Set the integration time in seconds
     if ((itime < 0) || itime>1000) {
-        logprintf(LOG_INFO, "Target integration time out of range (0 to 1000)");
+         info("Target integration time out of range (0 to 1000)");
         return;
     }
     beam_mutex.lock();
@@ -576,7 +523,7 @@ void set_itime(double itime) {
     settings.mutex.lock();
     settings.s.target_itime=itime;
     settings.mutex.unlock();
-    logprintf(LOG_INFO, "New integration started for a total time of %g", itime);
+     info("New integration started for a total time of %g", itime);
 }
 
 std::string expstatus(void){
@@ -729,6 +676,15 @@ COMMANDER_REGISTER(m)
     m.def("get_baseline_im", get_baseline_image, "Get a baseline image for K1 or K2 as an encoded string");
 }
 
+int quit(int error) {
+    // This is called when the server is asked to quit. We want to clean up the threads and the DMs neatly.
+    info("Shutting down Heimdallr...");
+    // Later, we should put more of the end of main material here.
+    // Unacquire the lock neatly, ready for a new server.
+	unacquire_single_instance_lock();
+    exit(error);
+}
+
 int main(int argc, char* argv[]) {
     IMAGE K1, K2;
 
@@ -736,6 +692,7 @@ int main(int argc, char* argv[]) {
     settings.s.loglevel=3; // Default to INFO
     if (config.contains("loglevel")) {
         settings.s.loglevel = config["loglevel"].value_or(3);
+        set_log_level(settings.s.loglevel);
     }
 
     // Exit immediately if another instance of this server is running.
@@ -745,11 +702,11 @@ int main(int argc, char* argv[]) {
  
     // Read in the configuration file
     if (argc < 2) {
-        logprintf(LOG_INFO, "Usage: %s <config file>.toml [options]", argv[0]);
+         info("Usage: %s <config file>.toml [options]", argv[0]);
         return 1;
     } else {
         config = toml::parse_file(argv[1]);
-        logprintf(LOG_INFO, "Configuration file read: %s", log_stringify(config["name"]).c_str());
+         info("Configuration file read: %s", log_stringify(config["name"]).c_str());
     }
 
     // Fill in default settings (ideally from config file!)
@@ -771,17 +728,29 @@ int main(int argc, char* argv[]) {
 #ifndef SIMULATE
     // Initialise the DMs
     for (int i = 0; i < N_TEL; i++) {
-        ImageStreamIO_openIm(&DMs[i], ("dm" + std::to_string(i+1) + "disp04").c_str());
-        ImageStreamIO_openIm(&master_DMs[i], ("dm" + std::to_string(i+1)).c_str());
+        if (ImageStreamIO_openIm(&DMs[i], ("dm" + std::to_string(i+1) + "disp04").c_str()) != IMAGESTREAMIO_SUCCESS) {
+            error("Failed to open DM image stream for dm%d", i+1);
+            quit(1);
+        }
+        if (ImageStreamIO_openIm(&master_DMs[i], ("dm" + std::to_string(i+1)).c_str()) != IMAGESTREAMIO_SUCCESS) {
+            error("Failed to open master DM image stream for dm%d", i+1);
+            quit(1);
+        }
     }
 
-    // Initialise the two forward Fourier transform objects
-    ImageStreamIO_openIm(&K1, "hei_k1");
-    ImageStreamIO_openIm(&K2, "hei_k2");
+    // Initialise the camera SHM feeds.
+    if (ImageStreamIO_openIm(&K1, "hei_k1") != IMAGESTREAMIO_SUCCESS) {
+        error("Failed to open K1 image stream");
+        quit(1);
+    }
+    if (ImageStreamIO_openIm(&K2, "hei_k2") != IMAGESTREAMIO_SUCCESS) {
+        error("Failed to open K2 image stream");
+        quit(1);
+    }
 #else
     ImageStreamIO_openIm(&K1, "shei_k1");
     ImageStreamIO_openIm(&K2, "shei_k2");
-    logprintf(LOG_INFO, "Simulation mode!");
+     info("Simulation mode!");
    
 #endif
     K1ft = new ForwardFt(&K1);
@@ -809,7 +778,7 @@ int main(int argc, char* argv[]) {
     pthread_setschedparam(K2ft->thread.native_handle(), SCHED_FIFO, &param);
     pthread_setschedparam(fringe_thread.native_handle(), SCHED_FIFO, &param);
     pthread_getschedparam(fringe_thread.native_handle(), &policy, &param);
-    logprintf(LOG_INFO, "Fringe thread priority: %d  Priority policy: %d\n", param.sched_priority, policy); 
+     info("Fringe thread priority: %d  Priority policy: %d\n", param.sched_priority, policy); 
 
     // Set a delay line, and start the offloading thread.
     initialize_delay_line(config["servo"]["dl_type"].value_or("rmn"));
@@ -832,12 +801,9 @@ int main(int argc, char* argv[]) {
     settings.s.servo_mode = SERVO_STOP;
     fringe_thread.join();
 
-    // Join the FFTW threads. !!! Doesn't seem to work.
+    // Join the FFTW threads. 
     K1ft->stop();
     K2ft->stop();
 
-    if (single_instance_lock_fd >= 0) {
-        close(single_instance_lock_fd);
-        single_instance_lock_fd = -1;
-    }
+    return quit(0);
 }

@@ -1,6 +1,6 @@
 CC=g++
 CFLAGS=-std=c++17 -I../include
-OBJ=server/interactive.o server/single_command.o server/socket.o client/socket.o registry.o server.o module.o
+OBJ=server/interactive.o server/single_command.o server/socket.o client/socket.o registry.o server.o module.o utils.o
 
 all: $(OBJ)
 	ar rcs ../../lib/libcommander.a $(OBJ)

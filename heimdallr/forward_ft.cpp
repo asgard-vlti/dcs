@@ -168,6 +168,7 @@ void ForwardFt::loop() {
     catch_up_with_sem(subarray, 2);
     while (mode != FT_STOPPING) {
         ImageStreamIO_semwait(subarray, 2);
+        catch_up_with_sem(subarray, 2);
         // At this point, subarray->md->cnt0 has been incremented by the camera thread, 
         // and the new frame is available in subarray->array.SI32. 
         if (subarray->md->cnt0 != cnt) {
@@ -180,17 +181,16 @@ void ForwardFt::loop() {
             // This is bad - we shoudl catch up with the semafore and continue.
             if ((current_cnt0 > cnt+2)  && (mode == FT_RUNNING)) {
                 if (cnt - last_logged > 500){
-                    logprintf(LOG_WARNING, "Missed cam frames: %lu %lu",
+                    warn("Missed cam frames: %lu %lu",
                     (unsigned long) current_cnt0,
                     (unsigned long) cnt);
                     last_logged = cnt;
                 }
-                catch_up_with_sem(subarray,2);
-                cnt = current_cnt0;
                 // Signal to the fringe tracker that there is a 
                 // bad frame (i.e. this thread continuing, but no
                 // processing required)
                 bad_frame=true;
+                cnt = current_cnt0;
                 sem_post(&sem_new_frame);
                 nerrors++;
                 continue;
@@ -199,7 +199,7 @@ void ForwardFt::loop() {
             if (mode == FT_STARTING) mode = FT_RUNNING;
             // Check the write parameter. It really shouldn't be active.
             if (subarray->md->write) {
-                logprintf(LOG_WARNING, "FT: Semaphore signalled but write flag is still set. Skipping frame.");
+                warn("FT: Semaphore signalled but write flag is still set. Skipping frame.");
                 continue;
             }
             // In NDMR mode, the first pixel of the image contains the frame counter. 
@@ -207,7 +207,7 @@ void ForwardFt::loop() {
             // control_u.nbreads - 1 - control_u.tsig_len
             if ( (control_u.nbreads > 1) && (subarray->array.SI32[0] > (int)(control_u.nbreads - 1 - control_u.tsig_len)) ) {
             	 bad_frame=true;
-                 cnt++;
+                 cnt = current_cnt0;
                  sem_post(&sem_new_frame);
                  continue;
             }
@@ -252,7 +252,7 @@ void ForwardFt::loop() {
 #ifdef PRINT_TIMING
             clock_gettime(CLOCK_REALTIME, &now);
             if (then.tv_sec == now.tv_sec)
-                logprintf(LOG_INFO, "Window and FFT time: %ld", now.tv_nsec - then.tv_nsec);
+                info("Window and FFT time: %ld", now.tv_nsec - then.tv_nsec);
             then = now;
 #endif
             // If the flux is negative, signal a bad frame.
@@ -262,7 +262,7 @@ void ForwardFt::loop() {
             else
                 {
                     bad_frame=true;
-                    cnt++;
+                    cnt = current_cnt0;
                     sem_post(&sem_new_frame);
                     continue;
                 }
@@ -299,15 +299,12 @@ void ForwardFt::loop() {
 #ifdef PRINT_TIMING
             clock_gettime(CLOCK_REALTIME, &now);
             if (then.tv_sec == now.tv_sec)
-                logprintf(LOG_DEBUG, "PS time: %ld", now.tv_nsec - then.tv_nsec);
+                debug("PS time: %ld", now.tv_nsec - then.tv_nsec);
             then = now;
 #endif
-            // As long as this is the same type as cnt0, it should wrap around correctly
-            // The reason it is here and not before power spectrum computation is because we need at
-            // lease 1 power spectrum in order for the group delay.
-            cnt++;
-
-            // Signal that a new frame is available.
+            // Update cnt in a very robust simple way, and signal that a new frame is available.
+			// This is here and not earlier 
+            cnt = current_cnt0;
             sem_post(&sem_new_frame);
 
             // Copy the Fourier Transform to the place needed for reverse_ft
@@ -322,7 +319,7 @@ void ForwardFt::loop() {
             //std::cout << subarray->name << ": " << cnt << std::endl;
         } else {
             // This shouldn't happen, but if it does, just continue
-            logprintf(LOG_WARNING, "FT: Semaphore signalled but no new frame");
+            warn("FT: Semaphore signalled but no new frame");
             nerrors++;
         }
     }
@@ -353,7 +350,7 @@ void ForwardFt::reverse_ft() {
                 x_px = lround(fs.x_px_K2[bl]) % K2ft->subim_sz;
                 y_px = lround(fs.y_px_K2[bl]) % K2ft->subim_sz;
             } else {
-                logprintf(LOG_ERROR, "Wrong filternum!");
+                error("Wrong filternum!");
                 continue;
             }
             // During the copying loop only, we need a lock
