@@ -65,6 +65,7 @@ class BaldrAO:
             normed_img = self.cam.normalise(img).flatten()
             error = self.recon.reconstruct(normed_img)
             command = self.controller.compute_command(error)
+            # print(f"error {error[0:2]}, cmd: {command[0:2]}")
             self.dm.set_data(command)
 
     def servo(self, new_state: str):
