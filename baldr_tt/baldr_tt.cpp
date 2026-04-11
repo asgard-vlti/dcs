@@ -3,6 +3,7 @@
 #include <commander/commander.h>
 #include <math.h>
 #include <unistd.h>
+#define SCHED_PRIORITY 70
 // Commander struct definitions for json. This is in a separate file to keep the main code clean.
 #include "commander_structs.h"
 using namespace std::complex_literals;
@@ -77,20 +78,20 @@ bool read_modes(std::string filename, Eigen::Matrix<double, N_ACTUATORS, N_MODES
     double *data;
 
     if (fits_open_file(&fptr, filename.c_str(), READONLY, &status)) {
-        std::cerr << "Error opening file: " << filename << std::endl;
+        error("Error opening file: %s", filename.c_str());
         return false;
     }
     if (fits_read_keys_lng(fptr, "NAXIS", 1, 2, naxes, &nfound, &status)) {
-        std::cerr << "Error reading NAXIS from file: " << filename << std::endl;
+        error("Error reading NAXIS from file: %s", filename.c_str());
         return false;
     }
     if ((naxes[0] != N_ACTUATORS) || (naxes[1] > N_MODES)) {
-        std::cerr << "Error: modes file has wrong dimensions. Expected " << N_ACTUATORS << "x" << N_MODES << ", got " << naxes[0] << "x" << naxes[1] << std::endl;
+        error("Error: modes file has wrong dimensions. Expected %dx%d, got %ldx%ld", N_ACTUATORS, N_MODES, naxes[0], naxes[1]);
         return false;
     }
     data = new double[N_ACTUATORS*N_MODES];
     if (fits_read_img(fptr, TDOUBLE, 1, N_ACTUATORS*N_MODES, NULL, data, NULL, &status)) {
-        std::cerr << "Error reading image data from file: " << filename << std::endl;
+        error("Error reading image data from file: %s", filename.c_str());
         delete[] data;
         return false;
     }
@@ -115,7 +116,7 @@ bool load_reconstructor(std::string filename){
     // This is a placeholder function for loading a reconstructor from a fits file. 
     // The actual implementation will depend on the format of the reconstructor file, 
     // which is not yet defined. For now, we will just print a message and return true.
-    std::cout << "Loading reconstructor from file: " << filename << std::endl;
+    info("Loading reconstructor from file: %s", filename.c_str());
     return true;
 }
 
@@ -129,14 +130,14 @@ void set_servo_mode(std::string mode) {
     } else if (mode == "ho") {
         new_mode = SERVO_HO;
     } else {
-        std::cout << "Servo mode not recognised" << std::endl;
+        info("Servo mode not recognised");
         return;
     }
     settings.mutex.lock();
     settings.s.servo_mode = new_mode;
     settings.mutex.unlock();
     // Reset the control_u parameters !!! TODO
-    std::cout << "Servo mode updated to " << new_mode << std::endl;
+    info("Servo mode updated to %d", new_mode);
     return;
 }
 
@@ -187,7 +188,7 @@ void set_pxy(int px_new, int py_new){
     // Check that the new px and py are more than width/2 from the edge, 
     // otherwise we might have problems with the Gaussian window.
     if (px_new < width/2 || px_new > sz - width/2 || py_new < width/2 || py_new > sz - width/2) {
-        std::cout << "px and py must be between " << width/2 << " and " << sz - width/2 << std::endl;
+        info("px and py must be between %d and %d", width/2, sz - width/2);
         return;
     }
     // Set px and py!
@@ -196,7 +197,7 @@ void set_pxy(int px_new, int py_new){
     settings.s.py = py_new;
     settings.mutex.unlock();
     // For debugging, print the new px and py.
-    std::cout << "px and py updated to " << px_new << " " << py_new << std::endl;
+    info("px and py updated to %d %d", px_new, py_new);
 }
 
 void set_tto(double x, double y){
@@ -259,7 +260,7 @@ void zero_tt(){
     if (ofs.is_open()) {
         ofs << px_new << " " << py_new << std::endl;
     } else {
-        std::cerr << "Warning: could not write to " << tt_file << std::endl;
+        info("Warning: could not write to %s", tt_file.c_str());
     }
 }
 
@@ -290,7 +291,7 @@ ImAvgs poke_mode(int mode_ix, double amplitude){
 	im_avgs.im_plus_sum_encoded = "";
 	im_avgs.im_minus_sum_encoded = "";
     if (mode_ix < 0 || mode_ix >= N_MODES) {
-        std::cout << "Invalid mode index. Must be between 0 and " << N_MODES-1 << std::endl;
+        info("Invalid mode index. Must be between 0 and %d", N_MODES - 1);
         return im_avgs;
     }
     // Encode the current im_plus_sum and im_minus_sum as base64 strings.
@@ -304,7 +305,7 @@ ImAvgs poke_mode(int mode_ix, double amplitude){
     // Set the control_u DM command to be the poke of the given mode and amplitude.
     control_a.modes.setZero();
     control_a.modes(mode_ix) = amplitude;
-    std::cout << "Poking mode " << mode_ix << " with amplitude " << amplitude << std::endl;
+    info("Poking mode %d with amplitude %f", mode_ix, amplitude);
 
     // Wait 10ms for DM to settle, then set the im_plus_sum 
     // and im_minus_sum to zero.
@@ -343,17 +344,24 @@ COMMANDER_REGISTER(m)
  }
 
 int main(int argc, char* argv[]) {
-    //Set the nice value.
-    if (nice(-10)==-1) std::cout << "Re-niceing process likely didn't work. New nice value -1." << std::endl;
     // Read in the configuration file
     if (argc < 2) {
-        std::cout << "Usage: " << argv[0] << " <config file>.toml [options]" << std::endl;
+        info("Usage: %s <config file>.toml [options]", argv[0]);
         return 1;
     } else {
         config = toml::parse_file(argv[1]);
-        std::cout << "Configuration file read: "<< config["name"] << std::endl;
+        info("Configuration file read: %s", config["name"].value_or("unknown").c_str());
     }
     beam = config["beam"].value_or(1);
+
+    // Exit immediately if another instance of this server is running.
+    char lockfile[256];
+    sprintf(lockfile, "/tmp/asg.baldr.%d.lock", beam);
+    if (!acquire_single_instance_lock(lockfile)) {
+        info("Another instance of this server is already running for beam %d. Exiting.", beam);
+        return 1;
+    }
+
     settings.s.px = config["px"].value_or(15);
     settings.s.py = config["py"].value_or(15);
     // If /usr/local/etc/ttN.txt exists, override px and py with its values.
@@ -365,7 +373,7 @@ int main(int argc, char* argv[]) {
             if (ifs >> px_file >> py_file) {
                 settings.s.px = px_file;
                 settings.s.py = py_file;
-                std::cout << "Loaded px=" << px_file << " py=" << py_file << " from " << tt_file << std::endl;
+                info("Loaded px=%d py=%d from %s", px_file, py_file, tt_file.c_str());
             }
         }
     }
@@ -382,7 +390,7 @@ int main(int argc, char* argv[]) {
     // Read in the influence functions from the "modefile" fits file.
     std::string modefile = config["modefile"].value_or("modes.fits");
     if (!read_modes(modefile, control_a.influence_functions)) {
-        std::cerr << "Error reading modes file. Exiting." << std::endl;
+        error("Error reading modes file. Exiting.");
         return 1;
     }
 
@@ -391,7 +399,7 @@ int main(int argc, char* argv[]) {
     double cos_angle = std::cos(angle * M_PI / 180.0);
     double sin_angle = std::sin(angle * M_PI / 180.0);
     control_u.R << cos_angle, -sin_angle, sin_angle, cos_angle;
-    std::cout << "R matrix: " << control_u.R(0,0) << control_u.R(0,1) << control_u.R(1,0) << control_u.R(1,1) << std::endl;
+    info("R matrix: %f %f %f %f", control_u.R(0,0), control_u.R(0,1), control_u.R(1,0), control_u.R(1,1));
 
 #ifndef SIMULATE
     // Initialise the DM
@@ -403,11 +411,23 @@ int main(int argc, char* argv[]) {
     ImageStreamIO_openIm(&subarray, ("baldr" + std::to_string(beam)).c_str());
 #else
     ImageStreamIO_openIm(&subarray, "sbaldr1");
-    std::cout << "Simulation mode!" << std::endl;
+    info("Simulation mode!");
    
 #endif
-     // Start the main servo thread. 
+    // Start the main servo thread. 
     std::thread servo_thread(servo_loop);
+    
+    // Prepare the thread parameters.
+    struct sched_param param;
+    int policy;
+    param.sched_priority=SCHED_PRIORITY;
+    
+    // Set the K1ft, K2ft and fringe-tracking threads to real-time priority.
+    pthread_setschedparam(servo_loop.native_handle(), SCHED_FIFO, &param);
+    pthread_getschedparam(servo_loop.native_handle(), &policy, &param);
+    info("Servo thread priority: %d  Priority policy: %d\n", param.sched_priority, policy); 
+
+     
     
     // Initialize the commander server and run it
     commander::Server s(argc, argv);
@@ -416,4 +436,7 @@ int main(int argc, char* argv[]) {
     // Join the fringe-tracking thread
     settings.s.servo_mode = SERVO_STOP;
     servo_thread.join();
+
+    unacquire_single_instance_lock();
+    return 0;
 }

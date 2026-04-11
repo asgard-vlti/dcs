@@ -763,16 +763,11 @@ int main(int argc, char* argv[]) {
     // Start the main fringe-tracking thread. 
     std::thread fringe_thread(fringe_tracker);
     
-        // Prepare the thread atributes.
-    //pthread_attr_t attr;
+    // Prepare the thread parameters.
     struct sched_param param;
     int policy;
-    //pthread_attr_init(&attr);
-    //pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
-    //pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
     param.sched_priority=SCHED_PRIORITY;
-    //pthread_attr_setschedparam(&attr, &param);
-
+    
     // Set the K1ft, K2ft and fringe-tracking threads to real-time priority.
     pthread_setschedparam(K1ft->thread.native_handle(), SCHED_FIFO, &param);
     pthread_setschedparam(K2ft->thread.native_handle(), SCHED_FIFO, &param);

@@ -1,4 +1,5 @@
 #include "baldr_tt.h"
+#include <commander/commander.h>
 //#define PRINT_TIMING
 //#define PRINT_TIMING_ALL
 //#define DEBUG
@@ -122,13 +123,13 @@ void servo_loop(){
         // If we are here, then a new frame is available in both K1 and K2. 
         // Check that there has not been a counting error.
         if(subarray.md->cnt0 == cnt){
-            std::cout << "FT: Semaphore signalled but no new frame" << std::endl;
+            info("FT: Semaphore signalled but no new frame");
             nerrors++;
             continue;
         }
         // Check for missed frames
         if (subarray.md->cnt0 > cnt+2){
-            std::cout << "Missed frames! Image: " << subarray.md->cnt0 << " Servo: " << cnt << std::endl;
+            info("Missed frames! Image: %llu Servo: %lu", (unsigned long long)subarray.md->cnt0, cnt);
             // Catch up!
             catch_up_with_sem(&subarray, 2);
             cnt = subarray.md->cnt0 - 1;
