@@ -65,7 +65,6 @@ class StrehlEstimator:
 
     def update_mask(self, pupil_img):
         pass
-        
 
     def should_close(self, normed_img):
         masked_img = normed_img[self.mask]
