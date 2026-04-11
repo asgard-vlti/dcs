@@ -89,6 +89,10 @@ class BAOServer:
                 info="Set integrator gains (ki) for all modes. ",
                 func=self.BAO.set_ki_gains,
             ),
+            "set_leaks": Command(
+                info="Set leak factors for all modes. ",
+                func=self.BAO.set_leaks,
+            ),
             "command_names": Command(
                 info="command_names - list all available commands",
                 func=lambda: json.dumps(
