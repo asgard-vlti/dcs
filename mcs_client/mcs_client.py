@@ -677,9 +677,15 @@ class Watchdog:
         self.watchdog_fast_retries = 2
         self.watchdog_retry_delay_s = 0.02
         # TODO: use file of all the endpoints everywhere
-        self.watchdog_zmqs = {
-            "MDS": ZmqReq("tcp://mimir:5555", timeout_ms=self.watchdog_fast_timeout_ms),
+
+        # checkports are processes that open a zmq port but don't have a status command
+        self.checkports = {
             "Eng gui": "checkport 8501",  # not zmq, use check_port function instead
+        }
+
+        # all other servers
+        self.watchdog_servers = {
+            "MDS": ZmqReq("tcp://mimir:5555", timeout_ms=self.watchdog_fast_timeout_ms),
             "CRED1": ZmqReq(
                 "tcp://mimir:6667", timeout_ms=self.watchdog_fast_timeout_ms
             ),
@@ -696,13 +702,31 @@ class Watchdog:
             "BTT4": ZmqReq(
                 "tcp://mimir:6674", timeout_ms=self.watchdog_fast_timeout_ms
             ),
+            "BAO1": ZmqReq(
+                "tcp://mimir:6661", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "BAO2": ZmqReq(
+                "tcp://mimir:6662", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "BAO3": ZmqReq(
+                "tcp://mimir:6663", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "BAO4": ZmqReq(
+                "tcp://mimir:6664", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
             "HDLR": hdlr_zmq,
             "back_end": ZmqReq(
                 "tcp://mimir:7001", timeout_ms=self.watchdog_fast_timeout_ms
             ),
         }
 
+        # generic processes that are running
         self.processes_of_interest = {
+            "Heim Telem": "/home/asg/.conda/envs/asgard/bin/save-ft-performance",
+            "Baldr TT Telem": "/home/asg/.conda/envs/asgard/bin/save_tt_performance",
+        }
+
+        self.processes_of_interest_zmq = {
             "MDS": "python asgard_alignment/MultiDeviceServer.py",
             "Eng gui": "streamlit run asgard_alignment/cmd_scripts/engineering_GUI.py",
             "CRED1": "/bin/cred1_server",
@@ -713,8 +737,6 @@ class Watchdog:
             "BTT4": "/usr/local/bin/baldr_tt /usr/local/etc/def4.toml --socket 'tcp://*:6674'",
             "HDLR": "/usr/local/bin/heimdallr",
             "back_end": "/home/asg/.conda/envs/asgard/bin/back-end-server",
-            "Heim Telem": "/home/asg/.conda/envs/asgard/bin/save-ft-performance",
-            "Baldr Telem": "save_tt_performance",
         }
 
     def _watchdog_lazy_pirate_status(
@@ -766,7 +788,7 @@ class Watchdog:
                 time.sleep(self.watchdog_retry_delay_s)
 
         # Check if process is running using cached ps output
-        if ps_output and self.processes_of_interest.get(proc_name) in ps_output:
+        if ps_output and self.processes_of_interest_zmq.get(proc_name) in ps_output:
             return "running", "closed", "no-reply"
 
         return "closed", "closed", "no-reply"
@@ -783,8 +805,6 @@ class Watchdog:
         """
         wd_status = {}
 
-        logging.info("running wd status fn")
-
         # Run ps aux once and cache the output for all process checks
         ps_output = None
         try:
@@ -797,29 +817,50 @@ class Watchdog:
         except Exception as e:
             logging.error(f"Unexpected error running ps aux: {e}")
 
-        for proc_name, zmq_obj in self.watchdog_zmqs.items():
+        logging.info("running wd status fn: servers")
+        for proc_name, zmq_obj in self.watchdog_servers.items():
             proc_status = "closed"
             zmq_status = "no-conn"
             custom_status = ""
-
-            if proc_name.lower() == "eng gui":
-                zmq_status = check_port(8501)
-                proc_status = "running" if zmq_status == "open" else "closed"
+            if isinstance(zmq_obj, ZmqReq):
+                proc_status, zmq_status, custom_status = (
+                    self._watchdog_lazy_pirate_status(proc_name, zmq_obj, ps_output)
+                )
             else:
-                if isinstance(zmq_obj, ZmqReq):
-                    proc_status, zmq_status, custom_status = (
-                        self._watchdog_lazy_pirate_status(proc_name, zmq_obj, ps_output)
-                    )
-                else:
-                    logging.warning(
-                        f"Unexpected type for watchdog zmq object for {proc_name}"
-                    )
+                logging.warning(
+                    f"Unexpected type for watchdog zmq object for {proc_name}"
+                )
 
             wd_status[proc_name] = {
                 "process": proc_status,
                 "zmq": zmq_status,
                 "status": custom_status,
             }
+
+        logging.info("running wd status fn: checkports")
+        for proc_name, check_cmd in self.checkports.items():
+            zmq_status = check_port(int(check_cmd.split()[-1]))
+            proc_status = "running" if zmq_status == "open" else "closed"
+            wd_status[proc_name] = {
+                "process": proc_status,
+                "zmq": zmq_status,
+                "status": "",
+            }
+
+        logging.info("running wd status fn: processes of interest")
+        for proc_name, proc_cmd in self.processes_of_interest.items():
+            if ps_output and proc_cmd in ps_output:
+                wd_status[proc_name] = {
+                    "process": "running",
+                    "zmq": "N/A",
+                    "status": "N/A",
+                }
+            else:
+                wd_status[proc_name] = {
+                    "process": "closed",
+                    "zmq": "N/A",
+                    "status": "N/A",
+                }
 
         return wd_status
 
