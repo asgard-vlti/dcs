@@ -59,6 +59,7 @@ class BaldrAO:
             print(f"\rFPS: {self.iter / elapsed:.2f}", end="")
             self.iter = 0
             self.start_time = time.time()
+            print("\t\t", self.estimator.close_threshold, self.estimator.open_threshold)
 
             if self.recon is None:
                 print(" ... no recon", end="")
@@ -72,6 +73,9 @@ class BaldrAO:
         if self.recon is None or self.controller is None or self.cam.dark is None:
             return
 
+        normed_img = self.cam.normalise(img).flatten()
+
+        self.last_strehl_est = self.estimator.metric(normed_img)
         if self.wants_to_close:
             if self.is_closed:
                 if self.last_strehl_est < self.estimator.open_threshold:
@@ -79,6 +83,7 @@ class BaldrAO:
                         f"Estimator is {self.last_strehl_est:.2e} (less than open thresh of {self.estimator.open_threshold})"
                     )
                     self.is_closed = False
+
                 else:
                     # AO time
                     error = self.recon.reconstruct(normed_img)
@@ -97,8 +102,13 @@ class BaldrAO:
                         f"Estimator is {self.last_strehl_est:.2e} (less than close thresh of {self.estimator.open_threshold})"
                     )
 
+    def set_open_threshold(self, new_thresh):
+        self.estimator.open_threshold = float(new_thresh)
+
+    def set_close_threshold(self, new_thresh):
+        self.estimator.close_threshold = float(new_thresh)
+
     def servo(self, new_state: str):
-        # Future improvement: add a lock-state estimator before enabling closed loop.
         if new_state == "on":
             self.save_state("closing_loop")
             # self.is_closed = True
