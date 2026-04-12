@@ -249,7 +249,7 @@ class MCSClient:
         also poll the cpp databases for new data. Publish all at once.
         """
         while True:
-            self.read_from_wag()
+            # self.read_from_wag()
             self.publish_all_to_wag()
 
             time.sleep(self.sleep_time)
