@@ -36,7 +36,10 @@ class BaldrAO:
         self.recon = None
         self.controller = None
 
+        self.estimator = None
+
         self.is_closed = False
+        self.wants_to_close = False
 
         self.iter = 0
         self.start_time = time.time()
@@ -57,7 +60,7 @@ class BaldrAO:
             if self.controller is None:
                 print(" ... no controller", end="")
 
-            if np.all(np.abs(self.cam.dark)<1e-2):
+            if np.all(np.abs(self.cam.dark) < 1e-2):
                 print(" ... no dark", end="")
 
         if self.recon is None or self.controller is None or self.cam.dark is None:
@@ -74,7 +77,8 @@ class BaldrAO:
     def servo(self, new_state: str):
         # Future improvement: add a lock-state estimator before enabling closed loop.
         if new_state == "on":
-            self.is_closed = True
+            # self.is_closed = True
+            self.wants_to_close = True
         else:
             self.is_closed = False
             self.dm.flatten()
@@ -98,10 +102,19 @@ class BaldrAO:
         self.MDS.send_and_recv(f"movrel BMX{self.beam} 200.0")
         return pupil
 
+    def update_estimator_mask(self):
+        pupil_img = self.take_pupil_img()
+        self.estimator = AO.StrehlEstimator(
+            mask=None, close_threshold=0.5, open_threshold=0.7
+        )
+        self.estimator.update_mask(pupil_img)
+
     def create_reconstructor(self, ref_stack_nframes=1000, rcond=1e-3):
         ref = self.take_ref(ref_stack_nframes).flatten()
         print(f"\n making new recon...")
-        im = self.take_interaction_matrix(amp=0.03, sleep=0.01, n_im=2,n_discard=1, n_pokes=10)
+        im = self.take_interaction_matrix(
+            amp=0.03, sleep=0.01, n_im=2, n_discard=1, n_pokes=10
+        )
         print(f"\n IM has shape {im.shape}")
         self.recon = AO.LinearReconstructor(im, ref, rcond=rcond)
 
@@ -223,6 +236,7 @@ class BaldrAO:
         state = {
             "recon": self.recon,
             "controller": self.controller,
+            "estimator": self.estimator,
             "cam_dark": self.cam.dark,
         }
         filename_with_time = (
@@ -261,12 +275,19 @@ class BaldrAO:
 
         self.recon = state["recon"]
         self.controller = state["controller"]
+        self.estimator = state.get("estimator")
         if "cam_dark" in state:
             self.cam.dark = np.asarray(state["cam_dark"])
 
     def get_status(self):
         status = {
             "servo": "on" if self.is_closed else "off",
+            "wants_to_close": self.wants_to_close,
             "cnt": self.iter,
+            "estimator_metric": (
+                self.estimator.metric(self.cam.normalise(self.cam.get_img()))
+                if self.estimator
+                else None
+            ),
         }
         return status

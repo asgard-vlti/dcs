@@ -1,4 +1,5 @@
 import numpy as np
+from playground.at_baldr_exps.x_maximise_flux_outside_pup import smooth_circle
 import zmq
 import time
 import toml
@@ -9,11 +10,13 @@ import glob
 import hcipy
 import abc
 
+import scipy.optimize as opt
 from xaosim.shmlib import shm
 from asgard_alignment.DM_shm_ctrl import dmclass
 from asgard_alignment import FLI_Cameras as FLI
 import matplotlib.pyplot as plt
 
+import utils
 import basis_funcs
 
 
@@ -71,12 +74,59 @@ class StrehlEstimator:
         self.open_threshold = open_threshold
 
     def update_mask(self, pupil_img):
-        pass
+        cam_grid = hcipy.make_pupil_grid(32, diameter=32)
+
+        res = opt.minimize(
+            utils.xcor_sum_model,
+            x0=[8, 0, 0],
+            args=((pupil_img, cam_grid, 0.5),),
+            bounds=((8, 8), (-10, 10), (-10, 10)),
+        )
+        img_center = np.array([15.5, 15.5])
+        # pupil_center = (res.x[1] + 15.5, res.x[2] + 15.5)
+
+        pupil_center = np.array([res.x[1], res.x[2]]) + img_center
+
+        scattered_flux_mask_r_outer = 12
+        scattered_flux_mask_r_inner = 9.5
+        scattered_flux_mask = (
+            smooth_circle(
+                cam_grid,
+                scattered_flux_mask_r_outer,
+                centre=pupil_center - img_center,
+                softening=0.01,
+            )
+            - smooth_circle(
+                cam_grid,
+                scattered_flux_mask_r_inner,
+                centre=pupil_center - img_center,
+                softening=0.01,
+            )
+        ).reshape(cam_grid.shape)
+
+        self.mask = scattered_flux_mask > 0.5
+
+        plt.figure()
+        plt.imshow(pupil_img)
+        plt.contour(scattered_flux_mask, levels=[0.5], colors="r")
+        plt.contour(scattered_flux_mask, ":", levels=[0.1], colors="w")
+        plt.scatter(pupil_center[0], pupil_center[1], c="r")
+        plt.title("Pupil image with scattered flux mask")
+        dt = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        plt.savefig(f"~/tmp/baldr_minimal_py/pupil_with_mask_{dt}.png")
 
     def should_close(self, normed_img):
-        masked_img = normed_img[self.mask]
-        return masked_img.sum() < self.close_threshold
+        return self.metric(normed_img) < self.close_threshold
 
     def should_open(self, normed_img):
+        return self.metric(normed_img) > self.open_threshold
+
+    def metric(self, normed_img):
         masked_img = normed_img[self.mask]
-        return masked_img.sum() > self.open_threshold
+        return masked_img.sum()
+
+    def set_open_threshold(self, new_threshold):
+        self.open_threshold = new_threshold
+
+    def set_close_threshold(self, new_threshold):
+        self.close_threshold = new_threshold
