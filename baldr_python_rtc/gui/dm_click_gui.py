@@ -335,7 +335,9 @@ class LiveDmSink(DmSinkBase):
         if cmd.size != 140:
             raise ValueError(f"Expected 140-length DM command, got {cmd.size}")
         cmd2d = self._dm.cmd_2_map2D(cmd, fill=0)
-        self._dm.set_data(cmd2d)
+        # self._dm.set_data(cmd2d)
+        print(cmd.shape)
+        self._dm.set_data_chn(cmd, chn=3)
 
 
 @dataclass

@@ -1,5 +1,4 @@
 import numpy as np
-from playground.at_baldr_exps.x_maximise_flux_outside_pup import smooth_circle
 import zmq
 import time
 import toml
@@ -10,6 +9,7 @@ import glob
 import hcipy
 import abc
 
+import pathlib
 import scipy.optimize as opt
 from xaosim.shmlib import shm
 from asgard_alignment.DM_shm_ctrl import dmclass
@@ -90,13 +90,13 @@ class StrehlEstimator:
         scattered_flux_mask_r_outer = 12
         scattered_flux_mask_r_inner = 9.5
         scattered_flux_mask = (
-            smooth_circle(
+            utils.smooth_circle(
                 cam_grid,
                 scattered_flux_mask_r_outer,
                 centre=pupil_center - img_center,
                 softening=0.01,
             )
-            - smooth_circle(
+            - utils.smooth_circle(
                 cam_grid,
                 scattered_flux_mask_r_inner,
                 centre=pupil_center - img_center,
@@ -113,7 +113,8 @@ class StrehlEstimator:
         plt.scatter(pupil_center[0], pupil_center[1], c="r")
         plt.title("Pupil image with scattered flux mask")
         dt = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        plt.savefig(f"~/tmp/baldr_minimal_py/pupil_with_mask_{dt}.png")
+        pth = pathlib.Path(f"~/tmp/baldr_minimal_py/pupil_with_mask_{dt}.png").expanduser()
+        plt.savefig(pth)
 
     def should_close(self, normed_img):
         return self.metric(normed_img) < self.close_threshold
