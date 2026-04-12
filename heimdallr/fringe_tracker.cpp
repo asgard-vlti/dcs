@@ -48,9 +48,6 @@ Eigen::Matrix<double, N_BL, N_MOD> gd_snr_during_mod = Eigen::Matrix<double, N_B
 //Eigen::Vector4d search_vector_scale(-2.75,-1.75,1.25,3.25);
 Eigen::Vector4d search_vector_scale(-1.5,-0.5,0.5,1.5);
 
-// Beams active as an Eigen vector (i.e. doubles rather than booleans)
-Eigen::Vector4d beams_active = Eigen::Vector4d::Ones();
-
 template <typename T> int sgn(T val){
 	return (T(0) < val) - (val < T(0));
 }
@@ -120,7 +117,7 @@ void set_dm_piston(Eigen::Vector4d dm_piston){
     return;
 #endif
     // Make sure that we only move the DM for for the active beams.
-    control_u.dm_piston = beams_active.asDiagonal() * control_u.dm_piston;       	
+    control_u.dm_piston = control_u.beams_active.asDiagonal() * control_u.dm_piston;       	
     // This function sets the DM piston to the given value.
     for(int i = 0; i < N_TEL; i++) {
         if (control_u.search(i) != 0.0) {
@@ -585,7 +582,7 @@ void fringe_tracker(){
             if ((cnt_since_init == last_gd_jump+1) || (cnt_since_init > last_gd_jump + 3)){
 	        control_u.dm_piston += settings.s.kp * control_a.pd * config["wave"]["K1"].value_or(2.05)/OPD_PER_DM_UNIT;
             // Make sure that we only move the DM for for the active beams.
-            control_u.dm_piston = beams_active.asDiagonal() * control_u.dm_piston;
+            control_u.dm_piston = control_u.beams_active.asDiagonal() * control_u.dm_piston;
            	// Center the DM piston.
             control_u.dm_piston = control_u.dm_piston - control_u.dm_piston.mean()*Eigen::Vector4d::Ones();
             // Limit it to no more than +/- MAX_DM_PISTON.
@@ -715,8 +712,8 @@ void fringe_tracker(){
                 //This gives a logarithm base 2, so we search twice as far each turnaround. 
                 while (index >>= 1) ++search_level;
                 control_u.search = I4_search_projection *control_u.search_delta * (1.0 - (search_level % 2) * 2.0)
-                    * beams_active.asDiagonal() * search_vector_scale;
-                control_u.search -= (beams_active.asDiagonal() * control_u.search).mean() * beams_active;
+                    * control_u.beams_active.asDiagonal() * search_vector_scale;
+                control_u.search -= (control_u.beams_active.asDiagonal() * control_u.search).mean() * control_u.beams_active;
                 control_u.search_Nsteps++;
             }
 
