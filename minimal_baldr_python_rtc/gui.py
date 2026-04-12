@@ -178,6 +178,7 @@ class GainLeakWindow(QMainWindow):
             command_name="set_open_threshold",
             default_value=self.defaults.open_threshold,
             error_context="open threshold",
+            scientific_notation=True,
         )
         controls_layout.addWidget(QLabel("Open"))
         controls_layout.addWidget(self.open_thresh_edit)
