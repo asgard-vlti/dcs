@@ -735,6 +735,10 @@ class Watchdog:
             "BTT2": "/usr/local/bin/baldr_tt /usr/local/etc/def2.toml --socket 'tcp://*:6672'",
             "BTT3": "/usr/local/bin/baldr_tt /usr/local/etc/def3.toml --socket 'tcp://*:6673'",
             "BTT4": "/usr/local/bin/baldr_tt /usr/local/etc/def4.toml --socket 'tcp://*:6674'",
+            "BAO1": "Server.py --beam 1",
+            "BAO2": "Server.py --beam 2",
+            "BAO3": "Server.py --beam 3",
+            "BAO4": "Server.py --beam 4",
             "HDLR": "/usr/local/bin/heimdallr",
             "back_end": "/home/asg/.conda/envs/asgard/bin/back-end-server",
         }
