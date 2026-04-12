@@ -34,6 +34,64 @@ DEFAULT_OPEN_THRESHOLD = 0.7
 DEFAULT_CLOSE_THRESHOLD = 0.5
 
 
+DARK_STYLESHEET = """
+QWidget {
+    background-color: #1c1f26;
+    color: #e6e9ef;
+}
+
+QMainWindow {
+    background-color: #1c1f26;
+}
+
+QLabel {
+    color: #e6e9ef;
+}
+
+QLineEdit {
+    background-color: #2a2f3a;
+    color: #f5f7fa;
+    border: 1px solid #444b5a;
+    border-radius: 4px;
+    padding: 4px 6px;
+}
+
+QLineEdit:focus {
+    border: 1px solid #6aa9ff;
+}
+
+QCheckBox {
+    spacing: 6px;
+}
+
+QCheckBox::indicator {
+    width: 14px;
+    height: 14px;
+    border: 1px solid #6b7384;
+    border-radius: 3px;
+    background: #2a2f3a;
+}
+
+QCheckBox::indicator:checked {
+    background: #6aa9ff;
+    border: 1px solid #6aa9ff;
+}
+
+QSlider::groove:vertical {
+    background: #2a2f3a;
+    width: 8px;
+    border-radius: 4px;
+}
+
+QSlider::handle:vertical {
+    background: #6aa9ff;
+    height: 14px;
+    margin: -2px;
+    border-radius: 7px;
+}
+"""
+
+
 @dataclass
 class ModeBlock:
     name: str
@@ -111,6 +169,7 @@ class GainLeakWindow(QMainWindow):
             command_name="set_close_threshold",
             default_value=self.defaults.close_threshold,
             error_context="close threshold",
+            scientific_notation=True,
         )
         controls_layout.addWidget(QLabel("Close"))
         controls_layout.addWidget(self.close_thresh_edit)
@@ -184,21 +243,34 @@ class GainLeakWindow(QMainWindow):
         command_name: str,
         default_value: float,
         error_context: str,
+        scientific_notation: bool = False,
     ) -> QLineEdit:
-        edit = QLineEdit(f"{default_value:.3f}")
+        edit = QLineEdit(self._format_threshold(default_value, scientific_notation))
         edit.setMinimumWidth(70)
-        edit.editingFinished.connect(
-            lambda e=edit, cmd=command_name, ctx=error_context: self._on_numeric_command_updated(
-                e, cmd, ctx
-            )
-        )
+
+        def _handle_editing_finished(
+            e=edit,
+            cmd=command_name,
+            ctx=error_context,
+            sci=scientific_notation,
+        ):
+            self._on_numeric_command_updated(e, cmd, ctx, sci)
+
+        edit.editingFinished.connect(_handle_editing_finished)
         return edit
+
+    @staticmethod
+    def _format_threshold(value: float, scientific_notation: bool) -> str:
+        if scientific_notation:
+            return f"{value:.3e}"
+        return f"{value:.3f}"
 
     def _on_numeric_command_updated(
         self,
         edit: QLineEdit,
         command_name: str,
         error_context: str,
+        scientific_notation: bool = False,
     ):
         raw_text = edit.text().strip()
         try:
@@ -207,9 +279,9 @@ class GainLeakWindow(QMainWindow):
             self.status_label.setText(f"Invalid {error_context}: '{raw_text}'")
             return
 
-        value_text = f"{value:.3f}"
-        edit.setText(value_text)
-        self._send_command(f"{command_name} {value_text}")
+        display_text = self._format_threshold(value, scientific_notation)
+        edit.setText(display_text)
+        self._send_command(f"{command_name} {value:.3f}")
 
     def _on_servo_toggled(self, state: int):
         servo_state = "on" if state == Qt.Checked else "off"
@@ -373,6 +445,7 @@ def main() -> int:
     sender = CommandSender(beam=args.beam, simulation=args.sim)
 
     app = QApplication([])
+    app.setStyleSheet(DARK_STYLESHEET)
     app.aboutToQuit.connect(sender.close)
 
     window = GainLeakWindow(
