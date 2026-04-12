@@ -78,6 +78,8 @@ class BaldrAO:
         normed_img = self.cam.normalise(img).flatten()
         self.last_strehl_est = self.estimator.metric(normed_img)
 
+        # print(self.wants_to_close, self.is_closed, self.last_strehl_est, self.estimator.open_threshold, self.estimator.close_threshold)
+
         if self.wants_to_close:
             if self.is_closed:
                 if self.last_strehl_est < self.estimator.open_threshold:
@@ -113,10 +115,12 @@ class BaldrAO:
         self.estimator.close_threshold = float(new_thresh)
 
     def servo(self, new_state: str):
+        print(f"in servo fn, {new_state}")
         if new_state == "on":
+            self.wants_to_close = True # TODO: this is the bug... save state must be throwing an error or smth...
+            print()
+            print(f"self.wants_to_close {self.wants_to_close}")
             self.save_state("closing_loop")
-            # self.is_closed = True
-            self.wants_to_close = True
         else:
             self.wants_to_close = False
             self.is_closed = False
@@ -364,10 +368,10 @@ class BaldrAO:
         return status
 
 
-class PrintingTelem:
-    def __init__(
-        self,
-    ):
-        self.last_time = time.time()
+# class PrintingTelem:
+#     def __init__(
+#         self,
+#     ):
+#         self.last_time = time.time()
 
-    def update(self):
+#     def update(self):

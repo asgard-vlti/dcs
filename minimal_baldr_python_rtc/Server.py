@@ -258,6 +258,6 @@ if __name__ == "__main__":
         exit(1)
 
     bao = BaldrAO(args.beam)
-    server = BAOServer(bao, port=BEAM_TO_PORT[args.beam])
+    server = BAOServer(bao, port=consts.BEAM_TO_PORT[args.beam])
     print("Starting BAO server...")
     server.run()
