@@ -111,7 +111,9 @@ def main_loop():
         centroid, snr = compute_snr_and_centroid(baseline_powers[i])
         baseline_centroids.append(centroid)
         snrs.append(snr)
-    print(snrs, baseline_centroids)
+    
+    print("snr:",snrs)
+    print("centr:",baseline_centroids)
     # Now we have the centroids and SNRs for each baseline, we can compute the telescope commands.
     # Do x then y separately.
     x_centroids = [c[0] for c in baseline_centroids]
