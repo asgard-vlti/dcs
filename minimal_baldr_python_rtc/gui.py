@@ -455,7 +455,7 @@ def main() -> int:
         sender=sender,
         title=f"Baldr AO Control - Beam {args.beam}",
     )
-    window.resize(400, 500)
+    window.resize(400, 300)
     window.show()
     return app.exec_()
 

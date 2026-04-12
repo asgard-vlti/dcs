@@ -117,9 +117,13 @@ class BaldrAO:
     def servo(self, new_state: str):
         print(f"in servo fn, {new_state}")
         if new_state == "on":
+<<<<<<< HEAD
             self.wants_to_close = True # TODO: this is the bug... save state must be throwing an error or smth...
             print()
             print(f"self.wants_to_close {self.wants_to_close}")
+=======
+            self.wants_to_close = True
+>>>>>>> 8c531a4365451dfb63f3d6d1d1848210d64a8cf0
             self.save_state("closing_loop")
         else:
             self.wants_to_close = False
@@ -195,12 +199,20 @@ class BaldrAO:
 
         print(f"\n made new recon {self.recon}")
 
-    def create_controller(self):
-        self.controller = AO.LeakyIntegrator(
-            self.dm.n_acts,
-            gains=np.full(self.dm.n_acts, 0.0, dtype=float),
-            leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
-        )
+    def create_controller(self, type="leaky_integrator", L_max=0.1):
+        if type == "leaky_integrator":
+            self.controller = AO.LeakyIntegrator(
+                self.dm.n_acts,
+                gains=np.full(self.dm.n_acts, 0.0, dtype=float),
+                leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
+            )
+        elif type == "laplacian_limited_leaky_integrator":
+            self.controller = AO.LapLimitedLeakyIntegrator(
+                self.dm.n_acts,
+                gains=np.full(self.dm.n_acts, 0.0, dtype=float),
+                leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
+                L_max=L_max
+            )
         print(f"\n made new controller {self.controller}")
 
     def _parse_indices(self, idxs):
