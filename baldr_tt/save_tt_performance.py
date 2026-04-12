@@ -8,11 +8,7 @@ tx, ty, mx, my
 The "cnt" variable is returned each time.
 """
 
-import ZMQ_control_client as zmq_client
-import json
 import numpy as np
-from astropy.io import fits
-import sys
 import time
 import pathlib
 
