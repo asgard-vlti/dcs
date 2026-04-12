@@ -487,26 +487,26 @@ void set_gd_offsets(double offset1, double offset2, double offset4) {
 void beams_active(int b1, int b2, int b3, int b4) {
     beam_mutex.lock();
     if (b1==1) 
-    	control_u.beams_active[0] = 1; 
+    	control_u.beams_active(0) = 1; 
     else 
-    	control_u.beams_active[0] = 0;
+    	control_u.beams_active(0) = 0;
     if (b2==1) 
-    	control_u.beams_active[1] = 1; 
+    	control_u.beams_active(1) = 1; 
     else 
-    	control_u.beams_active[1] = 0;
+    	control_u.beams_active(1) = 0;
     if (b3==1) 
-    	control_u.beams_active[2] = 1; 
+    	control_u.beams_active(2) = 1; 
     else 
-    	control_u.beams_active[2] = 0;
+    	control_u.beams_active(2) = 0;
     if (b4==1) 
-    	control_u.beams_active[3] = 1; 
+    	control_u.beams_active(3) = 1; 
     else 
-    	control_u.beams_active[3] = 0;
+    	control_u.beams_active(3) = 0;
     beam_mutex.unlock();
     std::ostringstream stream;
     stream << "Active beams updated to: ";
     for (uint i = 0; i < N_TEL; i++) {
-        stream << control_u.beams_active[i] << " ";
+        stream << control_u.beams_active(i) << " ";
     }
      info("%s", stream.str().c_str());
 }

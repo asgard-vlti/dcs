@@ -437,7 +437,7 @@ void fringe_tracker(){
             // Set the weight matriix (bl,bl) to the square of the SNR, unless 
             // the SNR is too low, in which case we set it to zero.
             if ((baselines.gd_snr(bl) > settings.s.gd_threshold) && 
-                (control_u.beams_active[baseline2beam[bl][0]]) && (control_u.beams_active[baseline2beam[bl][1]])){
+                (control_u.beams_active(baseline2beam[bl][0])) && (control_u.beams_active(baseline2beam[bl][1]))){
                 Wgd(bl) = baselines.gd_snr(bl)*baselines.gd_snr(bl);
                 var_gd(bl) = gd_to_K1*gd_to_K1/baselines.gd_snr(bl)/baselines.gd_snr(bl);
             }
@@ -446,7 +446,7 @@ void fringe_tracker(){
                 var_gd(bl) = 1e6; 
             }
             if ((baselines.pd_snr(bl) > settings.s.pd_threshold) &&
-                (control_u.beams_active[baseline2beam[bl][0]]) && (control_u.beams_active[baseline2beam[bl][1]])){
+                (control_u.beams_active(baseline2beam[bl][0])) && (control_u.beams_active(baseline2beam[bl][1]))){
                 Wpd(bl) = baselines.pd_snr(bl)*baselines.pd_snr(bl);
                 var_pd(bl) = 1/baselines.pd_snr(bl)/baselines.pd_snr(bl)/4/M_PI/M_PI;
             }
@@ -458,9 +458,6 @@ void fringe_tracker(){
             }
         }
         
-        // Make the beams_active a vector.
-        beams_active = Eigen::Vector4d(control_u.beams_active[0],control_u.beams_active[1],control_u.beams_active[2],control_u.beams_active[3]);
-
         // Now we have the group delays and phase delays, we can regularise by using by the  
         // I6gd matrix and the I6pd matrix. No short-cuts!
         // Fill a Vector of baseline group and phase delay.
@@ -679,7 +676,7 @@ void fringe_tracker(){
             beam_mutex.lock();
             unsigned int num_zeros = 0;
             for (int i = 0; i < N_TEL; ++i) {
-                if (control_u.beams_active[i] == 0) num_zeros++;
+                if (control_u.beams_active(i) == 0) num_zeros++;
             }
             unsigned int n = 2 + num_zeros;
 

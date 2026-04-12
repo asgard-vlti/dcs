@@ -136,13 +136,13 @@ struct ControlU{
     Eigen::Vector4d dm_piston;
     Eigen::Vector4d search;
     Eigen::Vector4d dl_offload;
+    Eigen::Vector4d beams_active_vec = Eigen::Vector4d::Ones();
     double search_delta, dit, nbreads, tsig_len;
     unsigned int search_Nsteps, steps_to_turnaround;
     int test_beam, test_n, test_ix;
     double test_value;
     bool fringe_found;
     double itime;
-    int beams_active[N_TEL]={1,1,1,1};
 };
 
 // This is our knowledge of the per-telescope delay state. Units are all in K1 wavelengths.
