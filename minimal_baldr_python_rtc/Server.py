@@ -14,12 +14,7 @@ from BaldrAO import BaldrAO
 import json
 import argparse
 
-BEAM_TO_PORT = {
-    1: "6662",
-    2: "6663",
-    3: "6664",
-    4: "6665",
-}
+import consts
 
 
 @dataclass
@@ -121,9 +116,9 @@ class BAOServer:
                 func=self.BAO.set_close_threshold,
                 is_short=True,
             ),
-            "get_gains": Command(
-                info="Get current integrator gains (ki) for all modes. ",
-                func=self.BAO.get_ki_gains,
+            "get_controller_params": Command(
+                info="Get current integrator gains (ki) and leakage for all modes. ",
+                func=self.BAO.get_controller_params,
                 is_short=True,
             ),
             "command_names": Command(

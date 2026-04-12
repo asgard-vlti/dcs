@@ -147,27 +147,36 @@ class BaldrAO:
             pupil_img, scattered_flux_mask_r_outer, scattered_flux_mask_r_inner
         )
 
-    def get_ki_gains(self):
+    @staticmethod
+    def parse_block(ls):
+        # the gains are going to be in blocks. Figure out the indicies and report
+        # as e.g {"0:10": 0.1, "10:20": 0.2} rather than {"0": 0.1, "1": 0.1, ...}
+        # each block can have variable length
+        dict_out = {}
+        block_start = 0
+        for i in range(1, len(ls)):
+            if ls[i] != ls[i - 1]:
+                block_end = i
+                dict_out[f"{block_start}:{block_end}"] = ls[i - 1]
+                block_start = block_end
+        dict_out[f"{block_start}:{len(ls)}"] = ls[-1]
+        return dict_out
+
+    def get_controller_params(self):
         """
-        get the ki gains from the controller, using blocks to simplify
+        get the controller parameters, using blocks to simplify
         the amount of data transmitted
         """
         if self.controller is None:
             raise ValueError("Controller not created yet")
 
-        # the gains are going to be in blocks. Figure out the indicies and report
-        # as e.g {"0:10": 0.1, "10:20": 0.2} rather than {"0": 0.1, "1": 0.1, ...}
-        # each block can have variable length
         gains = getattr(self.controller, "gains")
-        gain_dict = {}
-        block_start = 0
-        for i in range(1, len(gains)):
-            if gains[i] != gains[i - 1]:
-                block_end = i
-                gain_dict[f"{block_start}:{block_end}"] = gains[i - 1]
-                block_start = block_end
-        gain_dict[f"{block_start}:{len(gains)}"] = gains[-1]
-        return gain_dict
+        leaks = getattr(self.controller, "leaks")
+        return {
+            "gains": self.parse_block(gains),
+            "leaks": self.parse_block(leaks),
+        }
+        
 
     def create_reconstructor(self, ref_stack_nframes=1000, rcond=1e-3):
         ref = self.take_ref(ref_stack_nframes).flatten()
@@ -351,3 +360,12 @@ class BaldrAO:
             ),
         }
         return status
+
+
+class PrintingTelem:
+    def __init__(
+        self,
+    ):
+        self.last_time = time.time()
+
+    def update(self):

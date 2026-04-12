@@ -1,1 +1,8 @@
-[]
+[blocks]
+# 2, 8, 16, 20, 30 in each block, counting up
+TT = "0:2"
+Block2 = "2:10"
+Block3 = "10:26"
+Block4 = "26:46"
+Block5 = "46:76"
+
