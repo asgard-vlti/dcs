@@ -710,7 +710,9 @@ void fringe_tracker(){
                 while (index >>= 1) ++search_level;
                 control_u.search = I4_search_projection *control_u.search_delta * (1.0 - (search_level % 2) * 2.0)
                     * control_u.beams_active.asDiagonal() * search_vector_scale;
-                control_u.search -= (control_u.beams_active.asDiagonal() * control_u.search).mean() * control_u.beams_active;
+                // Let's keep this simple: just keep the non-active beam at zero.
+                // This does not ensure zero mean.
+                control_u.search = control_u.beams_active.asDiagonal() * control_u.search;
                 control_u.search_Nsteps++;
             }
 
