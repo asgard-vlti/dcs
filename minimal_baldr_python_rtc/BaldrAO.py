@@ -16,8 +16,6 @@ import datetime
 
 # TODO: saving/loading of class and subclass from pickle
 # TODO: ignore pix in BAO, needs pupil fitting and thinking about that, maybe fine tuning offload to detector
-
-
 savepth = pathlib.Path("~/.config/minimal_baldr_rtc/").expanduser()
 
 
@@ -70,7 +68,10 @@ class BaldrAO:
             if np.all(np.abs(self.cam.dark) == 0.0):
                 print(" ... no dark", end="")
 
-            print(f" Close thresh: {self.estimator.close_threshold}, open thresh: {self.estimator.open_threshold}", end="")
+            print(
+                f" Close thresh: {self.estimator.close_threshold}, open thresh: {self.estimator.open_threshold}",
+                end="",
+            )
 
         if self.recon is None or self.controller is None or self.cam.dark is None:
             return
@@ -120,7 +121,8 @@ class BaldrAO:
             self.wants_to_close = False
             self.is_closed = False
             self.dm.flatten()
-            self.controller.reset()
+            if self.controller:
+                self.controller.reset()
 
     def take_dark(self):
         cur_bmy = self.MDS.send_and_recv(f"read BMY{self.beam}")
@@ -177,7 +179,6 @@ class BaldrAO:
             "gains": self.parse_block(gains),
             "leaks": self.parse_block(leaks),
         }
-        
 
     def create_reconstructor(self, ref_stack_nframes=1000, rcond=1e-3):
         ref = self.take_ref(ref_stack_nframes).flatten()
@@ -202,7 +203,7 @@ class BaldrAO:
                 self.dm.n_acts,
                 gains=np.full(self.dm.n_acts, 0.0, dtype=float),
                 leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
-                L_max=L_max
+                L_max=L_max,
             )
         print(f"\n made new controller {self.controller}")
 
@@ -320,7 +321,7 @@ class BaldrAO:
         filename_with_time = (
             savepth
             / f"beam_{self.beam}"
-            / f"bao_state_{datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')}.pkl"
+            / f"bao_state_{filename}_{datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')}.pkl"
         )
         with open(filename_with_time, "wb") as f:
             pickle.dump(state, f)
@@ -369,12 +370,3 @@ class BaldrAO:
             ),
         }
         return status
-
-
-class PrintingTelem:
-    def __init__(
-        self,
-    ):
-        self.last_time = time.time()
-
-    def update(self):
