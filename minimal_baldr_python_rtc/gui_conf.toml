@@ -6,3 +6,6 @@ Block3 = "10:26"
 Block4 = "26:46"
 Block5 = "46:76"
 
+[default]
+gain = 0.0
+leak = 0.995
