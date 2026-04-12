@@ -73,7 +73,7 @@ class StrehlEstimator:
         self.close_threshold = close_threshold
         self.open_threshold = open_threshold
 
-    def update_mask(self, pupil_img):
+    def update_mask(self, pupil_img, scattered_flux_mask_r_outer=12, scattered_flux_mask_r_inner = 9.5):
         cam_grid = hcipy.make_pupil_grid(32, diameter=32)
 
         res = opt.minimize(
@@ -83,12 +83,8 @@ class StrehlEstimator:
             bounds=((8, 8), (-10, 10), (-10, 10)),
         )
         img_center = np.array([15.5, 15.5])
-        # pupil_center = (res.x[1] + 15.5, res.x[2] + 15.5)
-
         pupil_center = np.array([res.x[1], res.x[2]]) + img_center
 
-        scattered_flux_mask_r_outer = 12
-        scattered_flux_mask_r_inner = 9.5
         scattered_flux_mask = (
             utils.smooth_circle(
                 cam_grid,
@@ -126,7 +122,7 @@ class StrehlEstimator:
         if self.mask is None:
             return 0.0
         masked_img = normed_img[self.mask.flatten()]
-        return masked_img.sum()
+        return np.median(masked_img)
 
     def set_open_threshold(self, new_threshold):
         self.open_threshold = new_threshold

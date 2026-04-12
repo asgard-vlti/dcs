@@ -83,6 +83,8 @@ class BaldrAO:
                         f"Estimator is {self.last_strehl_est:.2e} (less than open thresh of {self.estimator.open_threshold})"
                     )
                     self.is_closed = False
+                    self.dm.flatten()
+                    self.controller.reset()
 
                 else:
                     # AO time
@@ -134,12 +136,12 @@ class BaldrAO:
         self.MDS.send_and_recv(f"movrel BMX{self.beam} 200.0")
         return pupil
 
-    def update_estimator_mask(self):
+    def update_estimator_mask(self, scattered_flux_mask_r_outer = 12.0,scattered_flux_mask_r_inner = 9.5):
         pupil_img = self.take_pupil_img()
         self.estimator = AO.StrehlEstimator(
             mask=None, close_threshold=0.5, open_threshold=0.7
         )
-        self.estimator.update_mask(pupil_img)
+        self.estimator.update_mask(pupil_img, scattered_flux_mask_r_outer, scattered_flux_mask_r_inner)
 
     def create_reconstructor(self, ref_stack_nframes=1000, rcond=1e-3):
         ref = self.take_ref(ref_stack_nframes).flatten()
