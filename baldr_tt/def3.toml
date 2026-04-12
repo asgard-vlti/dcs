@@ -26,6 +26,8 @@ ttl = 0.01
 # High-order gain - normalised to unity 
 hog = 0.2
 hol = 0.01
+# Flux threshold
+flux_threshold = 1000
 
 modefile = "/usr/local/etc/modes.fits"
 
