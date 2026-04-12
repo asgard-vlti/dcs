@@ -200,10 +200,17 @@ class BackEndServer:
         # Map WAG verbs -> Commander command strings
         if self.baldr_mode == "STANDARD":
             cmd_map = {
-                "bld_open_lo": 'open_baldr_LO ""',
-                "bld_open_ho": 'open_baldr_HO ""',
-                "bld_close_lo": 'close_baldr_LO ""',
-                "bld_close_ho": 'close_baldr_HO ""',
+                # when using Ben's
+                # "bld_open_lo": 'open_baldr_LO ""',
+                # "bld_open_ho": 'open_baldr_HO ""',
+                # "bld_close_lo": 'close_baldr_LO ""',
+                # "bld_close_ho": 'close_baldr_HO ""',
+                
+                # when using minimal 
+                "bld_open_lo": 'servo off',
+                "bld_open_ho": 'servo off',
+                "bld_close_lo": 'servo off',
+                "bld_close_ho": 'servo off',
                 "bld_n0_update": 'N0_update ""',
             }
         else:

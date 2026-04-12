@@ -136,7 +136,7 @@ struct ControlU{
     Eigen::Vector4d dm_piston;
     Eigen::Vector4d search;
     Eigen::Vector4d dl_offload;
-    Eigen::Vector4d beams_active_vec = Eigen::Vector4d::Ones();
+    Eigen::Vector4d beams_active = Eigen::Vector4d::Ones();
     double search_delta, dit, nbreads, tsig_len;
     unsigned int search_Nsteps, steps_to_turnaround;
     int test_beam, test_n, test_ix;
