@@ -151,7 +151,7 @@ class HeimdallrAA:
         return max_loc
 
     def _get_frame(self):
-        full_frame = self.stream.get_data()
+        full_frame = self.stream.get_data().copy()
 
         full_frame[full_frame > 30_000.0] = np.median(full_frame)
         full_frame = full_frame.mean(0)
