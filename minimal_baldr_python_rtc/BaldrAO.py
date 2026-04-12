@@ -59,7 +59,7 @@ class BaldrAO:
             print(f"\rFPS: {self.iter / elapsed:.2f}", end="")
             self.iter = 0
             self.start_time = time.time()
-            print("\t\t", self.estimator.close_threshold, self.estimator.open_threshold)
+            # print("\t\t", self.estimator.close_threshold, self.estimator.open_threshold)
 
             if self.recon is None:
                 print(" ... no recon", end="")
@@ -70,12 +70,14 @@ class BaldrAO:
             if np.all(np.abs(self.cam.dark) == 0.0):
                 print(" ... no dark", end="")
 
+            print(f" Close thresh: {self.estimator.close_threshold}, open thresh: {self.estimator.open_threshold}", end="")
+
         if self.recon is None or self.controller is None or self.cam.dark is None:
             return
 
         normed_img = self.cam.normalise(img).flatten()
-
         self.last_strehl_est = self.estimator.metric(normed_img)
+
         if self.wants_to_close:
             if self.is_closed:
                 if self.last_strehl_est < self.estimator.open_threshold:
