@@ -73,7 +73,12 @@ class StrehlEstimator:
         self.close_threshold = close_threshold
         self.open_threshold = open_threshold
 
-    def update_mask(self, pupil_img, scattered_flux_mask_r_outer=12, scattered_flux_mask_r_inner = 9.5):
+    def update_mask(
+        self,
+        pupil_img,
+        scattered_flux_mask_r_outer=12.0,
+        scattered_flux_mask_r_inner=9.5,
+    ):
         cam_grid = hcipy.make_pupil_grid(32, diameter=32)
 
         res = opt.minimize(
@@ -109,7 +114,9 @@ class StrehlEstimator:
         plt.scatter(pupil_center[0], pupil_center[1], c="r")
         plt.title("Pupil image with scattered flux mask")
         dt = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        pth = pathlib.Path(f"~/tmp/baldr_minimal_py/pupil_with_mask_{dt}.png").expanduser()
+        pth = pathlib.Path(
+            f"~/tmp/baldr_minimal_py/pupil_with_mask_{dt}.png"
+        ).expanduser()
         plt.savefig(pth)
 
     def should_close(self, normed_img):

@@ -21,7 +21,7 @@ class DM:
     Adapted from dmclass in DM_shm_ctrl.py
     """
 
-    def __init__(self, beam_id, main_chn=2, basis=None):
+    def __init__(self, beam_id, main_chn=2, basis=None, piston_free=True):
         beam_id = int(beam_id)
 
         # beam number
@@ -52,11 +52,16 @@ class DM:
 
         self.n_acts = self.basis.shape[1]
 
+        self.piston_free = piston_free
+
     def set_data(self, cmd):
         """
         convention to apply any user specific commands on channel 2!
         """
-        self.shms[self.main_chn].set_data(self.basis @ cmd)
+        cmd = self.basis @ cmd
+        if self.piston_free:
+            cmd = cmd - cmd.mean()
+        self.shms[self.main_chn].set_data(cmd)
         ##
         self.shm0.post_sems(1)
 

@@ -121,6 +121,11 @@ class BAOServer:
                 func=self.BAO.set_close_threshold,
                 is_short=True,
             ),
+            "get_gains": Command(
+                info="Get current integrator gains (ki) for all modes. ",
+                func=self.BAO.get_ki_gains,
+                is_short=True,
+            ),
             "command_names": Command(
                 info="command_names - list all available commands",
                 func=lambda: json.dumps(
