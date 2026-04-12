@@ -389,6 +389,7 @@ class MCSClient:
                     "value": [value],
                     "range": f"({beam_no}:{beam_no})",
                 }
+        logging.info("gathered script parameters: %s", data)
         return data
 
     def publish_all_to_wag(self):
