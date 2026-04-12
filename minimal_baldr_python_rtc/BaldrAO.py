@@ -57,7 +57,7 @@ class BaldrAO:
             if self.controller is None:
                 print(" ... no controller", end="")
 
-            if np.all(np.abs(self.cam.dark)<1e-2):
+            if np.all(np.abs(self.cam.dark) ==0.0):
                 print(" ... no dark", end="")
 
         if self.recon is None or self.controller is None or self.cam.dark is None:
@@ -75,19 +75,17 @@ class BaldrAO:
         # Future improvement: add a lock-state estimator before enabling closed loop.
         if new_state == "on":
             self.is_closed = True
+            self.save_state("closing_loop")
         else:
             self.is_closed = False
             self.dm.flatten()
             self.controller.reset()
 
     def take_dark(self):
-        # TODO: change to use BMY instead of shutters
-        # self.MDS.send_and_recv(f"b_shut close {self.beam}")
         cur_bmy = self.MDS.send_and_recv(f"read BMY{self.beam}")
-        self.MDS.send_and_recv(f"moveabs BMY{self.beam} 1000.0")
+        self.MDS.send_and_recv(f"moveabs BMY{self.beam} 500.0")
         time.sleep(3)
         self.cam.take_dark(256)
-        # self.MDS.send_and_recv(f"b_shut open {self.beam}")
         self.MDS.send_and_recv(f"moveabs BMY{self.beam} {cur_bmy}")
         time.sleep(3)
 
