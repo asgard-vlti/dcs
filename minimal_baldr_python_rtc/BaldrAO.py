@@ -114,9 +114,8 @@ class BaldrAO:
 
     def servo(self, new_state: str):
         if new_state == "on":
-            self.save_state("closing_loop")
-            # self.is_closed = True
             self.wants_to_close = True
+            self.save_state("closing_loop")
         else:
             self.wants_to_close = False
             self.is_closed = False
@@ -191,12 +190,20 @@ class BaldrAO:
 
         print(f"\n made new recon {self.recon}")
 
-    def create_controller(self):
-        self.controller = AO.LeakyIntegrator(
-            self.dm.n_acts,
-            gains=np.full(self.dm.n_acts, 0.0, dtype=float),
-            leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
-        )
+    def create_controller(self, type="leaky_integrator", L_max=0.1):
+        if type == "leaky_integrator":
+            self.controller = AO.LeakyIntegrator(
+                self.dm.n_acts,
+                gains=np.full(self.dm.n_acts, 0.0, dtype=float),
+                leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
+            )
+        elif type == "laplacian_limited_leaky_integrator":
+            self.controller = AO.LapLimitedLeakyIntegrator(
+                self.dm.n_acts,
+                gains=np.full(self.dm.n_acts, 0.0, dtype=float),
+                leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
+                L_max=L_max
+            )
         print(f"\n made new controller {self.controller}")
 
     def _parse_indices(self, idxs):
