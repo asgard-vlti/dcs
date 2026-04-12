@@ -14,7 +14,6 @@ import pickle
 import pathlib
 import datetime
 
-
 # TODO: saving/loading of class and subclass from pickle
 # TODO: ignore pix in BAO, needs pupil fitting and thinking about that, maybe fine tuning offload to detector
 
@@ -42,11 +41,17 @@ class BaldrAO:
         self.is_closed = False
         self.wants_to_close = False
 
+        self.last_strehl_est = None
+
         self.iter = 0
         self.start_time = time.time()
 
     def run_iteration(self):
         img = self.cam.get_img()
+
+        normed_img = self.cam.normalise(img).flatten()
+
+        self.last_strehl_est = self.estimator.metric(normed_img)
 
         self.iter += 1
         if self.iter == 1000:
@@ -61,19 +66,18 @@ class BaldrAO:
             if self.controller is None:
                 print(" ... no controller", end="")
 
-            if np.all(np.abs(self.cam.dark) ==0.0):
+            if np.all(np.abs(self.cam.dark) == 0.0):
                 print(" ... no dark", end="")
 
         if self.recon is None or self.controller is None or self.cam.dark is None:
             return
 
-        normed_img = self.cam.normalise(img).flatten()
-
-        self.last_strehl_est = self.estimator.metric(normed_img)
         if self.wants_to_close:
             if self.is_closed:
                 if self.last_strehl_est < self.estimator.open_threshold:
-                    print(f"Estimator is {self.last_strehl_est:.2e} (less than open thresh of {self.estimator.open_threshold})")
+                    print(
+                        f"Estimator is {self.last_strehl_est:.2e} (less than open thresh of {self.estimator.open_threshold})"
+                    )
                     self.is_closed = False
                 else:
                     # AO time
@@ -83,11 +87,15 @@ class BaldrAO:
                     self.dm.set_data(command)
             else:
                 if self.last_strehl_est > self.estimator.close_threshold:
-                    print(f"Estimator is {self.last_strehl_est:.2e} (greater than close thresh of {self.estimator.open_threshold})")
+                    print(
+                        f"Estimator is {self.last_strehl_est:.2e} (greater than close thresh of {self.estimator.open_threshold})"
+                    )
                     self.is_closed = True
                 else:
                     self.is_closed = False
-                    print(f"Estimator is {self.last_strehl_est:.2e} (less than close thresh of {self.estimator.open_threshold})")
+                    print(
+                        f"Estimator is {self.last_strehl_est:.2e} (less than close thresh of {self.estimator.open_threshold})"
+                    )
 
     def servo(self, new_state: str):
         # Future improvement: add a lock-state estimator before enabling closed loop.
@@ -299,9 +307,9 @@ class BaldrAO:
             "wants_to_close": self.wants_to_close,
             "cnt": self.iter,
             "estimator_metric": (
-                self.estimator.metric(self.cam.normalise(self.cam.get_img()))
+                self.last_strehl_est
                 if self.estimator
-                else None
+                else None if self.estimator else None
             ),
         }
         return status
