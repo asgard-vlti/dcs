@@ -85,24 +85,24 @@ class BaldrAO:
                     self.is_closed = False
                     self.dm.flatten()
                     self.controller.reset()
-
-                else:
-                    # AO time
-                    error = self.recon.reconstruct(normed_img)
-                    command = self.controller.compute_command(error)
-                    # print(f"error {error[0:2]}, cmd: {command[0:2]}")
-                    self.dm.set_data(command)
             else:
                 if self.last_strehl_est > self.estimator.close_threshold:
                     print(
-                        f"Estimator is {self.last_strehl_est:.2e} (greater than close thresh of {self.estimator.open_threshold})"
+                        f"Estimator is {self.last_strehl_est:.2e} (greater than close thresh of {self.estimator.close_threshold})"
                     )
                     self.is_closed = True
                 else:
                     self.is_closed = False
                     print(
-                        f"Estimator is {self.last_strehl_est:.2e} (less than close thresh of {self.estimator.open_threshold})"
+                        f"Estimator is {self.last_strehl_est:.2e} (less than close thresh of {self.estimator.close_threshold})"
                     )
+
+        if self.is_closed:
+            # AO time
+            error = self.recon.reconstruct(normed_img)
+            command = self.controller.compute_command(error)
+            # print(f"error {error[0:2]}, cmd: {command[0:2]}")
+            self.dm.set_data(command)
 
     def set_open_threshold(self, new_thresh):
         self.estimator.open_threshold = float(new_thresh)
