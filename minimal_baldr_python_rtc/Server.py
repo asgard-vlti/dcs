@@ -113,12 +113,12 @@ class BAOServer:
             ),
             "set_open_threshold": Command(
                 info="Set the open threshold for the Strehl estimator",
-                func=self.BAO.estimator.set_open_threshold,
+                func=self.BAO.set_open_threshold,
                 is_short=True,
             ),
             "set_close_threshold": Command(
                 info="Set the close threshold for the Strehl estimator",
-                func=self.BAO.estimator.set_close_threshold,
+                func=self.BAO.set_close_threshold,
                 is_short=True,
             ),
             "command_names": Command(

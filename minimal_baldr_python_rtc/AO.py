@@ -123,11 +123,15 @@ class StrehlEstimator:
         return self.metric(normed_img) > self.open_threshold
 
     def metric(self, normed_img):
-        masked_img = normed_img[self.mask]
+        if self.mask is None:
+            return 0.0
+        masked_img = normed_img[self.mask.flatten()]
         return masked_img.sum()
 
     def set_open_threshold(self, new_threshold):
         self.open_threshold = new_threshold
+        print(f"Close: {self.close_threshold}, open: {self.open_threshold}")
 
     def set_close_threshold(self, new_threshold):
         self.close_threshold = new_threshold
+        print(f"Close: {self.close_threshold}, open: {self.open_threshold}")
