@@ -34,6 +34,64 @@ DEFAULT_OPEN_THRESHOLD = 0.7
 DEFAULT_CLOSE_THRESHOLD = 0.5
 
 
+DARK_STYLESHEET = """
+QWidget {
+    background-color: #1c1f26;
+    color: #e6e9ef;
+}
+
+QMainWindow {
+    background-color: #1c1f26;
+}
+
+QLabel {
+    color: #e6e9ef;
+}
+
+QLineEdit {
+    background-color: #2a2f3a;
+    color: #f5f7fa;
+    border: 1px solid #444b5a;
+    border-radius: 4px;
+    padding: 4px 6px;
+}
+
+QLineEdit:focus {
+    border: 1px solid #6aa9ff;
+}
+
+QCheckBox {
+    spacing: 6px;
+}
+
+QCheckBox::indicator {
+    width: 14px;
+    height: 14px;
+    border: 1px solid #6b7384;
+    border-radius: 3px;
+    background: #2a2f3a;
+}
+
+QCheckBox::indicator:checked {
+    background: #6aa9ff;
+    border: 1px solid #6aa9ff;
+}
+
+QSlider::groove:vertical {
+    background: #2a2f3a;
+    width: 8px;
+    border-radius: 4px;
+}
+
+QSlider::handle:vertical {
+    background: #6aa9ff;
+    height: 14px;
+    margin: -2px;
+    border-radius: 7px;
+}
+"""
+
+
 @dataclass
 class ModeBlock:
     name: str
@@ -387,6 +445,7 @@ def main() -> int:
     sender = CommandSender(beam=args.beam, simulation=args.sim)
 
     app = QApplication([])
+    app.setStyleSheet(DARK_STYLESHEET)
     app.aboutToQuit.connect(sender.close)
 
     window = GainLeakWindow(
