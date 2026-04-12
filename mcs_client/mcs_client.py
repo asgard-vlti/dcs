@@ -886,6 +886,7 @@ class MCSServer:
             self.z.send_payload(stats)
         else:
             msg = json.loads(msg)
+            logging.info(f"recieved status message from script: {msg}")
             # Acknowledge receipt
             if not msg:
                 return None
