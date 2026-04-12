@@ -72,7 +72,8 @@ class BaldrAO:
         self.last_strehl_est = self.estimator.metric(normed_img)
         if self.wants_to_close:
             if self.is_closed:
-                if self.last_strehl_est > self.estimator.close_threshold:
+                if self.last_strehl_est < self.estimator.open_threshold:
+                    print(f"Estimator is {self.last_strehl_est:.2e} (less than open thresh of {self.estimator.open_threshold})")
                     self.is_closed = False
                 else:
                     # AO time
@@ -82,9 +83,11 @@ class BaldrAO:
                     self.dm.set_data(command)
             else:
                 if self.last_strehl_est > self.estimator.close_threshold:
+                    print(f"Estimator is {self.last_strehl_est:.2e} (greater than close thresh of {self.estimator.open_threshold})")
                     self.is_closed = True
                 else:
                     self.is_closed = False
+                    print(f"Estimator is {self.last_strehl_est:.2e} (less than close thresh of {self.estimator.open_threshold})")
 
     def servo(self, new_state: str):
         # Future improvement: add a lock-state estimator before enabling closed loop.
