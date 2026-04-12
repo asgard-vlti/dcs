@@ -723,7 +723,7 @@ class Watchdog:
         # generic processes that are running
         self.processes_of_interest = {
             "Heim Telem": "/home/asg/.conda/envs/asgard/bin/save-ft-performance",
-            "Baldr TT Telem": "/home/asg/.conda/envs/asgard/bin/save_tt_performance",
+            "Baldr TT Telem": "/home/asg/.conda/envs/asgard/bin/save-tt-performance",
         }
 
         self.processes_of_interest_zmq = {

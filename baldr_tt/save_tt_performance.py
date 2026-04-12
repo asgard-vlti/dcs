@@ -169,7 +169,7 @@ class BTTSettingLogger:
             f.write(line + "\n")
 
 
-if __name__ == "__main__":
+def main():
     cur_datetime = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
     year_month_day = time.strftime("%Y%m%d", time.gmtime())
     pth = f"/data/{year_month_day}"
@@ -208,3 +208,7 @@ if __name__ == "__main__":
                 f"[BTT Performance] Error logging performance: {e}. Retrying in 2s..."
             )
             time.sleep(2)
+
+
+if __name__ == "__main__":
+    main()
