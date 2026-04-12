@@ -1,7 +1,7 @@
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import zmq
 from PyQt5.QtCore import Qt
@@ -111,6 +111,7 @@ class GainLeakWindow(QMainWindow):
             command_name="set_close_threshold",
             default_value=self.defaults.close_threshold,
             error_context="close threshold",
+            display_format="e",
         )
         controls_layout.addWidget(QLabel("Close"))
         controls_layout.addWidget(self.close_thresh_edit)
@@ -184,21 +185,27 @@ class GainLeakWindow(QMainWindow):
         command_name: str,
         default_value: float,
         error_context: str,
+        display_format: Literal["f", "e"] = "f",
     ) -> QLineEdit:
-        edit = QLineEdit(f"{default_value:.3f}")
+        edit = QLineEdit(self._format_threshold(default_value, display_format))
         edit.setMinimumWidth(70)
         edit.editingFinished.connect(
-            lambda e=edit, cmd=command_name, ctx=error_context: self._on_numeric_command_updated(
-                e, cmd, ctx
+            lambda e=edit, cmd=command_name, ctx=error_context, disp=display_format: self._on_numeric_command_updated(
+                e, cmd, ctx, disp
             )
         )
         return edit
+
+    @staticmethod
+    def _format_threshold(value: float, display_format: Literal["f", "e"]) -> str:
+        return f"{value:.3{display_format}}"
 
     def _on_numeric_command_updated(
         self,
         edit: QLineEdit,
         command_name: str,
         error_context: str,
+        display_format: Literal["f", "e"] = "f",
     ):
         raw_text = edit.text().strip()
         try:
@@ -207,9 +214,9 @@ class GainLeakWindow(QMainWindow):
             self.status_label.setText(f"Invalid {error_context}: '{raw_text}'")
             return
 
-        value_text = f"{value:.3f}"
-        edit.setText(value_text)
-        self._send_command(f"{command_name} {value_text}")
+        display_text = self._format_threshold(value, display_format)
+        edit.setText(display_text)
+        self._send_command(f"{command_name} {value:.3f}")
 
     def _on_servo_toggled(self, state: int):
         servo_state = "on" if state == Qt.Checked else "off"
