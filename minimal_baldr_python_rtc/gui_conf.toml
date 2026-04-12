@@ -6,3 +6,21 @@ Block3 = "10:26"
 Block4 = "26:46"
 Block5 = "46:76"
 
+[defaults]
+TT.gain = 0.0
+TT.leak = 0.995
+
+Block2.gain = 0.0
+Block2.leak = 0.99
+
+Block3.gain = 0.0
+Block3.leak = 0.7
+
+Block4.gain = 0.0
+Block4.leak = 0.5
+
+Block5.gain = 0.0
+Block5.leak = 0.3
+
+open_threshold = 3e-4
+close_threshold = 6e-4
