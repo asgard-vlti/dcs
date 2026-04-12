@@ -106,12 +106,27 @@ class BAOServer:
                 func=self.BAO.set_leaks,
                 is_short=True,
             ),
+            "update_estimator_mask": Command(
+                info="Update the mask used by the Strehl estimator based on current pupil image",
+                func=self.BAO.update_estimator_mask,
+                is_short=False,
+            ),
+            "set_open_threshold": Command(
+                info="Set the open threshold for the Strehl estimator",
+                func=self.BAO.set_open_threshold,
+                is_short=True,
+            ),
+            "set_close_threshold": Command(
+                info="Set the close threshold for the Strehl estimator",
+                func=self.BAO.set_close_threshold,
+                is_short=True,
+            ),
             "command_names": Command(
                 info="command_names - list all available commands",
                 func=lambda: json.dumps(
                     [cmd_name for cmd_name in self.commands.keys()]
                 ),
-                is_short=False,
+                is_short=True,
             ),
         }
 

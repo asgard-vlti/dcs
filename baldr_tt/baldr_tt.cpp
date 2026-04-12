@@ -3,6 +3,8 @@
 #include <commander/commander.h>
 #include <math.h>
 #include <unistd.h>
+#include <pthread.h>
+#include <string>
 #define SCHED_PRIORITY 70
 // Commander struct definitions for json. This is in a separate file to keep the main code clean.
 #include "commander_structs.h"
@@ -350,7 +352,7 @@ int main(int argc, char* argv[]) {
         return 1;
     } else {
         config = toml::parse_file(argv[1]);
-        info("Configuration file read: %s", config["name"].value_or("unknown").c_str());
+        info("Configuration file read: %s", config["name"].value_or("unknown"));
     }
     beam = config["beam"].value_or(1);
 
@@ -423,8 +425,8 @@ int main(int argc, char* argv[]) {
     param.sched_priority=SCHED_PRIORITY;
     
     // Set the K1ft, K2ft and fringe-tracking threads to real-time priority.
-    pthread_setschedparam(servo_loop.native_handle(), SCHED_FIFO, &param);
-    pthread_getschedparam(servo_loop.native_handle(), &policy, &param);
+    pthread_setschedparam(servo_thread.native_handle(), SCHED_FIFO, &param);
+    pthread_getschedparam(servo_thread.native_handle(), &policy, &param);
     info("Servo thread priority: %d  Priority policy: %d\n", param.sched_priority, policy); 
 
      

@@ -36,7 +36,12 @@ class BaldrAO:
         self.recon = None
         self.controller = None
 
+        self.estimator = AO.StrehlEstimator(None, 0.0, 0.0)
+
         self.is_closed = False
+        self.wants_to_close = False
+
+        self.last_strehl_est = None
 
         self.iter = 0
         self.start_time = time.time()
@@ -44,12 +49,17 @@ class BaldrAO:
     def run_iteration(self):
         img = self.cam.get_img()
 
+        normed_img = self.cam.normalise(img).flatten()
+
+        self.last_strehl_est = self.estimator.metric(normed_img)
+
         self.iter += 1
         if self.iter == 1000:
             elapsed = time.time() - self.start_time
             print(f"\rFPS: {self.iter / elapsed:.2f}", end="")
             self.iter = 0
             self.start_time = time.time()
+            print("\t\t", self.estimator.close_threshold, self.estimator.open_threshold)
 
             if self.recon is None:
                 print(" ... no recon", end="")
@@ -57,51 +67,88 @@ class BaldrAO:
             if self.controller is None:
                 print(" ... no controller", end="")
 
-            if np.all(np.abs(self.cam.dark)<1e-2):
+            if np.all(np.abs(self.cam.dark) == 0.0):
                 print(" ... no dark", end="")
 
         if self.recon is None or self.controller is None or self.cam.dark is None:
             return
 
-        if self.is_closed:
-            # AO time
-            normed_img = self.cam.normalise(img).flatten()
-            error = self.recon.reconstruct(normed_img)
-            command = self.controller.compute_command(error)
-            # print(f"error {error[0:2]}, cmd: {command[0:2]}")
-            self.dm.set_data(command)
+        normed_img = self.cam.normalise(img).flatten()
+
+        self.last_strehl_est = self.estimator.metric(normed_img)
+        if self.wants_to_close:
+            if self.is_closed:
+                if self.last_strehl_est < self.estimator.open_threshold:
+                    print(
+                        f"Estimator is {self.last_strehl_est:.2e} (less than open thresh of {self.estimator.open_threshold})"
+                    )
+                    self.is_closed = False
+                    self.dm.flatten()
+                    self.controller.reset()
+
+                else:
+                    # AO time
+                    error = self.recon.reconstruct(normed_img)
+                    command = self.controller.compute_command(error)
+                    # print(f"error {error[0:2]}, cmd: {command[0:2]}")
+                    self.dm.set_data(command)
+            else:
+                if self.last_strehl_est > self.estimator.close_threshold:
+                    print(
+                        f"Estimator is {self.last_strehl_est:.2e} (greater than close thresh of {self.estimator.open_threshold})"
+                    )
+                    self.is_closed = True
+                else:
+                    self.is_closed = False
+                    print(
+                        f"Estimator is {self.last_strehl_est:.2e} (less than close thresh of {self.estimator.open_threshold})"
+                    )
+
+    def set_open_threshold(self, new_thresh):
+        self.estimator.open_threshold = float(new_thresh)
+
+    def set_close_threshold(self, new_thresh):
+        self.estimator.close_threshold = float(new_thresh)
 
     def servo(self, new_state: str):
-        # Future improvement: add a lock-state estimator before enabling closed loop.
         if new_state == "on":
-            self.is_closed = True
+            self.save_state("closing_loop")
+            # self.is_closed = True
+            self.wants_to_close = True
         else:
+            self.wants_to_close = False
             self.is_closed = False
             self.dm.flatten()
             self.controller.reset()
 
     def take_dark(self):
-        # TODO: change to use BMY instead of shutters
-        # self.MDS.send_and_recv(f"b_shut close {self.beam}")
         cur_bmy = self.MDS.send_and_recv(f"read BMY{self.beam}")
-        self.MDS.send_and_recv(f"moveabs BMY{self.beam} 1000.0")
+        self.MDS.send_and_recv(f"moveabs BMY{self.beam} 500.0")
         time.sleep(3)
         self.cam.take_dark(256)
-        # self.MDS.send_and_recv(f"b_shut open {self.beam}")
         self.MDS.send_and_recv(f"moveabs BMY{self.beam} {cur_bmy}")
         time.sleep(3)
 
     def take_pupil_img(self):
         self.MDS.send_and_recv(f"movrel BMX{self.beam} -200.0")
         time.sleep(3)
-        pupil = self.cam.take_stack(256)
+        pupil = self.cam.take_stack(256).mean(0)
         self.MDS.send_and_recv(f"movrel BMX{self.beam} 200.0")
         return pupil
+
+    def update_estimator_mask(self, scattered_flux_mask_r_outer = 12.0,scattered_flux_mask_r_inner = 9.5):
+        pupil_img = self.take_pupil_img()
+        self.estimator = AO.StrehlEstimator(
+            mask=None, close_threshold=0.5, open_threshold=0.7
+        )
+        self.estimator.update_mask(pupil_img, scattered_flux_mask_r_outer, scattered_flux_mask_r_inner)
 
     def create_reconstructor(self, ref_stack_nframes=1000, rcond=1e-3):
         ref = self.take_ref(ref_stack_nframes).flatten()
         print(f"\n making new recon...")
-        im = self.take_interaction_matrix(amp=0.03, sleep=0.01, n_im=2,n_discard=1, n_pokes=10)
+        im = self.take_interaction_matrix(
+            amp=0.03, sleep=0.01, n_im=2, n_discard=1, n_pokes=10
+        )
         print(f"\n IM has shape {im.shape}")
         self.recon = AO.LinearReconstructor(im, ref, rcond=rcond)
 
@@ -223,6 +270,7 @@ class BaldrAO:
         state = {
             "recon": self.recon,
             "controller": self.controller,
+            "estimator": self.estimator,
             "cam_dark": self.cam.dark,
         }
         filename_with_time = (
@@ -261,12 +309,19 @@ class BaldrAO:
 
         self.recon = state["recon"]
         self.controller = state["controller"]
+        self.estimator = state.get("estimator")
         if "cam_dark" in state:
             self.cam.dark = np.asarray(state["cam_dark"])
 
     def get_status(self):
         status = {
             "servo": "on" if self.is_closed else "off",
+            "wants_to_close": self.wants_to_close,
             "cnt": self.iter,
+            "estimator_metric": (
+                self.last_strehl_est
+                if self.estimator
+                else None if self.estimator else None
+            ),
         }
         return status
