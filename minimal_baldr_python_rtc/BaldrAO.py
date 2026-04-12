@@ -14,6 +14,7 @@ import pickle
 import pathlib
 import datetime
 
+
 # TODO: saving/loading of class and subclass from pickle
 # TODO: ignore pix in BAO, needs pupil fitting and thinking about that, maybe fine tuning offload to detector
 
@@ -36,7 +37,7 @@ class BaldrAO:
         self.recon = None
         self.controller = None
 
-        self.estimator = None
+        self.estimator = AO.StrehlEstimator(None, 0.0, 0.0)
 
         self.is_closed = False
         self.wants_to_close = False
@@ -66,22 +67,33 @@ class BaldrAO:
         if self.recon is None or self.controller is None or self.cam.dark is None:
             return
 
-        if self.is_closed:
-            # AO time
-            normed_img = self.cam.normalise(img).flatten()
-            error = self.recon.reconstruct(normed_img)
-            command = self.controller.compute_command(error)
-            # print(f"error {error[0:2]}, cmd: {command[0:2]}")
-            self.dm.set_data(command)
+        normed_img = self.cam.normalise(img).flatten()
+
+        self.last_strehl_est = self.estimator.metric(normed_img)
+        if self.wants_to_close:
+            if self.is_closed:
+                if self.last_strehl_est > self.estimator.close_threshold:
+                    self.is_closed = False
+                else:
+                    # AO time
+                    error = self.recon.reconstruct(normed_img)
+                    command = self.controller.compute_command(error)
+                    # print(f"error {error[0:2]}, cmd: {command[0:2]}")
+                    self.dm.set_data(command)
+            else:
+                if self.last_strehl_est > self.estimator.close_threshold:
+                    self.is_closed = True
+                else:
+                    self.is_closed = False
 
     def servo(self, new_state: str):
         # Future improvement: add a lock-state estimator before enabling closed loop.
         if new_state == "on":
-            self.is_closed = True
             self.save_state("closing_loop")
             # self.is_closed = True
             self.wants_to_close = True
         else:
+            self.wants_to_close = False
             self.is_closed = False
             self.dm.flatten()
             self.controller.reset()
@@ -97,7 +109,7 @@ class BaldrAO:
     def take_pupil_img(self):
         self.MDS.send_and_recv(f"movrel BMX{self.beam} -200.0")
         time.sleep(3)
-        pupil = self.cam.take_stack(256)
+        pupil = self.cam.take_stack(256).mean(0)
         self.MDS.send_and_recv(f"movrel BMX{self.beam} 200.0")
         return pupil
 
