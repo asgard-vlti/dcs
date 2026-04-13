@@ -17,6 +17,7 @@ from asgard_alignment.DM_shm_ctrl import dmclass
 from asgard_alignment import FLI_Cameras as FLI
 import matplotlib.pyplot as plt
 
+import Cam
 import utils
 import basis_funcs
 import model
@@ -41,10 +42,12 @@ class LinearReconstructor(Reconstructor):
 
 
 class PupilAwareLinearReconstructor(Reconstructor):
+
     def __init__(
         self,
         labIM,
         lab_pupil_img,
+        cam: Cam.Cam,
         rcond=1e-3,
         phasemask_diam=44e-6,
         wavels=np.linspace(1.5e-6, 1.7e-6, 5),
@@ -52,7 +55,13 @@ class PupilAwareLinearReconstructor(Reconstructor):
         """
         note that all images are assumed to be normed already!!
         """
+        if isinstance(lab_pupil_img, np.ndarray):
+            lab_pupil_img = self.img_to_hcfield(lab_pupil_img)
+
         self.ref = model.create_model_reference(phasemask_diam, lab_pupil_img, wavels)
+
+        self.cam = cam
+        self.ref = cam.normalise(self.ref)
 
         self.model_phasemask_diam = phasemask_diam
         self.model_wavels = wavels
@@ -70,7 +79,17 @@ class PupilAwareLinearReconstructor(Reconstructor):
 
         self.recon_matrix = hcipy.inverse_tikhonov(self.labIM.T, rcond=rcond)
 
+    def reconstruct(self, normed_img):
+        return self.recon_matrix @ (normed_img - self.ref)
+
+    def img_to_hcfield(self, img):
+        # convert a 2D image to an hcipy Field, using the same grid as the model reference
+        return hcipy.Field(img.flatten(), model.detector_grid)
+
     def update_reference(self, sky_pupil_img):
+        if isinstance(sky_pupil_img, np.ndarray):
+            sky_pupil_img = self.img_to_hcfield(sky_pupil_img)
+
         self.ref = model.create_model_reference(
             self.model_phasemask_diam, sky_pupil_img, self.model_wavels
         )
@@ -131,50 +150,6 @@ class LeakyIntegrator(Controller):
 
     def reset(self):
         self.command = np.zeros(self.n)
-
-
-class LapLimitedLeakyIntegrator(LeakyIntegrator):
-    @staticmethod
-    def laplacian_limiter(surface, L_max, return_L=False):
-        # surface is a 2D array of actuator values
-        # we will modify surface in place
-        new_surface = surface.copy()
-
-        laplacian = (
-            -4 * surface[1:-1, 1:-1]
-            + surface[1:-1, 2:]
-            + surface[1:-1, :-2]
-            + surface[2:, 1:-1]
-            + surface[:-2, 1:-1]
-        )
-
-        new_surface[1:-1, 1:-1] += np.clip((laplacian - L_max) / 4, 0, None)
-        # and the opposite for negative Laplacian
-        new_surface[1:-1, 1:-1] += np.clip((laplacian + L_max) / 4, None, 0)
-
-        # retain pinning
-        new_surface[0, 1:-1] = new_surface[1, 1:-1]
-        new_surface[-1, 1:-1] = new_surface[-2, 1:-1]
-        new_surface[1:-1, 0] = new_surface[1:-1, 1]
-        new_surface[1:-1, -1] = new_surface[1:-1, -2]
-
-        if return_L:
-            L_values = np.zeros_like(surface)
-            L_values[1:-1, 1:-1] = laplacian
-            return new_surface, L_values
-        return new_surface
-
-    def __init__(self, n, gains=None, leaks=None, L_max=0.1):
-        super().__init__(n, gains, leaks)
-        self.L_max = L_max
-
-    def compute_command(self, error):
-        raw_command = super().compute_command(error)
-        command_2d = raw_command.reshape(consts.act_shape)
-        limited_command_2d = self.laplacian_limiter(
-            command_2d, self.L_max, return_L=False
-        )
-        return limited_command_2d.flatten()
 
 
 class StrehlEstimator:

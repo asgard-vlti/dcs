@@ -134,6 +134,11 @@ class BAOServer:
                 func=self.BAO.set_leaks,
                 is_short=True,
             ),
+            "set_Lmax": Command(
+                info="Set the L_max parameter for the DM Laplacian limiter. ",
+                func=self.BAO.set_L_max,
+                is_short=True,
+            ),
             "update_estimator_mask": Command(
                 info="Update the mask used by the Strehl estimator based on current pupil image",
                 func=self.BAO.update_estimator_mask,
@@ -152,6 +157,16 @@ class BAOServer:
             "get_controller_params": Command(
                 info="Get current integrator gains (ki) and leakage for all modes. ",
                 func=self.BAO.get_controller_params,
+                is_short=True,
+            ),
+            "settings": Command(
+                info="Get current settings of the system (gains, thresholds, etc.)",
+                func=self.BAO.get_settings,
+                is_short=True,
+            ),
+            "save_img_vs_ref": Command(
+                info="Save the current image, reference and their difference for debugging purposes",
+                func=self.BAO.save_img_vs_ref,
                 is_short=True,
             ),
             "command_names": Command(

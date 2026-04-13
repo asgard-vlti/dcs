@@ -30,6 +30,7 @@ class BaldrAO:
 
         self.cam = Cam.Cam(beam)
         self.dm = DM.FourierDM(beam)
+        self.L_max = float(getattr(self.dm, "L_max", 0.0))
 
         self.MDS = LazyPirateZMQ.ZmqLazyPirateClient(zmq.Context(), "tcp://mimir:5555")
 
@@ -70,8 +71,8 @@ class BaldrAO:
                 msg += " ... no dark"
 
             msg += (
-                f" Close thresh: {self.estimator.close_threshold}, "
-                f"open thresh: {self.estimator.open_threshold}"
+                f" Close thresh: {self.estimator.close_threshold:.2e}, "
+                f"open thresh: {self.estimator.open_threshold:.2e}"
             )
             logger.info(msg)
 
@@ -85,7 +86,7 @@ class BaldrAO:
             if self.is_closed:
                 if self.last_strehl_est < self.estimator.open_threshold:
                     logger.info(
-                        "Estimator is %.2e (less than open thresh of %s)",
+                        "Estimator is %.2e (less than open thresh of %.2e)",
                         self.last_strehl_est,
                         self.estimator.open_threshold,
                     )
@@ -95,7 +96,7 @@ class BaldrAO:
             else:
                 if self.last_strehl_est > self.estimator.close_threshold:
                     logger.info(
-                        "Estimator is %.2e (greater than close thresh of %s)",
+                        "Estimator is %.2e (greater than close thresh of %.2e)",
                         self.last_strehl_est,
                         self.estimator.close_threshold,
                     )
@@ -103,7 +104,7 @@ class BaldrAO:
                 else:
                     self.is_closed = False
                     logger.info(
-                        "Estimator is %.2e (less than close thresh of %s)",
+                        "Estimator is %.2e (less than close thresh of %.2e)",
                         self.last_strehl_est,
                         self.estimator.close_threshold,
                     )
@@ -141,16 +142,20 @@ class BaldrAO:
         time.sleep(3)
 
     def take_pupil_img(self):
-        self.MDS.send_and_recv(f"movrel BMX{self.beam} -200.0")
+        res = self.MDS.send_and_recv(f"moverel BMX{self.beam} -200.0")
+        logger.info("recieved %s from mds", res)
         time.sleep(3)
         pupil = self.cam.take_stack(256).mean(0)
-        self.MDS.send_and_recv(f"movrel BMX{self.beam} 200.0")
+        self.MDS.send_and_recv(f"moverel BMX{self.beam} 200.0")
+        time.sleep(1)
         return pupil
 
     def update_estimator_mask(
         self, scattered_flux_mask_r_outer=12.0, scattered_flux_mask_r_inner=9.5
     ):
+        logger.info("Taking pupil img")
         pupil_img = self.take_pupil_img()
+        logger.info("Pupil image taken")
         self.estimator = AO.StrehlEstimator(
             mask=None, close_threshold=0.5, open_threshold=0.7
         )
@@ -184,6 +189,7 @@ class BaldrAO:
         gains = getattr(self.controller, "gains")
         leaks = getattr(self.controller, "leaks")
         return {
+            "controller_type": type(self.controller).__name__,
             "gains": self.parse_block(gains),
             "leaks": self.parse_block(leaks),
         }
@@ -200,6 +206,8 @@ class BaldrAO:
         n_discard=1,
     ):
         ref = self.take_ref(ref_stack_nframes).flatten()
+        # remove Lmax
+        self.dm.L_max = 1.0
         logger.info("making new recon...")
         im = self.take_interaction_matrix(
             amp=amp,
@@ -209,12 +217,18 @@ class BaldrAO:
             n_pokes=n_pokes,
         )
         logger.info("IM has shape %s", im.shape)
+        self.dm.L_max = self.L_max
 
-        if kind == "Linear":
+        if kind.lower() == "linear":
             self.recon = AO.LinearReconstructor(im, ref, rcond=rcond)
-        elif kind == "PupilAwareLinear":
+        elif kind.lower() == "palinear":
             pupil_img = self.take_pupil_img()
-            self.recon = AO.PupilAwareLinearReconstructor(im, pupil_img, rcond=rcond)
+            self.recon = AO.PupilAwareLinearReconstructor(
+                im,
+                pupil_img,
+                self.cam,
+                rcond=rcond,
+            )
 
         logger.info("made new recon %s", self.recon)
 
@@ -230,20 +244,17 @@ class BaldrAO:
         sky_pupil_img = self.take_pupil_img()
         self.recon.update_reference(sky_pupil_img)
 
-    def create_controller(self, type="leaky_integrator", L_max=0.1):
+    def create_controller(self, type="leaky_integrator"):
         if type == "leaky_integrator":
             self.controller = AO.LeakyIntegrator(
                 self.dm.n_acts,
                 gains=np.full(self.dm.n_acts, 0.0, dtype=float),
                 leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
             )
-        elif type == "laplacian_limited_leaky_integrator":
-            self.controller = AO.LapLimitedLeakyIntegrator(
-                self.dm.n_acts,
-                gains=np.full(self.dm.n_acts, 0.0, dtype=float),
-                leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
-                L_max=L_max,
-            )
+        else:
+            logger.error("Unknown controller type %s", type)
+            raise ValueError(f"Unknown controller type {type}")
+
         logger.info("made new controller %s", self.controller)
 
     def _parse_indices(self, idxs):
@@ -348,12 +359,18 @@ class BaldrAO:
         ref = imgs.mean(0)
         return self.cam.normalise(ref)
 
+    def set_L_max(self, new_L_max):
+        self.L_max = float(new_L_max)
+        self.dm.L_max = self.L_max
+        logger.info("Set L_max to %.3f", self.L_max)
+
     def save_state(self, filename):
         state = {
             "recon": self.recon,
             "controller": self.controller,
             "estimator": self.estimator,
             "cam_dark": self.cam.dark,
+            "L_max": self.L_max,
             "desc": filename,
         }
         filename_with_time = (
@@ -374,15 +391,37 @@ class BaldrAO:
         except ValueError:
             pass
 
+        state_dir = savepth / f"beam_{self.beam}"
+
         if isinstance(filename, int):
             files = sorted(
-                (savepth / f"beam_{self.beam}").glob("bao_state_*.pkl"), reverse=True
+                state_dir.glob("bao_state_*.pkl"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
             )
             if not files:
                 raise FileNotFoundError(f"No saved states found for beam {self.beam}")
             filename_with_time = files[filename]
         else:
-            filename_with_time = savepth / f"beam_{self.beam}" / filename
+            # Support either a full filename or a base description used by save_state.
+            candidate = state_dir / filename
+            if candidate.exists():
+                filename_with_time = candidate
+            else:
+                fragment = str(filename)
+                all_states = sorted(
+                    state_dir.glob("bao_state_*.pkl"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+                matches = [
+                    p for p in all_states if fragment in p.name[len("bao_state_") :]
+                ]
+                if not matches:
+                    raise FileNotFoundError(
+                        f"No saved state found for beam {self.beam} matching '{filename}'"
+                    )
+                filename_with_time = matches[0]
 
         with open(filename_with_time, "rb") as f:
             state = pickle.load(f)
@@ -393,8 +432,34 @@ class BaldrAO:
         self.recon = state["recon"]
         self.controller = state["controller"]
         self.estimator = state.get("estimator")
+        if "L_max" in state:
+            self.set_L_max(state["L_max"])
+        else:
+            self.L_max = float(getattr(self.dm, "L_max", self.L_max))
         if "cam_dark" in state:
             self.cam.dark = np.asarray(state["cam_dark"])
+
+    def save_img_vs_ref(self):
+        if self.recon is None:
+            raise ValueError("Reconstructor not created yet")
+
+        img = self.cam.get_img()
+        normed_img = self.cam.normalise(img).flatten()
+        ref = self.recon.ref
+
+        diff = normed_img - ref
+
+        save_dir = savepth / f"beam_{self.beam}" / "img_vs_ref"
+        save_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat(
+            timespec="seconds"
+        )
+        np.savez(
+            save_dir / f"img_vs_ref_{timestamp}.npz",
+            img=normed_img,
+            ref=ref,
+        )
+        logging.info("Saved img vs ref to %s", save_dir / f"img_vs_ref_{timestamp}.npz")
 
     def get_status(self):
         status = {
@@ -408,3 +473,17 @@ class BaldrAO:
             ),
         }
         return status
+
+    def get_settings(self):
+        settings = {
+            "open_threshold": self.estimator.open_threshold if self.estimator else None,
+            "close_threshold": (
+                self.estimator.close_threshold if self.estimator else None
+            ),
+            "L_max": self.L_max,
+            "controller_settings": (
+                self.get_controller_params() if self.controller else None
+            ),
+            "reconstructor_type": type(self.recon).__name__ if self.recon else None,
+        }
+        return settings
