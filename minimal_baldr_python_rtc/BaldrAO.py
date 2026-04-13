@@ -112,7 +112,6 @@ class BaldrAO:
             # AO time
             error = self.recon.reconstruct(normed_img)
             command = self.controller.compute_command(error)
-            print("sending:", command)
             self.dm.set_data(command)
 
     def set_open_threshold(self, new_thresh):
@@ -142,17 +141,20 @@ class BaldrAO:
         time.sleep(3)
 
     def take_pupil_img(self):
-        self.MDS.send_and_recv(f"movrel BMX{self.beam} -200.0")
+        res = self.MDS.send_and_recv(f"moverel BMX{self.beam} -200.0")
+        logger.info("recieved %s from mds", res)
         time.sleep(3)
         pupil = self.cam.take_stack(256).mean(0)
-        self.MDS.send_and_recv(f"movrel BMX{self.beam} 200.0")
+        self.MDS.send_and_recv(f"moverel BMX{self.beam} 200.0")
         time.sleep(1)
         return pupil
 
     def update_estimator_mask(
         self, scattered_flux_mask_r_outer=12.0, scattered_flux_mask_r_inner=9.5
     ):
+        logger.info("Taking pupil img")
         pupil_img = self.take_pupil_img()
+        logger.info("Pupil image taken")
         self.estimator = AO.StrehlEstimator(
             mask=None, close_threshold=0.5, open_threshold=0.7
         )
