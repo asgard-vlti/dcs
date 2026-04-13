@@ -86,7 +86,7 @@ class BaldrAO:
             if self.is_closed:
                 if self.last_strehl_est < self.estimator.open_threshold:
                     logger.info(
-                        "Estimator is %.2e (less than open thresh of %s)",
+                        "Estimator is %.2e (less than open thresh of %.2e)",
                         self.last_strehl_est,
                         self.estimator.open_threshold,
                     )
@@ -96,7 +96,7 @@ class BaldrAO:
             else:
                 if self.last_strehl_est > self.estimator.close_threshold:
                     logger.info(
-                        "Estimator is %.2e (greater than close thresh of %s)",
+                        "Estimator is %.2e (greater than close thresh of %.2e)",
                         self.last_strehl_est,
                         self.estimator.close_threshold,
                     )
@@ -104,7 +104,7 @@ class BaldrAO:
                 else:
                     self.is_closed = False
                     logger.info(
-                        "Estimator is %.2e (less than close thresh of %s)",
+                        "Estimator is %.2e (less than close thresh of %.2e)",
                         self.last_strehl_est,
                         self.estimator.close_threshold,
                     )
