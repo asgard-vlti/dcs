@@ -17,6 +17,7 @@ from asgard_alignment.DM_shm_ctrl import dmclass
 from asgard_alignment import FLI_Cameras as FLI
 import matplotlib.pyplot as plt
 
+import Cam
 import utils
 import basis_funcs
 import model
@@ -46,6 +47,7 @@ class PupilAwareLinearReconstructor(Reconstructor):
         self,
         labIM,
         lab_pupil_img,
+        cam: Cam.Cam,
         rcond=1e-3,
         phasemask_diam=44e-6,
         wavels=np.linspace(1.5e-6, 1.7e-6, 5),
@@ -57,6 +59,9 @@ class PupilAwareLinearReconstructor(Reconstructor):
             lab_pupil_img = self.img_to_hcfield(lab_pupil_img)
 
         self.ref = model.create_model_reference(phasemask_diam, lab_pupil_img, wavels)
+
+        self.cam = cam
+        self.ref = cam.normalise(self.ref)
 
         self.model_phasemask_diam = phasemask_diam
         self.model_wavels = wavels
