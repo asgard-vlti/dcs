@@ -206,6 +206,8 @@ class BaldrAO:
         n_discard=1,
     ):
         ref = self.take_ref(ref_stack_nframes).flatten()
+        # remove Lmax
+        self.dm.L_max = 1.0
         logger.info("making new recon...")
         im = self.take_interaction_matrix(
             amp=amp,
@@ -215,10 +217,11 @@ class BaldrAO:
             n_pokes=n_pokes,
         )
         logger.info("IM has shape %s", im.shape)
+        self.dm.L_max = self.L_max
 
-        if kind == "Linear":
+        if kind.lower() == "linear":
             self.recon = AO.LinearReconstructor(im, ref, rcond=rcond)
-        elif kind == "PupilAwareLinear":
+        elif kind.lower() == "PALinear":
             pupil_img = self.take_pupil_img()
             self.recon = AO.PupilAwareLinearReconstructor(im, pupil_img, rcond=rcond)
 
