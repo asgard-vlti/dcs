@@ -18,6 +18,8 @@ import matplotlib.pyplot as plt
 
 import utils
 import basis_funcs
+import model
+import consts
 
 
 class Reconstructor:
@@ -33,6 +35,61 @@ class LinearReconstructor(Reconstructor):
 
     def reconstruct(self, normed_img):
         return self.recon_matrix @ (normed_img - self.ref)
+
+
+class PupilAwareLinearReconstructor(Reconstructor):
+    def __init__(
+        self,
+        labIM,
+        lab_pupil_img,
+        rcond=1e-3,
+        phasemask_diam=44e-6,
+        wavels=np.linspace(1.5e-6, 1.7e-6, 5),
+    ):
+        """
+        note that all images are assumed to be normed already!!
+        """
+        self.ref = model.create_model_reference(phasemask_diam, lab_pupil_img, wavels)
+
+        self.model_phasemask_diam = phasemask_diam
+        self.model_wavels = wavels
+
+        self.lab_pupil_img = lab_pupil_img
+
+        pupil_center, img_center, cam_grid = utils.fit_pupil_centre(lab_pupil_img)
+        self.pupil_soft_mask = utils.smooth_circle(
+            cam_grid, 9.0, centre=pupil_center - img_center, softening=0.01
+        ).reshape(cam_grid.shape)
+
+        self.labIM = labIM
+
+        self.rcond = rcond
+
+        self.recon_matrix = hcipy.inverse_tikhonov(self.labIM.T, rcond=rcond)
+
+    def update_reference(self, sky_pupil_img):
+        self.ref = model.create_model_reference(
+            self.model_phasemask_diam, sky_pupil_img, self.model_wavels
+        )
+
+        scaling_mask = np.sqrt(sky_pupil_img / self.lab_pupil_img)
+        scaling_mask[self.pupil_soft_mask < 0.5] = 0.0
+        scaling_mask = np.clip(scaling_mask, 0.0, 2.0)
+
+        IM = self.labIM.copy()
+        for i in range(IM.shape[1]):
+            # scale each part of the IM according to the pupil image
+            IM[:, i] *= scaling_mask.flatten()
+
+        self.recon_matrix = hcipy.inverse_tikhonov(IM.T, rcond=self.rcond)
+
+        self.save_arr(IM, self.ref, self.lab_pupil_img, sky_pupil_img)
+
+    def save_arr(self, IM, ref, lab_pupil_img, sky_pupil_img):
+        pth = pathlib.Path(
+            f"~/tmp/baldr_minimal_py/arr_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.npz"
+        ).expanduser()
+        np.savez(pth, IM=IM, ref=ref, lab_pupil_img=lab_pupil_img, sky_pupil_img=sky_pupil_img)
 
 
 class Controller(abc.ABC):
@@ -67,6 +124,50 @@ class LeakyIntegrator(Controller):
         self.command = np.zeros(self.n)
 
 
+class LapLimitedLeakyIntegrator(LeakyIntegrator):
+    @staticmethod
+    def laplacian_limiter(surface, L_max, return_L=False):
+        # surface is a 2D array of actuator values
+        # we will modify surface in place
+        new_surface = surface.copy()
+
+        laplacian = (
+            -4 * surface[1:-1, 1:-1]
+            + surface[1:-1, 2:]
+            + surface[1:-1, :-2]
+            + surface[2:, 1:-1]
+            + surface[:-2, 1:-1]
+        )
+
+        new_surface[1:-1, 1:-1] += np.clip((laplacian - L_max) / 4, 0, None)
+        # and the opposite for negative Laplacian
+        new_surface[1:-1, 1:-1] += np.clip((laplacian + L_max) / 4, None, 0)
+
+        # retain pinning
+        new_surface[0, 1:-1] = new_surface[1, 1:-1]
+        new_surface[-1, 1:-1] = new_surface[-2, 1:-1]
+        new_surface[1:-1, 0] = new_surface[1:-1, 1]
+        new_surface[1:-1, -1] = new_surface[1:-1, -2]
+
+        if return_L:
+            L_values = np.zeros_like(surface)
+            L_values[1:-1, 1:-1] = laplacian
+            return new_surface, L_values
+        return new_surface
+
+    def __init__(self, n, gains=None, leaks=None, L_max=0.1):
+        super().__init__(n, gains, leaks)
+        self.L_max = L_max
+
+    def compute_command(self, error):
+        raw_command = super().compute_command(error)
+        command_2d = raw_command.reshape(consts.act_shape)
+        limited_command_2d = self.laplacian_limiter(
+            command_2d, self.L_max, return_L=False
+        )
+        return limited_command_2d.flatten()
+
+
 class StrehlEstimator:
     def __init__(self, mask, close_threshold, open_threshold):
         self.mask = mask
@@ -79,16 +180,7 @@ class StrehlEstimator:
         scattered_flux_mask_r_outer=12.0,
         scattered_flux_mask_r_inner=9.5,
     ):
-        cam_grid = hcipy.make_pupil_grid(32, diameter=32)
-
-        res = opt.minimize(
-            utils.xcor_sum_model,
-            x0=[8, 0, 0],
-            args=((pupil_img, cam_grid, 0.5),),
-            bounds=((8, 8), (-10, 10), (-10, 10)),
-        )
-        img_center = np.array([15.5, 15.5])
-        pupil_center = np.array([res.x[1], res.x[2]]) + img_center
+        pupil_center, img_center, cam_grid = utils.fit_pupil_centre(pupil_img)
 
         scattered_flux_mask = (
             utils.smooth_circle(

@@ -16,8 +16,6 @@ import datetime
 
 # TODO: saving/loading of class and subclass from pickle
 # TODO: ignore pix in BAO, needs pupil fitting and thinking about that, maybe fine tuning offload to detector
-
-
 savepth = pathlib.Path("~/.config/minimal_baldr_rtc/").expanduser()
 
 
@@ -70,13 +68,18 @@ class BaldrAO:
             if np.all(np.abs(self.cam.dark) == 0.0):
                 print(" ... no dark", end="")
 
-            print(f" Close thresh: {self.estimator.close_threshold}, open thresh: {self.estimator.open_threshold}", end="")
+            print(
+                f" Close thresh: {self.estimator.close_threshold}, open thresh: {self.estimator.open_threshold}",
+                end="",
+            )
 
         if self.recon is None or self.controller is None or self.cam.dark is None:
             return
 
         normed_img = self.cam.normalise(img).flatten()
         self.last_strehl_est = self.estimator.metric(normed_img)
+
+        # print(self.wants_to_close, self.is_closed, self.last_strehl_est, self.estimator.open_threshold, self.estimator.close_threshold)
 
         if self.wants_to_close:
             if self.is_closed:
@@ -113,15 +116,16 @@ class BaldrAO:
         self.estimator.close_threshold = float(new_thresh)
 
     def servo(self, new_state: str):
+        print(f"in servo fn, {new_state}")
         if new_state == "on":
-            self.save_state("closing_loop")
-            # self.is_closed = True
             self.wants_to_close = True
+            self.save_state("closing_loop")
         else:
             self.wants_to_close = False
             self.is_closed = False
             self.dm.flatten()
-            self.controller.reset()
+            if self.controller:
+                self.controller.reset()
 
     def take_dark(self):
         cur_bmy = self.MDS.send_and_recv(f"read BMY{self.beam}")
@@ -178,25 +182,63 @@ class BaldrAO:
             "gains": self.parse_block(gains),
             "leaks": self.parse_block(leaks),
         }
-        
 
-    def create_reconstructor(self, ref_stack_nframes=1000, rcond=1e-3):
+    def create_reconstructor(
+        self,
+        kind="Linear",
+        ref_stack_nframes=1000,
+        rcond=1e-3,
+        amp=0.03,
+        sleep=0.01,
+        n_im=2,
+        n_pokes=10,
+        n_discard=1,
+    ):
         ref = self.take_ref(ref_stack_nframes).flatten()
         print(f"\n making new recon...")
         im = self.take_interaction_matrix(
-            amp=0.03, sleep=0.01, n_im=2, n_discard=1, n_pokes=10
+            amp=amp,
+            sleep=sleep,
+            n_im=n_im,
+            n_discard=n_discard,
+            n_pokes=n_pokes,
         )
         print(f"\n IM has shape {im.shape}")
-        self.recon = AO.LinearReconstructor(im, ref, rcond=rcond)
+
+        if kind == "Linear":
+            self.recon = AO.LinearReconstructor(im, ref, rcond=rcond)
+        elif kind == "PupilAwareLinear":
+            pupil_img = self.take_pupil_img()
+            self.recon = AO.PupilAwareLinearReconstructor(im, pupil_img, rcond=rcond)
 
         print(f"\n made new recon {self.recon}")
 
-    def create_controller(self):
-        self.controller = AO.LeakyIntegrator(
-            self.dm.n_acts,
-            gains=np.full(self.dm.n_acts, 0.0, dtype=float),
-            leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
-        )
+    def update_reconstructor_pupil(self):
+        if self.recon is None:
+            raise ValueError("Reconstructor not created yet")
+
+        if not isinstance(self.recon, AO.PupilAwareLinearReconstructor):
+            raise ValueError(
+                "Current reconstructor is not pupil aware, cannot update pupil"
+            )
+
+        sky_pupil_img = self.take_pupil_img()
+        self.recon.update_reference(sky_pupil_img)
+
+    def create_controller(self, type="leaky_integrator", L_max=0.1):
+        if type == "leaky_integrator":
+            self.controller = AO.LeakyIntegrator(
+                self.dm.n_acts,
+                gains=np.full(self.dm.n_acts, 0.0, dtype=float),
+                leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
+            )
+        elif type == "laplacian_limited_leaky_integrator":
+            self.controller = AO.LapLimitedLeakyIntegrator(
+                self.dm.n_acts,
+                gains=np.full(self.dm.n_acts, 0.0, dtype=float),
+                leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
+                L_max=L_max,
+            )
         print(f"\n made new controller {self.controller}")
 
     def _parse_indices(self, idxs):
@@ -309,11 +351,12 @@ class BaldrAO:
             "controller": self.controller,
             "estimator": self.estimator,
             "cam_dark": self.cam.dark,
+            "desc": filename,
         }
         filename_with_time = (
             savepth
             / f"beam_{self.beam}"
-            / f"bao_state_{datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')}.pkl"
+            / f"bao_state_{filename}_{datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')}.pkl"
         )
         with open(filename_with_time, "wb") as f:
             pickle.dump(state, f)
@@ -362,12 +405,3 @@ class BaldrAO:
             ),
         }
         return status
-
-
-class PrintingTelem:
-    def __init__(
-        self,
-    ):
-        self.last_time = time.time()
-
-    def update(self):

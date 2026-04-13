@@ -160,7 +160,10 @@ class BAOServer:
                             self.sock.send_string(self._format_result(result))
                     except Exception as exc:
                         self.sock.send_string(f"Error: {exc}")
+                        print()
+                        print(f"Error while executing command '{cmd_name}':")
                         print(exc)
+                        print()
 
             self.BAO.run_iteration()
 
@@ -258,6 +261,6 @@ if __name__ == "__main__":
         exit(1)
 
     bao = BaldrAO(args.beam)
-    server = BAOServer(bao, port=BEAM_TO_PORT[args.beam])
+    server = BAOServer(bao, port=consts.BEAM_TO_PORT[args.beam])
     print("Starting BAO server...")
     server.run()

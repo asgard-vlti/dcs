@@ -216,6 +216,13 @@ class MyMainWidget(QtWidgets.QWidget):
         self.imv_data = pg.ImageItem()
         self.overlay = pg.GraphItem()
         self.gView_live.addItem(self.imv_data)
+        self.dark_check_text = QtWidgets.QLabel(
+            "check dark", self.gView_live.viewport()
+        )
+        self.dark_check_text.setStyleSheet("color: red; background: transparent;")
+        self.dark_check_text.setAutoFillBackground(False)
+        self.dark_check_text.adjustSize()
+        self.dark_check_text.hide()
 
         # stat display
         self.lbl_stats.setGeometry(QRect(self.imw + 2 * pad, 40, 180, 180))
@@ -232,7 +239,7 @@ class MyMainWidget(QtWidgets.QWidget):
             if roi.startswith("baldr"):
                 img_height = self.imsize[0]
                 full_img_height = 256
-                y0 -= (full_img_height-img_height)
+                y0 -= full_img_height - img_height
             xsz, ysz = self.split_config[roi]["xsz"], self.split_config[roi]["ysz"]
             obox = pg.RectROI(
                 [x0, y0],
@@ -346,16 +353,20 @@ class MyMainWidget(QtWidgets.QWidget):
             if self.averaging:
                 self.data_img = cube.mean(0)
             elif self.NDMR:
-                # Find the instances of 0 in the 1st pixels of each slice 
+                # Find the instances of 0 in the 1st pixels of each slice
                 last_frames = np.where(cube[:, 0, 2] == 0)[0]
                 max_ix = np.max(cube[:, 0, 2])
-                print(cube[:,0,2])
-                first_frames = np.where(cube[:,0,2] == max_ix)[0]
+                print(cube[:, 0, 2])
+                first_frames = np.where(cube[:, 0, 2] == max_ix)[0]
                 navg = np.min([len(last_frames), len(first_frames)])
                 if navg > 0:
                     last_frames = last_frames[:navg]
                     first_frames = first_frames[:navg]
-                    self.data_img = np.mean(cube[last_frames], axis=0) - np.mean(cube[first_frames], axis=0) + 1000
+                    self.data_img = (
+                        np.mean(cube[last_frames], axis=0)
+                        - np.mean(cube[first_frames], axis=0)
+                        + 1000
+                    )
                 else:
                     print("ERROR - setting NDMR mode average to first frame.")
                     self.data_img = cube[0]
@@ -385,6 +396,7 @@ class MyMainWidget(QtWidgets.QWidget):
 
         pt_levels = [0, 5, 50, 90, 99, 100]
         pt_values = np.percentile(self.data_img, pt_levels)
+        dark_check = not (975 <= pt_values[2] <= 1075)
 
         msg = "<pre>\n"
 
@@ -398,7 +410,10 @@ class MyMainWidget(QtWidgets.QWidget):
         #    msg += f"{kwd['name']:10s} : {kwd['value']:10s} \n"
 
         for i, ptile in enumerate(pt_levels):
-            msg += f"p-tile {ptile:3d} = {pt_values[i]:8.2f}\n"
+            if ptile == 50 and dark_check:
+                msg += f"<span style='color:red'>p-tile {ptile:3d} = {pt_values[i]:8.2f}</span>\n"
+            else:
+                msg += f"p-tile {ptile:3d} = {pt_values[i]:8.2f}\n"
 
         msg += f"img count  = {self.mySHM.get_counter():8d}\n"
 
@@ -406,6 +421,17 @@ class MyMainWidget(QtWidgets.QWidget):
             msg += f"{add_msg}\n"
         msg += "</pre>"
         self.lbl_stats.setText(msg)
+        if dark_check:
+            viewport = self.gView_live.viewport()
+            viewport_height = viewport.height() if viewport is not None else 0
+            self.dark_check_text.adjustSize()
+            self.dark_check_text.move(
+                5,
+                max(5, viewport_height - self.dark_check_text.height() - 5),
+            )
+            self.dark_check_text.show()
+        else:
+            self.dark_check_text.hide()
 
 
 # ==========================================================

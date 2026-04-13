@@ -1,4 +1,6 @@
 import numpy as np
+import hcipy
+import scipy.optimize as opt
 
 
 def smooth_circle(grid, radius, softening=0.1, centre=(0, 0)):
@@ -14,3 +16,18 @@ def xcor_sum_model(params, args):
     ).reshape(grid.shape)
     model /= model.sum()
     return -np.sum(img * model)
+
+
+def fit_pupil_centre(pupil_img):
+    cam_grid = hcipy.make_pupil_grid(32, diameter=32)
+
+    res = opt.minimize(
+        xcor_sum_model,
+        x0=[8, 0, 0],
+        args=((pupil_img, cam_grid, 0.5),),
+        bounds=((8, 8), (-10, 10), (-10, 10)),
+    )
+    img_center = np.array([15.5, 15.5])
+    pupil_center = np.array([res.x[1], res.x[2]]) + img_center
+
+    return pupil_center, img_center, cam_grid

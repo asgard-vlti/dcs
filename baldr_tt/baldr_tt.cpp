@@ -358,7 +358,7 @@ int main(int argc, char* argv[]) {
 
     // Exit immediately if another instance of this server is running.
     char lockfile[256];
-    sprintf(lockfile, "/tmp/asg.baldr.%d.lock", beam);
+    sprintf(lockfile, "/tmp/asg.baldr_tt.%d.lock", beam);
     if (!acquire_single_instance_lock(lockfile)) {
         info("Another instance of this server is already running for beam %d. Exiting.", beam);
         return 1;

@@ -196,6 +196,9 @@ class BackEndServer:
         - beam=0 => broadcast to beams 1..4
         - beam in 1..4 => target that specific beam
         """
+        logging.info(
+            f"Handling BALDR RTS command: {command} (back end has baldr mode {self.baldr_mode})"
+        )
 
         # Map WAG verbs -> Commander command strings
         if self.baldr_mode == "STANDARD":
@@ -205,12 +208,11 @@ class BackEndServer:
                 # "bld_open_ho": 'open_baldr_HO ""',
                 # "bld_close_lo": 'close_baldr_LO ""',
                 # "bld_close_ho": 'close_baldr_HO ""',
-                
-                # when using minimal 
-                "bld_open_lo": 'servo off',
-                "bld_open_ho": 'servo off',
-                "bld_close_lo": 'servo off',
-                "bld_close_ho": 'servo off',
+                # when using minimal
+                "bld_open_lo": "servo off",
+                "bld_open_ho": "servo off",
+                "bld_close_lo": "servo off",
+                "bld_close_ho": "servo off",
                 "bld_n0_update": 'N0_update ""',
             }
         else:
@@ -271,8 +273,11 @@ class BackEndServer:
                 continue
 
             try:
+                logging.info(f"Sending to {key}: {cmd_text}")
                 sock.send_string(cmd_text)
                 raw = sock.recv_string()  # commander replies as string (often JSON)
+
+                logging.info(f"Received from {key}: {raw}")
             except Exception as e:
                 errors.append(f"{key}: ZMQ error: {e}")
                 continue
@@ -616,7 +621,6 @@ class BackEndServer:
             logging.info(
                 f"Started s_adc-track script process with RA={ra_str} and Dec={dec_str}."
             )
-
 
             return self.create_response("OK")
         elif command_name == "s_adc-zero":

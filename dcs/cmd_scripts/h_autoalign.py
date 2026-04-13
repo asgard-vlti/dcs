@@ -151,18 +151,24 @@ class HeimdallrAA:
         return max_loc
 
     def _get_frame(self):
-        full_frame = self.stream.get_data().mean(0)
+        full_frame = self.stream.get_data().copy()
 
-        # full_frame[ full_frame > np.quantile(full_frame, 0.98) ] = np.median( full_frame )
+        full_frame[full_frame > 30_000.0] = np.median(full_frame)
+        full_frame = full_frame.mean(0)
         return full_frame
 
     def _get_blob(self, radius=None, return_flux=False, inc_frame=False):
         """
-        Find the final blob centre after frame averaging. Optionally measure flux in a circular region of given radius around the final blob centre.
+        Find the final blob centre after frame averaging.
+        Optionally measure flux in a circular region of given radius
+        around the final blob centre.
+
         Args:
-            radius (float or None): If not None and return_flux is True, measure flux in a circle of this radius around the final blob centre.
+            radius (float or None): If not None and return_flux is True, measure flux
+                in a circle of this radius around the final blob centre.
             return_flux (bool): Whether to return the flux measurement for the final blob.
             inc_frame (bool): If True and return_flux is True, also return the final frame used for flux measurement.
+
         Returns:
             If return_flux is False:
                 blob_centre_final
@@ -207,102 +213,6 @@ class HeimdallrAA:
         dist_from_center = np.sqrt((x - center[1]) ** 2 + (y - center[0]) ** 2)
         mask = dist_from_center <= radius
         return mask
-
-    # def detect_pupil(self, image, sigma=2, threshold=0.5, plot=False, savepath=None):
-    #     """
-    #     Detects an elliptical pupil (with possible rotation) in a cropped image using edge detection
-    #     and least-squares fitting. Returns both the ellipse parameters and a pupil mask.
-
-    #     The ellipse is modeled by:
-
-    #         ((x - cx)*cos(theta) + (y - cy)*sin(theta))^2 / a^2 +
-    #         (-(x - cx)*sin(theta) + (y - cy)*cos(theta))^2 / b^2 = 1
-
-    #     Parameters:
-    #         image (2D array): Cropped grayscale image containing a single pupil.
-    #         sigma (float): Standard deviation for Gaussian smoothing.
-    #         threshold (float): Threshold factor for edge detection.
-    #         plot (bool): If True, displays the image with the fitted ellipse overlay.
-    #         savepath (str): If provided, the plot is saved to this path.
-
-    #     Returns:
-    #         (center_x, center_y, a, b, theta, pupil_mask)
-    #         where (center_x, center_y) is the ellipse center,
-    #                 a and b are the semimajor and semiminor axes,
-    #                 theta is the rotation angle in radians,
-    #                 pupil_mask is a 2D boolean array (True = inside ellipse).
-    #     """
-    #     # Normalize the image
-    #     if image.max() != 0:
-
-    #         image = image / image.max()
-
-    #     image[ image > np.quantile(image, 0.98) ] = np.median( image )
-
-    #     # Smooth the image
-    #     smoothed_image = gaussian_filter(image, sigma=sigma)
-
-    #     # Compute gradients (Sobel-like edge detection)
-    #     grad_x = np.gradient(smoothed_image, axis=1)
-    #     grad_y = np.gradient(smoothed_image, axis=0)
-    #     edges = np.sqrt(grad_x**2 + grad_y**2)
-
-    #     # Threshold edges to create a binary mask
-    #     binary_edges = edges > (threshold * edges.max())
-
-    #     # Get edge pixel coordinates
-    #     y_coords, x_coords = np.nonzero(binary_edges)
-
-    #     # Initial guess: center from mean, radius from average distance, and theta = 0.
-    #     def initial_guess(x, y):
-    #         center_x = np.mean(x)
-    #         center_y = np.mean(y)
-    #         r_init = np.sqrt(np.mean((x - center_x)**2 + (y - center_y)**2))
-    #         return center_x, center_y, r_init, r_init, 0.0  # (cx, cy, a, b, theta)
-
-    #     # Ellipse model function with rotation.
-    #     def ellipse_model(params, x, y):
-    #         cx, cy, a, b, theta = params
-    #         cos_t = np.cos(theta)
-    #         sin_t = np.sin(theta)
-    #         x_shift = x - cx
-    #         y_shift = y - cy
-    #         xp =  cos_t * x_shift + sin_t * y_shift
-    #         yp = -sin_t * x_shift + cos_t * y_shift
-    #         # Model: xp^2/a^2 + yp^2/b^2 = 1 => residual = sqrt(...) - 1
-    #         return np.sqrt((xp/a)**2 + (yp/b)**2) - 1.0
-
-    #     # Fit via least squares.
-    #     guess = initial_guess(x_coords, y_coords)
-    #     result, _ = leastsq(ellipse_model, guess, args=(x_coords, y_coords))
-    #     center_x, center_y, a, b, theta = result
-
-    #     # Create a boolean pupil mask for the fitted ellipse
-    #     yy, xx = np.ogrid[:image.shape[0], :image.shape[1]]
-    #     cos_t = np.cos(theta)
-    #     sin_t = np.sin(theta)
-    #     x_shift = xx - center_x
-    #     y_shift = yy - center_y
-    #     xp = cos_t * x_shift + sin_t * y_shift
-    #     yp = -sin_t * x_shift + cos_t * y_shift
-    #     pupil_mask = (xp/a)**2 + (yp/b)**2 <= 1
-
-    #     if savepath is not None:
-    #         # Overlay for visualization
-    #         overlay = np.zeros_like(image)
-    #         overlay[pupil_mask] = 1
-
-    #         plt.figure(figsize=(6, 6))
-    #         plt.imshow(image, cmap="gray", origin="upper")
-    #         plt.contour(binary_edges, colors="cyan", linewidths=1)
-    #         plt.contour(overlay, colors="red", linewidths=1)
-    #         plt.scatter(center_x, center_y, color="blue", marker="+")
-    #         plt.title("Detected Pupil with Fitted Ellipse")
-    #         #if savepath is not None:
-    #         plt.savefig(savepath)
-    #         #plt.show()
-    #         plt.close()
-    #     return center_x, center_y, a, b, theta, pupil_mask
 
     def open_all_shutters(self):
         msg = f"h_shut open 1,2,3,4"
