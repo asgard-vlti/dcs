@@ -164,6 +164,7 @@ class GainLeakWindow(QMainWindow):
         self.cmd_sender = sender
         self.connected = True
         self.control_widgets: list[QWidget] = []  # Track widgets to enable/disable
+        self.block_controls: list[tuple[ModeBlock, QSlider, QLabel]] = []
 
         if title:
             self.setWindowTitle(title)
@@ -183,6 +184,9 @@ class GainLeakWindow(QMainWindow):
 
         self.push_all_button = self._create_button("Push All", self._on_push_all)
         conn_layout.addWidget(self.push_all_button)
+
+        self.zero_all_button = self._create_button("Zero All", self._on_zero_all)
+        conn_layout.addWidget(self.zero_all_button)
         conn_layout.addStretch(1)
 
         self.connection_status = QLabel("Connected")
@@ -266,6 +270,7 @@ class GainLeakWindow(QMainWindow):
             )
         )
         layout.addWidget(slider)
+        self.block_controls.append((block, slider, gain_value_label))
 
         leak_edit = QLineEdit(f"{block.leak_value:.3f}")
         leak_edit.setPlaceholderText("Leak")
@@ -344,12 +349,43 @@ class GainLeakWindow(QMainWindow):
             self._send_command(f"set_ki_gains {block.idx_spec} {gain_text}")
             self._send_command(f"set_leaks {block.idx_spec} {leak_text}")
 
+    def _push_current_state(self):
+        """Push the current widget state to the server."""
+        servo_state = "on" if self.servo_checkbox.isChecked() else "off"
+        self._send_command(f"servo {servo_state}")
+
+        self._on_numeric_command_updated(
+            self.close_thresh_edit,
+            "set_close_threshold",
+            "close threshold",
+            scientific_notation=True,
+        )
+        self._on_numeric_command_updated(
+            self.open_thresh_edit,
+            "set_open_threshold",
+            "open threshold",
+            scientific_notation=True,
+        )
+
+        for block in self.blocks:
+            self._send_command(f"set_ki_gains {block.idx_spec} {block.gain_value:.3f}")
+            self._send_command(f"set_leaks {block.idx_spec} {block.leak_value:.3f}")
+
     def _on_gain_changed(self, block: ModeBlock, tick: int, label: QLabel):
         gain_value = GAIN_MIN + tick * GAIN_STEP
         gain_text = f"{gain_value:.3f}"
+        block.gain_value = gain_value
         label.setText(gain_text)
         command = f"set_ki_gains {block.idx_spec} {gain_text}"
         self._send_command(command)
+
+    def _on_zero_all(self):
+        """Zero every gain slider and push the updates to the server."""
+        self.status_label.setText("Zeroing all gains...")
+        for block, slider, label in self.block_controls:
+            block.gain_value = 0.0
+            slider.setValue(0)
+            label.setText("0.000")
 
     def _on_leak_updated(self, block: ModeBlock, leak_edit: QLineEdit):
         raw_text = leak_edit.text().strip()
@@ -400,6 +436,7 @@ class GainLeakWindow(QMainWindow):
         self.close_thresh_edit.setEnabled(enabled)
         self.open_thresh_edit.setEnabled(enabled)
         self.push_all_button.setEnabled(enabled)
+        self.zero_all_button.setEnabled(enabled)
 
     def _on_reconnect(self):
         """Handle reconnect button press."""
@@ -415,7 +452,7 @@ class GainLeakWindow(QMainWindow):
     def _on_push_all(self):
         """Push the complete current state to the server."""
         self.status_label.setText("Pushing all state to server...")
-        self._initialise_system_defaults()
+        self._push_current_state()
 
 
 def _parse_float_default(defaults: dict, key: str, fallback: float) -> float:
