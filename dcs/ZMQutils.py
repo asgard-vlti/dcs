@@ -69,7 +69,6 @@ class ZmqReq:
             self._had_error = False
             if image:
                 return image_from_message(jres)
-        
             return json.loads(res)
         except zmq.error.Again as e:
             logging.error(f"ZMQ error occurred: {e}")

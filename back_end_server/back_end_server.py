@@ -1,156 +1,3 @@
-"""
-BackEndServer
-=============
-
-Purpose
-- Exposes a single ZeroMQ REP endpoint to receive WAG/DCS JSON commands and return
-  the standard reply shape: {"reply": {"time": "...", "content": "OK" | "ERROR: ..."}}.
-- Implements core verbs (ping, setup, start, abort, expstatus) and dispatches
-  RTS (real-time system) commands to subsystem-specific handlers via a registry
-  (e.g., handlers.baldr). Baldr commands may be sent as "bld_<name>".
-
-Why a bounded worker pool for RTS?
-- A REP socket must strictly recv→send→recv…; if the command handler blocks,
-  all clients are head-of-line blocked (even for different subsystems/ports).
-- RTS commands are treated as *fire-and-forget*: we ACK immediately once accepted,
-  then complete work in the background and push results to WAG/MCS via update_DB().
-- We use a bounded ThreadPoolExecutor plus a semaphore cap to:
-    * avoid unbounded thread creation and memory growth,
-    * prevent the REP loop from blocking on long RTS actions,
-    * provide predictable back-pressure ("ERROR: busy" when saturated).
-
-Concurrency / safety notes
-- Do not share ZMQ REQ sockets across threads. Concrete RTS tasks must
-  create/connect any device sockets inside run() (per-thread) and close them.
-- The main thread only parses, validates, enqueues, and immediately replies "OK".
-
-Operational features
-- Registry pattern (`register_rts`) selects the task class by command name
-  (the "bld_" prefix is stripped). Adding a new RTS = add class + register once.
-- `report_jobs` returns a snapshot of queued/running/done jobs (job_id, name, state, err).
-- `abort` supports cancel-by-job_id; concrete tasks implement actual termination logic.
-- When the pool is saturated, requests receive `"ERROR: busy"` rather than blocking.
-
-This design keeps the wire contract simple, avoids REP head-of-line blocking, and
-scales predictably while remaining easy to extend with new RTS handlers.
-"""
-
-""" 
-SPECIFIC DETAILS FROM 
-
-Asgard Top-Level Control Software User and Maintenance Manual
-
-This back-end-server takes commands from wag, and based on a database of:
-command, server, internal_command for checking what is possible:
-
-This is the back_end_server.py
-
-The server has to implement a nubmber of commands, and after each successful command, it should return:
-{
-“reply”:
-{
-“time” : “< timestamp >”
-“content” : “OK”
-,
-}
-}
-
-Commands to be implemented:
-
-PING: recieve:
-{
-“command” :
-{
-“name” : “ping”
-,
-“time” : “< timestamp >”
-}
-}
-
-
-SETUP: recieve:
-{
-“command” :
-{
-“name” : “setup”
-,
-“time” : “< timestamp >”
-“parameters” :
-,
-[
-{
-“name” : “< keyword #1 name >”
-“value” : < keyword #1 value>
-},
-. . .
-{
-“name” : “< keyword #n name >”
-“value” : < keyword #n value>
-}
-,
-,
-]
-}
-
-NB the setup command will be used in the asg_hdlr_only_autotest_align template, e.g. for now
-we are using DCS readout, 1000Hz, and gain=10. DET.DIT=0.001, DET.NDIT=0 (i.e. no saving),
-DET.NWORESET=2.
-
-We need START (name:start) and ABORT (name:abort) commands, which are used to start and abort the readout.
-
-Once we get to on-sky data, we need an EXPSTATUS command.
-{
-“command” :
-{
-“name” : “expstatus”
-,
-“time” : “< timestamp >”
-}
-}
-
-The RTS command is used for RTS commands, which are lower case and generally passed directoy to servers.
-{
-command:
-{
-“name” : “< name of the command >”
-,
-“time” : “< timestamp >”
-,
-“parameters” :
-[
-{
-“name” : “< name of parameter 1 >”
-“value” : < value of parameter 1 >
-,
-},
-. . .
-{
-“name” : “< name of parameter n >”
-“value” : < value of parameter n >
-,
-}
-]
-}
-}
-e.g. "name" : "beamid", "value" : 1,2,3,4 or 0 (for all available)
-"name: "server" : "heimdallr", "baldr", "cam"
-
-If an error, then replace "OK" in the reply with “ERROR: < error description>”
-
-Sockets:
-cam_server      6667
-DM_server       6666
-hdlr            6660
-hdlr_align      6661
-"baldr1"        6662,
-"baldr2"        6663,
-"baldr3"        6664,
-"baldr4"        6665,
-"MCS"           7020,
-"ICS"           5555,
-"RTD"           7000,
-"""
-
 import zmq
 import json
 import datetime
@@ -167,9 +14,11 @@ import logging
 # from rts_base import AbstractRTSTask, RTSContext, RTSState, RTSErr
 # !!!ADAM please educate Mike on this path bit for editable installs.
 try:
-   from back_end_server.handlers.baldr_rts_handlers import register as register_baldr_rts
+    from back_end_server.handlers.baldr_rts_handlers import (
+        register as register_baldr_rts,
+    )
 except:
-   from handlers.baldr_rts_handlers import register as register_baldr_rts
+    from handlers.baldr_rts_handlers import register as register_baldr_rts
 
 
 # --- Logging setup: file and console ---
@@ -204,10 +53,10 @@ class BackEndServer:
         server_ports={
             "hdlr": 6660,
             "hdlr_align": 6661,
-            "baldr1": 6662,
-            "baldr2": 6663,
-            "baldr3": 6664,
-            "baldr4": 6665,
+            "baldr1": 6662,  # Ignore. old is 6662
+            "baldr2": 6663,  # Ignore. old is 6663
+            "baldr3": 6664,  # Ignore. old is 6664
+            "baldr4": 6665,  # Ignore. old is 6665
             "baldrtt1": 6671,
             "baldrtt2": 6672,
             "baldrtt3": 6673,
@@ -215,7 +64,7 @@ class BackEndServer:
             "cam_server": 6667,
             "DM_server": 6666,
         },
-        baldr_mode = "FAINT",
+        baldr_mode="FAINT",
     ):
         self.baldr_mode = baldr_mode
         self.port = port
@@ -254,17 +103,18 @@ class BackEndServer:
         while True:
             # Wait for the next request from wag
             message = self.socket.recv().decode("ascii")
-            if message[-1] == "\0":
-                message = message[:-1]
-            # Parse the message as JSON
-            try:
-                message = json.loads(message)
-            except json.JSONDecodeError as e:
-                logging.error(f"Failed to decode JSON: {e}")
-                self.socket.send_json(
-                    self.create_response("ERROR: Invalid JSON format")
-                )
-                continue
+            if message != "status":
+                if message[-1] == "\0":
+                    message = message[:-1]
+                # Parse the message as JSON
+                try:
+                    message = json.loads(message)
+                except json.JSONDecodeError as e:
+                    logging.error(f"Failed to decode JSON: {e}")
+                    self.socket.send_json(
+                        self.create_response("ERROR: Invalid JSON format")
+                    )
+                    continue
             logging.info(f"Received request: {message}")
 
             # Process the command
@@ -296,8 +146,11 @@ class BackEndServer:
             self.socket.send_json(response)
 
     def process_command(self, message):
-        command = message.get("command", {})
-        command_name = command.get("name", "").lower()
+        if message == "status":
+            command_name = "status"
+        else:
+            command = message.get("command", {})
+            command_name = command.get("name", "").lower()
 
         if command_name == "ping":
             return self.create_response("OK")
@@ -316,8 +169,17 @@ class BackEndServer:
             return self.handle_hdlr_rts(command)
         elif command_name.startswith("s_"):
             return self.handle_script(command)
+        elif command_name == "status":
+            logging.info("reporting jobs")
+            return self.report_jobs()
         else:
             return self.create_response(f"ERROR: Unknown command '{command_name}'")
+
+    def report_jobs(self):
+        reply = "OK:"
+        for pid, process in self.scripts_running.items():
+            reply += f"\n  PID {pid}: {' '.join(process.args) if isinstance(process.args, list) else process.args}"
+        return self.create_response(reply)
 
     def handle_bld_rts(self, command):
         """
@@ -334,14 +196,23 @@ class BackEndServer:
         - beam=0 => broadcast to beams 1..4
         - beam in 1..4 => target that specific beam
         """
+        logging.info(
+            f"Handling BALDR RTS command: {command} (back end has baldr mode {self.baldr_mode})"
+        )
 
         # Map WAG verbs -> Commander command strings
-        if (self.baldr_mode=="STANDARD"):
+        if self.baldr_mode == "STANDARD":
             cmd_map = {
-                "bld_open_lo": 'open_baldr_LO ""',
-                "bld_open_ho": 'open_baldr_HO ""',
-                "bld_close_lo": 'close_baldr_LO ""',
-                "bld_close_ho": 'close_baldr_HO ""',
+                # when using Ben's
+                # "bld_open_lo": 'open_baldr_LO ""',
+                # "bld_open_ho": 'open_baldr_HO ""',
+                # "bld_close_lo": 'close_baldr_LO ""',
+                # "bld_close_ho": 'close_baldr_HO ""',
+                # when using minimal
+                "bld_open_lo": "servo off",
+                "bld_open_ho": "servo off",
+                "bld_close_lo": "servo off",
+                "bld_close_ho": "servo off",
                 "bld_n0_update": 'N0_update ""',
             }
         else:
@@ -389,18 +260,24 @@ class BackEndServer:
         errors = []
 
         for b in target_beams:
-            if (self.baldr_mode == "STANDARD"):
+            if self.baldr_mode == "STANDARD":
                 key = f"baldr{b}"
             else:
                 key = f"baldrtt{b}"
             sock = self.servers.get(key)
+            if sock == 0:
+                # Just ignore! We'll return OK.
+                continue
             if sock is None:
                 errors.append(f"{key}: not connected")
                 continue
 
             try:
+                logging.info(f"Sending to {key}: {cmd_text}")
                 sock.send_string(cmd_text)
                 raw = sock.recv_string()  # commander replies as string (often JSON)
+
+                logging.info(f"Received from {key}: {raw}")
             except Exception as e:
                 errors.append(f"{key}: ZMQ error: {e}")
                 continue
@@ -521,9 +398,9 @@ class BackEndServer:
                 server.recv_string()
                 time.sleep(0.1)
                 #!!! Let's allow the user to set this.
-                #server.send_string("set_gd_boxcar 64")
-                #server.recv_string()
-                #time.sleep(0.1)
+                # server.send_string("set_gd_boxcar 64")
+                # server.recv_string()
+                # time.sleep(0.1)
                 server.send_string(f"default_gains")
                 server.recv_string()
                 time.sleep(0.1)
@@ -549,6 +426,24 @@ class BackEndServer:
             if stderr:
                 logging.error("Signit process errors:")
                 logging.error(stderr)
+
+    def kill_running_script(self, script_name):
+        for pid, process in self.scripts_running.items():
+            if isinstance(process.args, list):
+                if any(script_name in str(arg) for arg in process.args):
+                    logging.info(
+                        f"Found existing {script_name} process with PID {pid}. Terminating it before starting a new one."
+                    )
+                    process.send_signal(signal.SIGINT)
+                    stdout, stderr = process.communicate()
+                    logging.info(f"Terminated existing {script_name} process output:")
+                    logging.info(stdout)
+                    if stderr:
+                        logging.error(
+                            f"Terminated existing {script_name} process errors:"
+                        )
+                        logging.error(stderr)
+                    del self.scripts_running[pid]
 
     def handle_script(self, command):
         """
@@ -603,7 +498,15 @@ class BackEndServer:
         # parameters = command.get("parameters", [])
         if command_name == "s_h-autoalign":
             process = subprocess.Popen(
-                ["/home/asg/.conda/envs/asgard/bin/h-autoalign", "-a", "ia", "-o", "mcs", "-b", "K1"],
+                [
+                    "/home/asg/.conda/envs/asgard/bin/h-autoalign",
+                    "-a",
+                    "ia",
+                    "-o",
+                    "mcs",
+                    "-b",
+                    "K1",
+                ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
@@ -633,6 +536,7 @@ class BackEndServer:
             logging.info("Started s_h-shutter script process.")
 
         elif command_name == "s_b-autoalign":
+            # TODO: this breaks the pattern for scripts running, since not all 4 are added to the dict
             script = Path(
                 "/home/asg/Progs/repos/dcs/dcs/cmd_scripts/b_autoalign_onsky.py"
             )
@@ -665,7 +569,9 @@ class BackEndServer:
                 return self.create_response("ERROR: mode parameter is required")
             mode = _param_value(command.get("parameters", []), "mode")
             if mode.upper() not in ["FAINT", "STANDARD"]:
-                return self.create_response("ERROR: mode parameter must be FAINT or STANDARD")
+                return self.create_response(
+                    "ERROR: mode parameter must be FAINT or STANDARD"
+                )
             if self.baldr_mode.upper() == mode.upper():
                 logging.info(f"Mode is already set to {mode.upper()}. No action taken.")
                 return self.create_response("OK")
@@ -681,10 +587,46 @@ class BackEndServer:
                     cwd=str(script.parent),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                )          
+                )
                 _log_subprocess_output(process, prefix=f"{command_name}-{mode}")
                 logging.info(f"Started s_b-mode script with mode {mode}.")
-                time.sleep(0.8)   
+                time.sleep(0.8)
+        elif command_name == "s_adc-track":
+            if _param_value(command.get("parameters", []), "ra") is None:
+                return self.create_response("ERROR: ra parameter is required")
+            if _param_value(command.get("parameters", []), "dec") is None:
+                return self.create_response("ERROR: dec parameter is required")
+            ra_str = _param_value(command.get("parameters", []), "ra")
+            print(ra_str)
+            print(command.get("parameters", []))
+            dec_str = _param_value(command.get("parameters", []), "dec")
+
+            # check if the adc_track script is already running, and if so, kill it before starting a new one
+            self.kill_running_script("adc_track")
+
+            # start new adc_track process
+            cmd = [
+                "/home/asg/.conda/envs/asgard/bin/adc-track",
+                str(ra_str),
+                str(dec_str),
+                "--track",
+            ]
+            process = subprocess.Popen(
+                cmd,
+                cwd="/home/asg/.conda/envs/asgard/bin/",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            _log_subprocess_output(process, prefix=command_name)
+            logging.info(
+                f"Started s_adc-track script process with RA={ra_str} and Dec={dec_str}."
+            )
+
+            return self.create_response("OK")
+        elif command_name == "s_adc-zero":
+            # TODO
+            print("ADCs not in use. Please zero them maually!")
+            return self.create_response("OK")
         else:
             logging.error(f"Unknown script command '{command_name}'")
             return self.create_response(
@@ -806,6 +748,7 @@ class BackEndServer:
 def main():
     server = BackEndServer()
     server.run()
+
 
 if __name__ == "__main__":
     main()

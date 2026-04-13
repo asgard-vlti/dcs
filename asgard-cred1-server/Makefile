@@ -27,6 +27,10 @@ all: $(EXEC)
 debug: debug_kaya.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
+# A test program for thread priorities
+test: test.c
+	$(CC) -o test test.c -lpthread
+
 asgard_cam_server: $(OBJECTS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
@@ -42,4 +46,9 @@ mrproper: clean
 
 install:
 	install -D $(EXEC) $(PREFIX)/bin/
-	cp cred1_split.json ~/.config/
+	setcap 'cap_sys_nice=eip' $(PREFIX)/bin/$(EXEC)
+#	cp cred1_split.json /home/asg/.config/
+
+install-test: test
+	setcap 'cap_sys_nice=eip' test
+

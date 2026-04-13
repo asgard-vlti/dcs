@@ -17,6 +17,9 @@ from dataclasses import dataclass, asdict, fields
 from typing import Any, Dict, List, Optional, Tuple
 import zmq
 from datetime import datetime, timezone
+import socket
+
+import subprocess
 
 # Following protocol described in
 # Top-Level Control Software
@@ -36,6 +39,19 @@ from datetime import datetime, timezone
 # hdlr_align      6661
 # baldr           6662
 
+# param names taken from was/ASGARD/CONFIG/agmcfg/config/agmcfgMCS.cfg
+WAG_PARAMS_TO_READ = [
+    "seeing",
+    "alt",
+    "az",
+]
+
+
+def check_port(port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        result = s.connect_ex(("mimir", port))
+        return "open" if result == 0 else "closed"
+
 
 class ZmqReq:
     """
@@ -44,30 +60,55 @@ class ZmqReq:
 
     def __init__(self, endpoint: str, timeout_ms: int = 1500):
         self.ctx = zmq.Context.instance()
+        self.endpoint = endpoint
+        self.timeout_ms = timeout_ms
         self.s = self.ctx.socket(zmq.REQ)
         self.s.RCVTIMEO = timeout_ms
         self.s.SNDTIMEO = timeout_ms
         self.s.connect(endpoint)
 
-    def send_payload(
-        self, payload: Dict[str, Any], is_str=False, decode_ascii=True
-    ) -> Optional[Dict[str, Any]]:
-        if not is_str:
-            self.s.send_string(json.dumps(payload, sort_keys=True))
-        else:
-            self.s.send_string(payload)
+    def reconnect(self):
+        try:
+            self.s.setsockopt(zmq.LINGER, 0)
+            self.s.close()
+        except zmq.ZMQError:
+            pass
+        except Exception:
+            pass
 
         try:
+            self.s = self.ctx.socket(zmq.REQ)
+            self.s.RCVTIMEO = self.timeout_ms
+            self.s.SNDTIMEO = self.timeout_ms
+            self.s.connect(self.endpoint)
+        except Exception as e:
+            logging.error(f"Failed to reconnect to {self.endpoint}: {e}")
+
+    def send_payload(
+        self,
+        payload: Any,
+        is_str=False,
+        decode_ascii=True,
+        loaddict=True,
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            if not is_str:
+                self.s.send_string(json.dumps(payload, sort_keys=True))
+            else:
+                self.s.send_string(payload)
 
             if decode_ascii:
-                res = self.s.recv().decode("ascii")[:-1]
+                res = self.s.recv().decode("ascii").rstrip("\x00")
             else:
                 res = self.s.recv_string()
 
-            return json.loads(res)
-        except zmq.error.Again:
+            if loaddict:
+                return json.loads(res)
+            else:
+                return res
+        except (zmq.error.Again, zmq.error.ZMQError):
             return None
-        except json.decoder.JSONDecodeError:
+        except (json.decoder.JSONDecodeError, UnicodeDecodeError):
             return None
 
 
@@ -99,7 +140,6 @@ class ZmqRep:
 
 # ---------------- MCS client ----------------
 class MCSClient:
-
     @staticmethod
     def _is_zmq_socket_open(sock):
         """
@@ -144,18 +184,14 @@ class MCSClient:
     def __init__(
         self,
         dcs_endpoints: dict,
-        script_endpoint: str,
+        mcs_server_endpoint: str,
         publish_endpoint: str,
         sleep_time: float = 1.0,
         script_only: bool = False,
     ):
-        self.publish_z = ZmqReq(publish_endpoint)
-        logging.info(f"REQ publish set up on {publish_endpoint}")
-
-        self.script_z = ScriptAdapter(script_endpoint)
-        logging.info(f"ScriptAdapter(REP) set up on {script_endpoint}")
-
-        self.dcs_endpoints = dcs_endpoints
+        self.wag_req_timeout_ms = 500
+        self.wag_req_retries = 2
+        self.wag_req_retry_delay_s = 0.05
 
         self.dcs_adapters = {}
         for dcs_name, endpoint in dcs_endpoints.items():
@@ -167,6 +203,16 @@ class MCSClient:
                 logging.warning(f"Unknown DCS adapter name '{dcs_name}', skipping.")
                 continue
 
+        self.req_z = ZmqReq(publish_endpoint, timeout_ms=self.wag_req_timeout_ms)
+        logging.info(f"REQ publish set up on {publish_endpoint}")
+
+        self.watchdog = Watchdog(self.dcs_adapters.get("HDLR").z)
+
+        self.server_z = MCSServer(mcs_server_endpoint, self.watchdog)
+        logging.info(f"MCSServer(REP) set up on {mcs_server_endpoint}")
+
+        self.dcs_endpoints = dcs_endpoints
+
         self.requester = "mimir"
 
         self.sleep_time = sleep_time
@@ -174,13 +220,28 @@ class MCSClient:
 
         self.t_last_server_check = time.time()
 
-    def _send(self, body: Dict[str, Any]) -> Tuple[bool, str]:
-        rep = self.publish_z.send_payload(body)
-        print(rep)
-        if not rep or "reply" not in rep:
-            return False, "no-reply"
-        content = rep["reply"].get("content", "ERROR")
-        return (content == "OK" or content != "ERROR"), str(content)
+        self.wag_reads = {param: None for param in WAG_PARAMS_TO_READ}
+
+    def _send(self, body: Dict[str, Any]) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        for attempt in range(self.wag_req_retries):
+            if getattr(self.req_z.s, "closed", False):
+                self.req_z.reconnect()
+
+            rep = self.req_z.send_payload(body)
+            if rep and "reply":
+                content = rep["reply"].get("content", "ERROR")
+                return (content != "ERROR"), rep
+
+            logging.warning(
+                "WAG request timeout/invalid reply, reconnecting (%d/%d)",
+                attempt + 1,
+                self.wag_req_retries,
+            )
+            self.req_z.reconnect()
+            if attempt + 1 < self.wag_req_retries:
+                time.sleep(self.wag_req_retry_delay_s)
+
+        return False, None
 
     def run(self):
         """
@@ -188,8 +249,40 @@ class MCSClient:
         also poll the cpp databases for new data. Publish all at once.
         """
         while True:
+            # self.read_from_wag()
             self.publish_all_to_wag()
+
             time.sleep(self.sleep_time)
+
+    def read_from_wag(self):
+        """Read WAG parameters if connection is open, and update self.wag_reads. Only query if connection is open."""
+
+        msg = {
+            "command": {
+                "name": "read",
+                "time": self.ts(),
+                "parameter": [{"name": param} for param in WAG_PARAMS_TO_READ],
+                "requester": self.requester,
+            }
+        }
+        ok, rep = self._send(msg)
+        if not ok or not rep or "reply" not in rep:
+            logging.warning(f"failed to read from wag: {rep}")
+            for param in WAG_PARAMS_TO_READ:
+                self.wag_reads[param] = None
+            return
+        content = rep["reply"].get("content", {})
+        if not isinstance(content, dict):
+            logging.warning(f"unexpected reply content format from wag: {content}")
+            for param in WAG_PARAMS_TO_READ:
+                self.wag_reads[param] = None
+            return
+        for param in WAG_PARAMS_TO_READ:
+            if param in content:
+                self.wag_reads[param] = content[param]
+            else:
+                logging.warning(f"parameter {param} not found in wag reply content")
+                self.wag_reads[param] = None
 
     def gather_baldr_parameters(self):
         """Gather Baldr parameters for all beams as a list of dicts. Only query if connection is open."""
@@ -266,8 +359,8 @@ class MCSClient:
 
     def gather_script_parameters(self):
         """Gather script parameters if new data is available, as a list of dicts. Only query if connection is open."""
-        self.script_z.fetch()
-        msg = self.script_z.read_most_recent_msg()
+        self.server_z.fetch()
+        msg = self.server_z.read_most_recent_msg()
         if not msg:
             return None
         if "beam" not in msg:
@@ -296,6 +389,7 @@ class MCSClient:
                     "value": [value],
                     "range": f"({beam_no}:{beam_no})",
                 }
+        logging.info("gathered script parameters: %s", data)
         return data
 
     def publish_all_to_wag(self):
@@ -320,9 +414,9 @@ class MCSClient:
         # logging.info(f"pushing: {str(body)[:20]}]...")
         logging.info(f"pushing: {str(body)}...")
         try:
-            ok, msg = self._send(body)
+            ok, rep = self._send(body)
             if not ok:
-                logging.warning(f"failed to write combined data to wag: {msg}")
+                logging.warning(f"failed to write combined data to wag: {rep}")
         except zmq.error.ZMQError as e:
             logging.error(f"ZMQ error to wag: {e}")
 
@@ -346,74 +440,16 @@ class MCSClient:
             prop["value"] = values
             body["parameter"].append(prop)
 
-        ok, msg = self._send(body)
+        ok, rep = self._send(body)
 
         if not ok:
-            logging.warning(f"failed to write script data to wag: {msg}")
-
-    # def publish_hdlr_databases_to_wag(self):
-    #     self.dcs_adapters["HDLR"].fetch()
-
-    #     Hdlr_parameters = fields(HeimdallrStatus)
-
-    #     body = self.ESO_format([])
-
-    #     # append to body["parameter"]
-    #     for param in Hdlr_parameters:
-    #         values = self.dcs_adapters["HDLR"][param]  # is already a list
-    #         prop = {}
-    #         prop["name"] = f"hdlr_{param}"
-    #         prop["range"] = "(0:3)"
-    #         prop["value"] = values
-    #         body["parameter"].append(prop)
-
-    #     ok, msg = self._send(body)
-    #     if not ok:
-    #         logging.warning(f"failed to write script data to wag: {msg}")
+            logging.warning(f"failed to write script data to wag: {rep}")
 
     def publish_script_data(self):
-        if self.script_z.has_new_data:
-            msg = self.script_z.read_most_recent_msg()
+        if self.server_z.has_new_data:
+            msg = self.server_z.read_most_recent_msg()
         else:
             return
-        # // option 1: all 4 beams updated, formatting done by MCS
-        # {
-        #     "origin": "s_h-autoalign",
-        #     "data": [
-        #         {"hdlr_x_offset": x_offsets}, // each value is a list if needed
-        #         {"hdlr_y_offset": y_offsets},
-        #         {"hdlr_complete": True},
-        #     ],
-        # }
-
-        # // option 2: single beam updated, formatting done by MCS
-        # {
-        #     "origin": "s_h-autoalign",
-        #     "beam" : beam_no, // if this keyword exists MCS knows it is this case
-        #     "data": [
-        #         {"hdlr_x_offset": x_offset}, // each value is a single value
-        #         {"hdlr_y_offset": y_offset}, // constraint: only params with "unique per telescope" can be sent
-        #     ],
-        # }
-
-        # final form that is sent to wag is (in the data section):
-        # // case 1
-        # [
-        #     {
-        #         "name": "hdlr_x_offset",
-        #         "value": x_offsets,
-        #         "range": "(0:3)"
-        #     }, ... // same for all other params
-        # ]
-
-        # // case 2
-        # [
-        #     {
-        #         "name": "hdlr_x_offset",
-        #         "value": [x_offset],
-        #         "range": "(beam_no:beam_no)"
-        #     }, ... // same for all other params
-        # ]
 
         # check if "beam" keyword exists, if so it is a single beam update
         # otherwise it is all beams
@@ -453,10 +489,10 @@ class MCSClient:
 
         # # write all fields to MCS in a single message
         body = self.ESO_format(data)
-        ok, msg = self._send(body)
+        ok, rep = self._send(body)
 
         if not ok:
-            logging.warning(f"failed to write script data to wag: {msg}")
+            logging.warning(f"failed to write script data to wag: {rep}")
 
     def ESO_format(self, content):
         return {
@@ -503,9 +539,9 @@ class MCSClient:
         # update body
         body["command"]["parameter"] = param_list
 
-        ok, msg = self._send(body)
+        ok, rep = self._send(body)
         if not ok:
-            logging.warning(f"failed to write baldr1_status to wag: {msg}")
+            logging.warning(f"failed to write baldr1_status to wag: {rep}")
 
     @staticmethod
     def ts():
@@ -634,9 +670,210 @@ class HeimdallrAdapter(CppServerAdapter):
             return None
 
 
-class ScriptAdapter:
+class Watchdog:
+    def __init__(self, hdlr_zmq):
+        self.watchdog_last_check = time.time()
+        self.watchdog_fast_timeout_ms = 80
+        self.watchdog_fast_retries = 2
+        self.watchdog_retry_delay_s = 0.02
+        # TODO: use file of all the endpoints everywhere
+
+        # checkports are processes that open a zmq port but don't have a status command
+        self.checkports = {
+            "Eng gui": "checkport 8501",  # not zmq, use check_port function instead
+        }
+
+        # all other servers
+        self.watchdog_servers = {
+            "MDS": ZmqReq("tcp://mimir:5555", timeout_ms=self.watchdog_fast_timeout_ms),
+            "CRED1": ZmqReq(
+                "tcp://mimir:6667", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "DM": ZmqReq("tcp://mimir:6666", timeout_ms=self.watchdog_fast_timeout_ms),
+            "BTT1": ZmqReq(
+                "tcp://mimir:6671", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "BTT2": ZmqReq(
+                "tcp://mimir:6672", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "BTT3": ZmqReq(
+                "tcp://mimir:6673", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "BTT4": ZmqReq(
+                "tcp://mimir:6674", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "BAO1": ZmqReq(
+                "tcp://mimir:6661", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "BAO2": ZmqReq(
+                "tcp://mimir:6662", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "BAO3": ZmqReq(
+                "tcp://mimir:6663", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "BAO4": ZmqReq(
+                "tcp://mimir:6664", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "HDLR": hdlr_zmq,
+            "back_end": ZmqReq(
+                "tcp://mimir:7002", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+        }
+
+        # generic processes that are running
+        self.processes_of_interest = {
+            "Heim Telem": "/home/asg/.conda/envs/asgard/bin/save-ft-performance",
+            "Baldr TT Telem": "/home/asg/.conda/envs/asgard/bin/save-tt-performance",
+        }
+
+        self.processes_of_interest_zmq = {
+            "MDS": "python asgard_alignment/MultiDeviceServer.py",
+            "Eng gui": "streamlit run asgard_alignment/cmd_scripts/engineering_GUI.py",
+            "CRED1": "/bin/cred1_server",
+            "DM": "/bin/cred1_server",
+            "BTT1": "/usr/local/bin/baldr_tt /usr/local/etc/def1.toml --socket 'tcp://*:6671'",
+            "BTT2": "/usr/local/bin/baldr_tt /usr/local/etc/def2.toml --socket 'tcp://*:6672'",
+            "BTT3": "/usr/local/bin/baldr_tt /usr/local/etc/def3.toml --socket 'tcp://*:6673'",
+            "BTT4": "/usr/local/bin/baldr_tt /usr/local/etc/def4.toml --socket 'tcp://*:6674'",
+            "BAO1": "Server.py --beam 1",
+            "BAO2": "Server.py --beam 2",
+            "BAO3": "Server.py --beam 3",
+            "BAO4": "Server.py --beam 4",
+            "HDLR": "/usr/local/bin/heimdallr",
+            "back_end": "/home/asg/.conda/envs/asgard/bin/back-end-server",
+        }
+
+    def _watchdog_lazy_pirate_status(
+        self, proc_name: str, zmq_obj: ZmqReq, ps_output: Optional[str] = None
+    ) -> Tuple[str, str, str]:
+        """
+        Fast Lazy Pirate probe for watchdog status requests.
+        On timeout or socket state errors, reset the REQ socket and retry quickly.
+
+        returns a tuple of (process_status, zmq_status, custom_status)
+
+        Args:
+            proc_name: Name of the process to check
+            zmq_obj: ZMQ socket object
+            ps_output: Cached output from 'ps aux' (if None, process status cannot be checked)
+        """
+        for attempt in range(self.watchdog_fast_retries):
+            try:
+                zmq_obj.s.send_string("status")
+                poller = zmq.Poller()
+                poller.register(zmq_obj.s, zmq.POLLIN)
+                socks = dict(poller.poll(self.watchdog_fast_timeout_ms))
+                if zmq_obj.s in socks and socks[zmq_obj.s] == zmq.POLLIN:
+                    reply = zmq_obj.s.recv_string()
+                    if proc_name == "HDLR":
+                        reply = json.loads(reply)
+                        # remove all but cnt and locked
+                        reply = {
+                            k: v for k, v in reply.items() if k in ["cnt", "locked"]
+                        }
+                        reply = json.dumps(reply)
+
+                    return "running", "open", reply
+            except zmq.ZMQError as e:
+                logging.debug(
+                    "watchdog ZMQ error for %s (attempt %d/%d): %s",
+                    proc_name,
+                    attempt + 1,
+                    self.watchdog_fast_retries,
+                    e,
+                )
+
+            if attempt + 1 < self.watchdog_fast_retries:
+                try:
+                    zmq_obj.reconnect()
+                except Exception as e:
+                    logging.warning(f"Failed to reconnect for {proc_name}: {e}")
+
+                time.sleep(self.watchdog_retry_delay_s)
+
+        # Check if process is running using cached ps output
+        if ps_output and self.processes_of_interest_zmq.get(proc_name) in ps_output:
+            return "running", "closed", "no-reply"
+
+        return "closed", "closed", "no-reply"
+
+    def collect_wd_status(self):
+        """
+        { <process>: {
+            "process": "running"/"closed",
+            "zmq": "open"/"closed"/"no-conn",
+            "status" {<custom status per server>}
+            }
+        }
+
+        """
+        wd_status = {}
+
+        # Run ps aux once and cache the output for all process checks
+        ps_output = None
+        try:
+            result = subprocess.run(
+                ["ps", "aux"], stdout=subprocess.PIPE, text=True, check=True
+            )
+            ps_output = result.stdout
+        except OSError as e:
+            logging.error(f"OSError while running ps aux: {e}")
+        except Exception as e:
+            logging.error(f"Unexpected error running ps aux: {e}")
+
+        logging.info("running wd status fn: servers")
+        for proc_name, zmq_obj in self.watchdog_servers.items():
+            proc_status = "closed"
+            zmq_status = "no-conn"
+            custom_status = ""
+            if isinstance(zmq_obj, ZmqReq):
+                proc_status, zmq_status, custom_status = (
+                    self._watchdog_lazy_pirate_status(proc_name, zmq_obj, ps_output)
+                )
+            else:
+                logging.warning(
+                    f"Unexpected type for watchdog zmq object for {proc_name}"
+                )
+
+            wd_status[proc_name] = {
+                "process": proc_status,
+                "zmq": zmq_status,
+                "status": custom_status,
+            }
+
+        logging.info("running wd status fn: checkports")
+        for proc_name, check_cmd in self.checkports.items():
+            zmq_status = check_port(int(check_cmd.split()[-1]))
+            proc_status = "running" if zmq_status == "open" else "closed"
+            wd_status[proc_name] = {
+                "process": proc_status,
+                "zmq": zmq_status,
+                "status": "",
+            }
+
+        logging.info("running wd status fn: processes of interest")
+        for proc_name, proc_cmd in self.processes_of_interest.items():
+            if ps_output and proc_cmd in ps_output:
+                wd_status[proc_name] = {
+                    "process": "running",
+                    "zmq": "N/A",
+                    "status": "N/A",
+                }
+            else:
+                wd_status[proc_name] = {
+                    "process": "closed",
+                    "zmq": "N/A",
+                    "status": "N/A",
+                }
+
+        return wd_status
+
+
+class MCSServer:
     """
-    A dedicated channel for talking to DCS command scripts that have been run
+    A channel for talking to DCS command scripts that have been run, and to the watchdog client on
+    wag.
+
     This differs from the C++ servers in that it has be the server side of a ZMQ REQ/REP pair
     and the scripts are the clients. When the data is dumped by the client, this class
     just returns "ack" to the script and the data is saved in MCS.
@@ -650,7 +887,7 @@ class ScriptAdapter:
     noting that the MCS will append the requester field automatically.
     """
 
-    def __init__(self, endpoint: str):
+    def __init__(self, endpoint: str, watchdog: Watchdog):
         self.z = ZmqRep(endpoint)
 
         self.poller = zmq.Poller()
@@ -658,6 +895,8 @@ class ScriptAdapter:
 
         self.data = {}
         self.has_new_data = False
+
+        self.watchdog = watchdog
 
     def read_most_recent_msg(self):
         if self.has_new_data == False:
@@ -687,20 +926,25 @@ class ScriptAdapter:
             return -1
 
     def handle_message(self, msg):
+        if msg == "status":
+            logging.info("recieved status message from WAG")
+            stats = self.watchdog.collect_wd_status()
+            self.z.send_payload(stats)
+        else:
+            msg = json.loads(msg)
+            logging.info(f"recieved status message from script: {msg}")
+            # Acknowledge receipt
+            if not msg:
+                return None
+            self.z.send_payload({"ok": True})
 
-        msg = json.loads(msg)
-        # Acknowledge receipt
-        if not msg:
-            return None
-        self.z.send_payload({"ok": True})
-
-        if msg.get("origin") == "s_h-autoalign":
-            self.data = msg
-        elif msg.get("origin") == "s_h-shutter":
-            self.data = msg
-        elif msg.get("origin") == "s_bld_pup_autoalign_sky":
-            # Save the data for later processing
-            self.data = msg
+            if msg.get("origin") == "s_h-autoalign":
+                self.data = msg
+            elif msg.get("origin") == "s_h-shutter":
+                self.data = msg
+            elif msg.get("origin") == "s_bld_pup_autoalign_sky":
+                # Save the data for later processing
+                self.data = msg
 
 
 # ---------------- Main publish loop ----------------
@@ -741,21 +985,21 @@ def main():
     logging.getLogger().addHandler(console)
 
     mcs = MCSClient(
-        dcs_endpoints={
-            "BLD1": "tcp://192.168.100.2:6662",
-            "BLD2": "tcp://192.168.100.2:6663",
-            "BLD3": "tcp://192.168.100.2:6664",
-            "BLD4": "tcp://192.168.100.2:6665",
-            "HDLR": "tcp://192.168.100.2:6660",
+        dcs_endpoints={  #!!! Removed Baldr for now...
+            # "BLD1": "tcp://mimir:6662",
+            # "BLD2": "tcp://mimir:6663",
+            # "BLD3": "tcp://mimir:6664",
+            # "BLD4": "tcp://mimir:6665",
+            "HDLR": "tcp://mimir:6660",
         },
-        script_endpoint="tcp://192.168.100.2:7019",
-        publish_endpoint="tcp://192.168.100.1:7050",
+        mcs_server_endpoint="tcp://mimir:7019",
+        publish_endpoint="tcp://wag:7050",
         sleep_time=1.0,
         script_only=args.script_only,
     )
 
     mcs.run()
 
+
 if __name__ == "__main__":
     main()
-

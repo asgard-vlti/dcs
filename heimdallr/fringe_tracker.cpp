@@ -48,9 +48,6 @@ Eigen::Matrix<double, N_BL, N_MOD> gd_snr_during_mod = Eigen::Matrix<double, N_B
 //Eigen::Vector4d search_vector_scale(-2.75,-1.75,1.25,3.25);
 Eigen::Vector4d search_vector_scale(-1.5,-0.5,0.5,1.5);
 
-// Beams active as an Eigen vector (i.e. doubles rather than booleans)
-Eigen::Vector4d beams_active = Eigen::Vector4d::Ones();
-
 template <typename T> int sgn(T val){
 	return (T(0) < val) - (val < T(0));
 }
@@ -72,7 +69,7 @@ Eigen::Matrix4d make_pinv(Eigen::Matrix<double, N_BL, 1> W, double threshold){
 #ifdef PRINT_TIMING_ALL
     clock_gettime(CLOCK_REALTIME, &now);
     if (then.tv_sec == now.tv_sec)
-        std::cout << "SVD time: " << now.tv_nsec-then.tv_nsec << std::endl;
+        info("SVD time: %ld", now.tv_nsec - then.tv_nsec);
     then = now;
 #endif
     // Start with a diagonal vector of 4 zeros.
@@ -88,7 +85,7 @@ Eigen::Matrix4d make_pinv(Eigen::Matrix<double, N_BL, 1> W, double threshold){
 #ifdef PRINT_TIMING_ALL
     clock_gettime(CLOCK_REALTIME, &now);
     if (then.tv_sec == now.tv_sec)
-        std::cout << "Thresholding time: " << now.tv_nsec-then.tv_nsec << std::endl;
+        info("Thresholding time: %ld", now.tv_nsec - then.tv_nsec);
 #endif
     return  es.eigenvectors() * singularDiag * es.eigenvectors().transpose();
 }
@@ -120,7 +117,7 @@ void set_dm_piston(Eigen::Vector4d dm_piston){
     return;
 #endif
     // Make sure that we only move the DM for for the active beams.
-    control_u.dm_piston = beams_active.asDiagonal() * control_u.dm_piston;       	
+    control_u.dm_piston = control_u.beams_active.asDiagonal() * control_u.dm_piston;       	
     // This function sets the DM piston to the given value.
     for(int i = 0; i < N_TEL; i++) {
         if (control_u.search(i) != 0.0) {
@@ -276,19 +273,31 @@ Eigen::Matrix<double, N_BL, 1> filter6(Eigen::Matrix<double, N_BL, N_BL> I6, Eig
     }
 #ifdef DEBUG_FILTER6
     // For debugging, print the best combination found, x_best, and y_best
-    fmt::print("Best i {:b}\n", i_best);
+    info("%s", fmt::format("Best i {:b}", i_best).c_str());
     // Print Eigen vectors as comma-separated values
-    fmt::print("Initial x:       ");
-    for (int k = 0; k < x.size(); ++k) {
-        fmt::print("{:.4f}{}", x(k), (k < x.size()-1) ? ", " : "\n");
+    {
+        std::ostringstream stream;
+        stream << "Initial x:       ";
+        for (int k = 0; k < x.size(); ++k) {
+            stream << fmt::format("{:.4f}", x(k)) << ((k < x.size()-1) ? ", " : "");
+        }
+        info("%s", stream.str().c_str());
     }
-    fmt::print("Best modified x: ");
-    for (int k = 0; k < x_best.size(); ++k) {
-        fmt::print("{:.4f}{}", x_best(k), (k < x_best.size()-1) ? ", " : "\n");
+    {
+        std::ostringstream stream;
+        stream << "Best modified x: ";
+        for (int k = 0; k < x_best.size(); ++k) {
+            stream << fmt::format("{:.4f}", x_best(k)) << ((k < x_best.size()-1) ? ", " : "");
+        }
+        info("%s", stream.str().c_str());
     }
-    fmt::print("Best y:           ");
-    for (int k = 0; k < y_best.size(); ++k) {
-        fmt::print("{:.4f}{}", y_best(k), (k < y_best.size()-1) ? ", " : "\n");
+    {
+        std::ostringstream stream;
+        stream << "Best y:           ";
+        for (int k = 0; k < y_best.size(); ++k) {
+            stream << fmt::format("{:.4f}", y_best(k)) << ((k < y_best.size()-1) ? ", " : "");
+        }
+        info("%s", stream.str().c_str());
     }
     //y_best = I6 * x;
 #endif
@@ -329,14 +338,14 @@ void fringe_tracker(){
         // If we are here, then a new frame is available in both K1 and K2. 
         // Check that there has not been a counting error.
         if(K1ft->cnt == ft_cnt || K2ft->cnt == ft_cnt){
-            std::cout << "FT: Semaphore signalled but no new frame" << std::endl;
+            info("FT: Semaphore signalled but no new frame");
             nerrors++;
             continue;
         }
         // Check for missed frames
         if (K1ft->cnt > ft_cnt+2 || K2ft->cnt > ft_cnt+2){
-            std::cout << "Missed FT frames! K1: " << K1ft->cnt << " K2: " 
-                << K2ft->cnt << " FT: " << ft_cnt << std::endl;
+            info("Missed FT frames! K1: %lu K2: %lu FT: %lu",
+                K1ft->cnt, K2ft->cnt, ft_cnt);
             // Catch up!
             while (sem_trywait(&K1ft->sem_new_frame)==0);
             while (sem_trywait(&K2ft->sem_new_frame)==0);
@@ -428,7 +437,7 @@ void fringe_tracker(){
             // Set the weight matriix (bl,bl) to the square of the SNR, unless 
             // the SNR is too low, in which case we set it to zero.
             if ((baselines.gd_snr(bl) > settings.s.gd_threshold) && 
-                (control_u.beams_active[baseline2beam[bl][0]]) && (control_u.beams_active[baseline2beam[bl][1]])){
+                (control_u.beams_active(baseline2beam[bl][0])) && (control_u.beams_active(baseline2beam[bl][1]))){
                 Wgd(bl) = baselines.gd_snr(bl)*baselines.gd_snr(bl);
                 var_gd(bl) = gd_to_K1*gd_to_K1/baselines.gd_snr(bl)/baselines.gd_snr(bl);
             }
@@ -437,7 +446,7 @@ void fringe_tracker(){
                 var_gd(bl) = 1e6; 
             }
             if ((baselines.pd_snr(bl) > settings.s.pd_threshold) &&
-                (control_u.beams_active[baseline2beam[bl][0]]) && (control_u.beams_active[baseline2beam[bl][1]])){
+                (control_u.beams_active(baseline2beam[bl][0])) && (control_u.beams_active(baseline2beam[bl][1]))){
                 Wpd(bl) = baselines.pd_snr(bl)*baselines.pd_snr(bl);
                 var_pd(bl) = 1/baselines.pd_snr(bl)/baselines.pd_snr(bl)/4/M_PI/M_PI;
             }
@@ -449,9 +458,6 @@ void fringe_tracker(){
             }
         }
         
-        // Make the beams_active a vector.
-        beams_active = Eigen::Vector4d(control_u.beams_active[0],control_u.beams_active[1],control_u.beams_active[2],control_u.beams_active[3]);
-
         // Now we have the group delays and phase delays, we can regularise by using by the  
         // I6gd matrix and the I6pd matrix. No short-cuts!
         // Fill a Vector of baseline group and phase delay.
@@ -470,7 +476,7 @@ void fringe_tracker(){
 #ifdef PRINT_TIMING_ALL
     clock_gettime(CLOCK_REALTIME, &now_all);
     if (then_all.tv_sec == now_all.tv_sec)
-        std::cout << "PD filtering time: " << now_all.tv_nsec-then_all.tv_nsec << std::endl;
+    info("PD filtering time: %ld", now_all.tv_nsec - then_all.tv_nsec);
 #endif
 
         // Filter the average phase delay. !!! This doesn't work. Removing for now. !!!
@@ -486,27 +492,44 @@ void fringe_tracker(){
 
 #ifdef DEBUG
         // Print debugging info for bugshooting, formatted for np.array input
-        fmt::print("var_gd diagonal = [");
-        for (int k = 0; k < var_gd.size(); ++k) {
-            fmt::print("{:.6f}{}", var_gd(k), (k < var_gd.size()-1) ? ", " : "]\n");
-        }
-        fmt::print("Wgd diagonal = [");
-        for (int k = 0; k < Wgd.size(); ++k) {
-            fmt::print("{:.6f}{}", Wgd(k), (k < Wgd.size()-1) ? ", " : "]\n");
-        }
-        fmt::print("cov_gd_tel diagonal = [");
-        for (int k = 0; k < cov_gd_tel.diagonal().size(); ++k) {
-            fmt::print("{:.6f}{}", cov_gd_tel.diagonal()(k), (k < cov_gd_tel.diagonal().size()-1) ? ", " : "]\n");
-        }
-        fmt::print("I6gd matrix = [\n");
-        for (int i = 0; i < I6gd.rows(); ++i) {
-            fmt::print("[");
-            for (int j = 0; j < I6gd.cols(); ++j) {
-                fmt::print("{:.6f}{}", I6gd(i, j), (j < I6gd.cols()-1) ? ", " : "");
+        {
+            std::ostringstream stream;
+            stream << "var_gd diagonal = [";
+            for (int k = 0; k < var_gd.size(); ++k) {
+                stream << fmt::format("{:.6f}", var_gd(k)) << ((k < var_gd.size()-1) ? ", " : "]");
             }
-            fmt::print("]{}\n", (i < I6gd.rows()-1) ? "," : "");
+            info("%s", stream.str().c_str());
         }
-        fmt::print("]\n");
+        {
+            std::ostringstream stream;
+            stream << "Wgd diagonal = [";
+            for (int k = 0; k < Wgd.size(); ++k) {
+                stream << fmt::format("{:.6f}", Wgd(k)) << ((k < Wgd.size()-1) ? ", " : "]");
+            }
+            info("%s", stream.str().c_str());
+        }
+        {
+            std::ostringstream stream;
+            stream << "cov_gd_tel diagonal = [";
+            for (int k = 0; k < cov_gd_tel.diagonal().size(); ++k) {
+                stream << fmt::format("{:.6f}", cov_gd_tel.diagonal()(k))
+                       << ((k < cov_gd_tel.diagonal().size()-1) ? ", " : "]");
+            }
+            info("%s", stream.str().c_str());
+        }
+        {
+            std::ostringstream stream;
+            stream << "I6gd matrix = [\n";
+            for (int i = 0; i < I6gd.rows(); ++i) {
+                stream << "[";
+                for (int j = 0; j < I6gd.cols(); ++j) {
+                    stream << fmt::format("{:.6f}", I6gd(i, j)) << ((j < I6gd.cols()-1) ? ", " : "");
+                }
+                stream << "]" << ((i < I6gd.rows()-1) ? "," : "") << "\n";
+            }
+            stream << "]";
+            info("%s", stream.str().c_str());
+        }
 #endif
 
         // Now project the filtered gd and pd onto telescope space.
@@ -556,7 +579,7 @@ void fringe_tracker(){
             if ((cnt_since_init == last_gd_jump+1) || (cnt_since_init > last_gd_jump + 3)){
 	        control_u.dm_piston += settings.s.kp * control_a.pd * config["wave"]["K1"].value_or(2.05)/OPD_PER_DM_UNIT;
             // Make sure that we only move the DM for for the active beams.
-            control_u.dm_piston = beams_active.asDiagonal() * control_u.dm_piston;
+            control_u.dm_piston = control_u.beams_active.asDiagonal() * control_u.dm_piston;
            	// Center the DM piston.
             control_u.dm_piston = control_u.dm_piston - control_u.dm_piston.mean()*Eigen::Vector4d::Ones();
             // Limit it to no more than +/- MAX_DM_PISTON.
@@ -579,7 +602,7 @@ void fringe_tracker(){
 #ifdef PRINT_TIMING
         clock_gettime(CLOCK_REALTIME, &now);
         if (then.tv_sec == now.tv_sec)
-            std::cout << "FT Computation time: " << now.tv_nsec-then.tv_nsec << std::endl;
+            info("FT Computation time: %ld", now.tv_nsec - then.tv_nsec);
         then = now;
 #endif
         // Phew! Now on to the less time-critical delay line control.
@@ -595,11 +618,11 @@ void fringe_tracker(){
         if ((settings.s.offload_mode == OFFLOAD_MOD) && (gd_ix == (int)baselines.n_gd_boxcar-1)){
             // In mod mode, we fill the group delay SNR matrix.
             gd_snr_during_mod.col(mod_ix) = baselines.gd_snr;
-            std::cout << baselines.gd_snr.transpose() << std::endl;
+            info("%s", log_stringify(baselines.gd_snr.transpose()).c_str());
             mod_ix = (mod_ix + 1) % N_MOD;
             set_mod(MODULATION_AMPLITUDE * modulation_matrix.col(mod_ix));
             // DEBUG
-            std::cout << "Modulating: " << modulation_matrix.col(mod_ix).transpose() << std::endl;
+            info("Modulating: %s", log_stringify(modulation_matrix.col(mod_ix).transpose()).c_str());
             if (mod_ix==0){
                 // Now find the fringe peak. We iterate over baselines, 
                 // and accumulate the SNR for zero, plus and minus modulation.
@@ -620,7 +643,7 @@ void fringe_tracker(){
                     snr_plus /= 4;
                     snr_minus /= 4;
                     // DEBUG
-                    std::cout << std::fixed << std::setprecision(1) << snr_minus << " " << snr_zero << " " << snr_plus << std::endl;
+                    info("%.1f %.1f %.1f", snr_minus, snr_zero, snr_plus);
                     // Find max SNR and corresponding delay.
                     double max_snr = std::max({snr_zero, snr_plus, snr_minus});
                     if (max_snr > settings.s.gd_threshold){
@@ -633,12 +656,12 @@ void fringe_tracker(){
                 // by this to find the new control signal. There is regularisation just like
                 // the normal fringe tracking above.
                 //DEBUG 
-                std::cout << "Delays: " << delays.transpose() << std::endl;
-                std::cout << "Valid: " << valid.transpose() << std::endl;
+                info("Delays: %s", log_stringify(delays.transpose()).c_str());
+                info("Valid: %s", log_stringify(valid.transpose()).c_str());
                 I6gd = M_lacour * make_pinv(valid, 0) * M_lacour.transpose() * valid.asDiagonal();
                 control_u.dl_offload = M_lacour_dag * I6gd * delays;
-                std::cout << "Regularised: " << (I6gd * delays).transpose() << std::endl;
-                std::cout << "Telescope Space: " << control_u.dl_offload.transpose() << std::endl;
+                info("Regularised: %s", log_stringify((I6gd * delays).transpose()).c_str());
+                info("Telescope Space: %s", log_stringify(control_u.dl_offload.transpose()).c_str());
                 add_to_delay_lines(control_u.search - control_u.dl_offload);
             }
         } else if (time_since_last_offload_ms > settings.s.offload_time_ms) {
@@ -653,7 +676,7 @@ void fringe_tracker(){
             beam_mutex.lock();
             unsigned int num_zeros = 0;
             for (int i = 0; i < N_TEL; ++i) {
-                if (control_u.beams_active[i] == 0) num_zeros++;
+                if (control_u.beams_active(i) == 0) num_zeros++;
             }
             unsigned int n = 2 + num_zeros;
 
@@ -686,9 +709,8 @@ void fringe_tracker(){
                 //This gives a logarithm base 2, so we search twice as far each turnaround. 
                 while (index >>= 1) ++search_level;
                 control_u.search = I4_search_projection *control_u.search_delta * (1.0 - (search_level % 2) * 2.0)
-                    * beams_active.asDiagonal() * search_vector_scale;
-                control_u.search -= (beams_active.asDiagonal() * control_u.search).mean() * beams_active;
-                control_u.search_Nsteps++;
+                    * control_u.beams_active.asDiagonal() * search_vector_scale;
+               control_u.search_Nsteps++;
             }
 
             // if testauto now_n is negative, over-write this with a test pattern.

@@ -1,4 +1,5 @@
 #include <complex> 
+#include <stdarg.h>
 #include <fftw3.h>
 #include <ImageStreamIO.h>
 #include <stdlib.h>
@@ -16,6 +17,9 @@
 #include <zmq.hpp>
 #include <chrono>
 #include <semaphore.h>
+#include <sstream>
+// This shouldn't be here, but I put the logging stuff in commander.
+#include <commander/commander.h>
 
 //----------Defines-----------
 #define SIMULATE
@@ -132,13 +136,13 @@ struct ControlU{
     Eigen::Vector4d dm_piston;
     Eigen::Vector4d search;
     Eigen::Vector4d dl_offload;
+    Eigen::Vector4d beams_active = Eigen::Vector4d::Ones();
     double search_delta, dit, nbreads, tsig_len;
     unsigned int search_Nsteps, steps_to_turnaround;
     int test_beam, test_n, test_ix;
     double test_value;
     bool fringe_found;
     double itime;
-    int beams_active[N_TEL]={1,1,1,1};
 };
 
 // This is our knowledge of the per-telescope delay state. Units are all in K1 wavelengths.
@@ -225,7 +229,7 @@ struct Settings
     double search_delta;
     double target_itime;
     std::string delay_line_type;
-    int offload_mode, servo_mode, fixed_dl;
+    int offload_mode, servo_mode, fixed_dl, loglevel;
     std::vector<double> search_offset;
 };
 
@@ -253,6 +257,7 @@ extern Bispectrum bispectra_K2[N_CP];
 extern double gd_to_K1;
 extern long unsigned int ft_cnt;
 extern int mod_ix;
+extern long unsigned int nerrors;
 extern bool foreground_in_place;
 
 // Generally, we either work with beams or baselines, so have a separate lock for each.
@@ -273,6 +278,8 @@ public:
     // for reverse FT ready.
     sem_t sem_new_frame;
     sem_t sem_reverse_ft_ready;
+    // Public just so we set priorities in one place.
+    std::thread thread, reverse_thread; 
 
     // Count of the frame number that has been processed
     long unsigned int cnt=0;
@@ -285,8 +292,8 @@ public:
     fftw_complex *ft, *ft_copy;
 
     // The boxcar averaged baseline power.
-    double *baseline_power_boxcar[N_BL][MAX_N_GD_BOXCAR];
-    double *baseline_power_avg[N_BL];
+    float *baseline_power_boxcar[N_BL][MAX_N_GD_BOXCAR];
+    float *baseline_power_avg[N_BL];
 
     // Is a frame bad? This needs to be a flag so that we can 
     // monitor skipped frames in the fringe tracker.
@@ -325,26 +332,36 @@ private:
     double *window;
     fftw_complex *ift_result, *ift;
     fftw_plan plan, rplan;
-    std::thread thread, reverse_thread; 
-    int mode=FT_STARTING;
+    std::atomic<int> mode{FT_STARTING};
     void loop();
     void reverse_ft();
 };
 
+//The forward Fourier transforms
+extern ForwardFt *K1ft, *K2ft;
+
+template <typename T>
+inline std::string log_stringify(const T& value) {
+    std::ostringstream stream;
+    stream << value;
+    return stream.str();
+}
+
+// fringe_tracker.cpp functions
 // Main thread function for fringe tracking.
 void start_modulation();
 void end_modulation();
 void fringe_tracker();
 
-// Seeting the delay lines (needed form the main thread and from the commander)
-void set_delay_lines(Eigen::Vector4d dl);
-
-//The forward Fourier transforms
-extern ForwardFt *K1ft, *K2ft;
-
+// cam_client.cpp functions
 // Camera status polling client
 void start_camera_client();
 void stop_camera_client();
+
+
+// dl_offload.cpp functions
+// Seeting the delay lines (needed form the main thread and from the commander)
+void set_delay_lines(Eigen::Vector4d dl);
 
 // Delay line offloads
 extern sem_t sem_offload;

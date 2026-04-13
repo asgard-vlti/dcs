@@ -1,0 +1,241 @@
+import numpy as np
+import zmq
+import time
+import toml
+import os
+import argparse
+import datetime
+import glob
+import hcipy
+import abc
+import logging
+
+import pathlib
+import scipy.optimize as opt
+from xaosim.shmlib import shm
+from asgard_alignment.DM_shm_ctrl import dmclass
+from asgard_alignment import FLI_Cameras as FLI
+import matplotlib.pyplot as plt
+
+import utils
+import basis_funcs
+import model
+import consts
+
+logger = logging.getLogger(__name__)
+
+
+class Reconstructor:
+    @abc.abstractmethod
+    def reconstruct(self, normed_img):
+        pass
+
+
+class LinearReconstructor(Reconstructor):
+    def __init__(self, IM, ref, rcond=1e-3):
+        self.recon_matrix = hcipy.inverse_tikhonov(IM.T, rcond=rcond)
+        self.ref = ref
+
+    def reconstruct(self, normed_img):
+        return self.recon_matrix @ (normed_img - self.ref)
+
+
+class PupilAwareLinearReconstructor(Reconstructor):
+    def __init__(
+        self,
+        labIM,
+        lab_pupil_img,
+        rcond=1e-3,
+        phasemask_diam=44e-6,
+        wavels=np.linspace(1.5e-6, 1.7e-6, 5),
+    ):
+        """
+        note that all images are assumed to be normed already!!
+        """
+        self.ref = model.create_model_reference(phasemask_diam, lab_pupil_img, wavels)
+
+        self.model_phasemask_diam = phasemask_diam
+        self.model_wavels = wavels
+
+        self.lab_pupil_img = lab_pupil_img
+
+        pupil_center, img_center, cam_grid = utils.fit_pupil_centre(lab_pupil_img)
+        self.pupil_soft_mask = utils.smooth_circle(
+            cam_grid, 9.0, centre=pupil_center - img_center, softening=0.01
+        ).reshape(cam_grid.shape)
+
+        self.labIM = labIM
+
+        self.rcond = rcond
+
+        self.recon_matrix = hcipy.inverse_tikhonov(self.labIM.T, rcond=rcond)
+
+    def update_reference(self, sky_pupil_img):
+        self.ref = model.create_model_reference(
+            self.model_phasemask_diam, sky_pupil_img, self.model_wavels
+        )
+
+        scaling_mask = np.sqrt(sky_pupil_img / self.lab_pupil_img)
+        scaling_mask[self.pupil_soft_mask < 0.5] = 0.0
+        scaling_mask = np.clip(scaling_mask, 0.0, 2.0)
+
+        IM = self.labIM.copy()
+        for i in range(IM.shape[1]):
+            # scale each part of the IM according to the pupil image
+            IM[:, i] *= scaling_mask.flatten()
+
+        self.recon_matrix = hcipy.inverse_tikhonov(IM.T, rcond=self.rcond)
+
+        self.save_arr(IM, self.ref, self.lab_pupil_img, sky_pupil_img)
+
+    def save_arr(self, IM, ref, lab_pupil_img, sky_pupil_img):
+        pth = pathlib.Path(
+            f"~/tmp/baldr_minimal_py/arr_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.npz"
+        ).expanduser()
+        np.savez(
+            pth,
+            IM=IM,
+            ref=ref,
+            lab_pupil_img=lab_pupil_img,
+            sky_pupil_img=sky_pupil_img,
+        )
+
+
+class Controller(abc.ABC):
+    @abc.abstractmethod
+    def compute_command(self, error):
+        pass
+
+    @abc.abstractmethod
+    def reset(self):
+        pass
+
+
+class LeakyIntegrator(Controller):
+    def __init__(self, n, gains=None, leaks=None):
+        self.n = n
+        if gains is None:
+            self.gains = np.ones(n) * 0.1
+        else:
+            self.gains = gains
+        if leaks is None:
+            self.leaks = np.ones(n) * 0.99
+        else:
+            self.leaks = leaks
+
+        self.command = np.zeros(n)
+
+    def compute_command(self, error):
+        self.command = self.leaks * self.command - self.gains * error
+        return self.command
+
+    def reset(self):
+        self.command = np.zeros(self.n)
+
+
+class LapLimitedLeakyIntegrator(LeakyIntegrator):
+    @staticmethod
+    def laplacian_limiter(surface, L_max, return_L=False):
+        # surface is a 2D array of actuator values
+        # we will modify surface in place
+        new_surface = surface.copy()
+
+        laplacian = (
+            -4 * surface[1:-1, 1:-1]
+            + surface[1:-1, 2:]
+            + surface[1:-1, :-2]
+            + surface[2:, 1:-1]
+            + surface[:-2, 1:-1]
+        )
+
+        new_surface[1:-1, 1:-1] += np.clip((laplacian - L_max) / 4, 0, None)
+        # and the opposite for negative Laplacian
+        new_surface[1:-1, 1:-1] += np.clip((laplacian + L_max) / 4, None, 0)
+
+        # retain pinning
+        new_surface[0, 1:-1] = new_surface[1, 1:-1]
+        new_surface[-1, 1:-1] = new_surface[-2, 1:-1]
+        new_surface[1:-1, 0] = new_surface[1:-1, 1]
+        new_surface[1:-1, -1] = new_surface[1:-1, -2]
+
+        if return_L:
+            L_values = np.zeros_like(surface)
+            L_values[1:-1, 1:-1] = laplacian
+            return new_surface, L_values
+        return new_surface
+
+    def __init__(self, n, gains=None, leaks=None, L_max=0.1):
+        super().__init__(n, gains, leaks)
+        self.L_max = L_max
+
+    def compute_command(self, error):
+        raw_command = super().compute_command(error)
+        command_2d = raw_command.reshape(consts.act_shape)
+        limited_command_2d = self.laplacian_limiter(
+            command_2d, self.L_max, return_L=False
+        )
+        return limited_command_2d.flatten()
+
+
+class StrehlEstimator:
+    def __init__(self, mask, close_threshold, open_threshold):
+        self.mask = mask
+        self.close_threshold = close_threshold
+        self.open_threshold = open_threshold
+
+    def update_mask(
+        self,
+        pupil_img,
+        scattered_flux_mask_r_outer=12.0,
+        scattered_flux_mask_r_inner=9.5,
+    ):
+        pupil_center, img_center, cam_grid = utils.fit_pupil_centre(pupil_img)
+
+        scattered_flux_mask = (
+            utils.smooth_circle(
+                cam_grid,
+                scattered_flux_mask_r_outer,
+                centre=pupil_center - img_center,
+                softening=0.01,
+            )
+            - utils.smooth_circle(
+                cam_grid,
+                scattered_flux_mask_r_inner,
+                centre=pupil_center - img_center,
+                softening=0.01,
+            )
+        ).reshape(cam_grid.shape)
+
+        self.mask = scattered_flux_mask > 0.5
+
+        plt.figure()
+        plt.imshow(pupil_img)
+        plt.contour(scattered_flux_mask, levels=[0.5], colors="r")
+        plt.contour(scattered_flux_mask, ":", levels=[0.1], colors="w")
+        plt.scatter(pupil_center[0], pupil_center[1], c="r")
+        plt.title("Pupil image with scattered flux mask")
+        dt = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        pth = pathlib.Path(
+            f"~/tmp/baldr_minimal_py/pupil_with_mask_{dt}.png"
+        ).expanduser()
+        plt.savefig(pth)
+
+    def should_close(self, normed_img):
+        return self.metric(normed_img) < self.close_threshold
+
+    def should_open(self, normed_img):
+        return self.metric(normed_img) > self.open_threshold
+
+    def metric(self, normed_img):
+        if self.mask is None:
+            return 0.0
+        masked_img = normed_img[self.mask.flatten()]
+        return np.median(masked_img)
+
+    def set_open_threshold(self, new_threshold):
+        self.open_threshold = new_threshold
+        logger.info("Close: %s, open: %s", self.close_threshold, self.open_threshold)
+
+    def set_close_threshold(self, new_threshold):
+        self.close_threshold = new_threshold
+        logger.info("Close: %s, open: %s", self.close_threshold, self.open_threshold)

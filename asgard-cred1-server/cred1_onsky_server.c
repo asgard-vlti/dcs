@@ -5,7 +5,7 @@
  * shared memory data structure (ImageStreamIO library by O. Guyon) used to
  * share frames acquired with the camera through the PCI EDT interface.
  *
- * The interactive prompt takes advantage of the commander library
+ * The interactive prompt takes advantage of the commander library"
  * 
  * Setting up the save mode so that only the 6 ROIs are saved and no longer
  * the full frame (still broadcast to shm) for engineering purposes
@@ -19,6 +19,8 @@
 #  endif
 #endif
 
+#define SCHED_PRIORITY 70
+#define LOGLEVEL LOG_INFO
 //#define DEBUG_TIMING
 
 #include <commander/commander.h> // commander header
@@ -180,7 +182,7 @@ Status status;                 // the status struct to share via commander
 char status_cstr[16] = "idle"; // to answer ZMQ status queries
 
 char dashline[80] =
-  "-----------------------------------------------------------------------------\n";
+  "-----------------------------------------------------------------------------";
 
 char savedir[100];  // the directory where the data will be saved
 
@@ -198,7 +200,7 @@ int previous_timeouts = 0;
 char *read_json_file(const char *filename) {
   FILE *file = fopen(filename, "r");
   if (!file) {
-      perror("Failed to open file");
+      error("Failed to open file");
       return NULL;
   }
   
@@ -208,7 +210,7 @@ char *read_json_file(const char *filename) {
 
   char *data = (char *) malloc(length + 1);
   if (!data) {
-      perror("Failed to allocate memory");
+      error("Failed to allocate memory");
       fclose(file);
       return NULL;
   }
@@ -228,7 +230,7 @@ void refresh_image_splitting_configuration() {
   int ii;
   sprintf(split_conf_fname, "%s/.config/cred1_split.json", getenv("HOME"));
   if (access(split_conf_fname, F_OK) == 0) {
-    printf("Configuration file %s found!\n", split_conf_fname);
+    info("Configuration file %s found!", split_conf_fname);
     char *json_data = read_json_file(split_conf_fname);
     cJSON *json_root = cJSON_Parse(json_data);
     free(json_data);
@@ -239,7 +241,7 @@ void refresh_image_splitting_configuration() {
     cJSON *item = NULL;
     cJSON_ArrayForEach(item, json_root) {
       const char *name = item->string;
-      // printf("Name = %s\n", name);
+      // info("Name = %s", name);
       sprintf(ROI[ii].name, "%s", name);
       sprintf(ROI[ii]._name, "_%s", name);
       ROI[ii].x0  = cJSON_GetObjectItem(item, "x0")->valueint;
@@ -260,7 +262,7 @@ void refresh_image_splitting_configuration() {
       }
     }
   } else {
-    printf("%s doesn't exist!\n", split_conf_fname);
+    error("%s doesn't exist!", split_conf_fname);
     // split mode should not be possible here... do I want to bother?
     splitmode = 0;
   }
@@ -277,19 +279,19 @@ void optimize_cropping_parameters() {
     if (strncmp(ROI[ii].name, "baldr", strlen("baldr")) == 0)
       if (ROI[ii].y0 <= camconf->bal_min_row){
 		camconf->bal_min_row = ROI[ii].y0;
-		printf("Found a lower baldr row %d\n", camconf->bal_min_row);
+		info("Found a lower baldr row %d", camconf->bal_min_row);
 	}
     
     if (strncmp(ROI[ii].name, "hei_", strlen("hei_")) == 0)
       if (ROI[ii].y0 + ROI[ii].xsz >= camconf->hei_max_row){
 		camconf->hei_max_row = ROI[ii].y0 + ROI[ii].xsz;
-		printf("Found a higher hei row %d\n", camconf->hei_max_row);
+		info("Found a higher hei row %d", camconf->hei_max_row);
 	}
   }
   camconf->bal_min_row -= 2;
   camconf->hei_max_row += 16;
 
-  printf("Cropping parameters are: %d and %d\n",
+  info("Cropping parameters are: %d and %d",
 	 camconf->hei_max_row, camconf->bal_min_row);
 }
 
@@ -463,7 +465,7 @@ void free_shm(int roi_too) {
 	free(ROI_cubes[ii]);
 	free(ROI_tosave[ii]);
       }
-      // printf("Freeing that memory!");
+      // info("Freeing that memory!");
       free(shm_ROI_live);
       shm_ROI_live = NULL;
       free(ROI_cubes);
@@ -503,14 +505,14 @@ void* save_cube_to_fits(void *dcube, long naxes[3],
     fits_update_key(fptr, TSTRING, "RO_MODE", &camconf->readmode, "Camera readout mode", &status);
     fits_update_key(fptr, TINT, "OFFSET", &camconf->offset, "DC offset to subtract when processing", &status);
   }
-  fits_close_file(fptr, &status);
+  fits_close_file(fptr, &status); //This also flushes.
   return NULL;
 }
 
 /* =========================================================================
  *                  Save ROI data-cubes as fits (thread)
  * ========================================================================= */
-void* save_roi_cubes(void *arg) {
+void* save_roi_cubes(void *) {
   struct timespec tnow;  // time since epoch
   struct tm *uttime;     // calendar time
   struct stat st;
@@ -558,8 +560,8 @@ void* save_roi_cubes(void *arg) {
 /* =========================================================================
  *                                Save a dark
  * ========================================================================= */
-void* save_dark(void *arg) {
-  long axis3 = 1;
+void* save_dark(void *) {
+  unsigned int axis3 = 1;
   if (camconf->ndmr_mode == 1)
     axis3 = camconf->nbreads - 1; //The -1 is a weird "feature" of the C-Red.
   long naxes[3] = {camconf->width, camconf->height, axis3};
@@ -583,43 +585,43 @@ void* save_dark(void *arg) {
   // We have 2 * nbpix_hlf frames in svdark. 
   // So nbr_hlf has to multiplied by 2 - to be refactored!!! 
   if (camconf->ndmr_mode == 0) {
-    for (int ii = 0; ii < camconf->nbpix_frm; ii++) {
+    for (unsigned int ii = 0; ii < camconf->nbpix_frm; ii++) {
       unsigned int sum = 0;
-      for (int jj = 0; jj < camconf->nbr_hlf * 2; jj++) {
+      for (unsigned int jj = 0; jj < camconf->nbr_hlf * 2; jj++) {
         sum += svdark[ii + jj*camconf->nbpix_frm];
       }
       svdark_av[ii] = sum / (camconf->nbr_hlf * 2);
     }
-    printf("Averaged GCDS mode dark.\n");
+    info("Averaged GCDS mode dark.");
   } else {
     // Zero the sum arrays
-    for (int ii = 0; ii < axis3; ii++){
+    for (unsigned int ii = 0; ii < axis3; ii++){
       nbreads_cnt[ii] = 0;
-      for (int jj = 0; jj < camconf->nbpix_frm; jj++) {
+      for (unsigned int jj = 0; jj < camconf->nbpix_frm; jj++) {
         nbreads_sum[ii*camconf->nbpix_frm + jj] = 0;
         svdark_av[ii*camconf->nbpix_frm + jj] = 0;
       }
     }
 
     // in NDMR mode, we save the different reads separately, and also save the number of reads at each ramp setting
-    for (int ii = 0; ii < camconf->nbr_hlf * 2; ii++) {
+    for (unsigned int ii = 0; ii < camconf->nbr_hlf * 2; ii++) {
       // We find the relevant read from pixel 2 (0 indexed) of each dark frame.
       unsigned short reset_cntr = svdark[ii*camconf->nbpix_frm + 2]; 
       // Check this isn't camconf->nbread or higher. If it is there is an error!
       if (reset_cntr >= axis3) {
-        printf("Error: read number %d in dark cube is higher than the number of reads %d specified in the configuration. Saving to read 0.\n", reset_cntr, camconf->nbreads);
+        error("Read number %d in dark cube is higher than the number of reads %d specified in the configuration. Saving to read 0.", reset_cntr, camconf->nbreads);
         // Set to zero so at least we average something.
         reset_cntr = 0;
       }
-      for (int jj = 0; jj < camconf->nbpix_frm; jj++) {
+      for (unsigned int jj = 0; jj < camconf->nbpix_frm; jj++) {
         nbreads_sum[reset_cntr*camconf->nbpix_frm + jj] += svdark[ii*camconf->nbpix_frm + jj];
       }
       nbreads_cnt[reset_cntr] += 1;
     }
     // Now we average the sum arrays to get the average dark for each read.
-    for (int ii = 0; ii < axis3; ii++){
+    for (unsigned int ii = 0; ii < axis3; ii++){
       if (nbreads_cnt[ii] > 0)
-        for (int jj = 0; jj < camconf->nbpix_frm; jj++) {
+        for (unsigned int jj = 0; jj < camconf->nbpix_frm; jj++) {
           svdark_av[ii*camconf->nbpix_frm + jj] = nbreads_sum[ii*camconf->nbpix_frm + jj] / nbreads_cnt[ii];
         }
     }
@@ -654,8 +656,10 @@ void* save_dark(void *arg) {
 	  camconf->fps, camconf->gain);
 
   save_cube_to_fits(svdark_av, naxes, fname, USHORT_IMG, 0);
-  printf("%s was saved!\n", fname);
+  info("%s was saved!", fname);
   camconf->valid_dark = 1;
+  
+  // This next line reads in the dark that was just saved.
   set_dark_sub_mode(1);
 
   // Free memory we don't need anymore
@@ -712,7 +716,7 @@ void update_dark() {
 	  camconf->fps, camconf->gain);
 
   if (stat(fname, &st) == -1) {
-    printf("%s does not exist\n", fname);
+    error("%s does not exist", fname);
     camconf->valid_dark = 0;
     set_dark_sub_mode(0);
   }
@@ -727,7 +731,7 @@ void update_dark() {
 
     // read the dark and copy its content to shared memory
     fits_close_file(fptr, &status);
-    printf("%s was loaded\n", fname);
+    info("%s was loaded", fname);
     fflush(stdout);
     camconf->valid_dark = 1;
   }
@@ -737,11 +741,11 @@ void update_dark() {
 /* =========================================================================
  *                     Camera image fetching thread
  * ========================================================================= */
-void* fetch_imgs(void *arg) {
+void* fetch_imgs(void *) {
   // check if the thread is already running - should not be the case, 
   // but in principle this could occur (and did in the past!) 
   if (fetch_thread_started == 1) {
-    printf("ERROR! The fetching thread is already running.\n");
+    warn("The fetching thread is already running.");
     return NULL;
   }
   fetch_thread_started = 1;
@@ -815,7 +819,7 @@ void* fetch_imgs(void *arg) {
       	memcpy(&reset_cntr, image_p + 4, sizeof(unsigned int));
 	      if ((reset_cntr - prev_reset_cntr > 1) && prev_reset_cntr != 0) status.skipped_frames++;
 	      prev_reset_cntr = reset_cntr;
-      	// printf("\rreset counter = %3d", reset_cntr);
+      	// info("\rreset counter = %3d", reset_cntr);
       	// fflush(stdout);
       }
 
@@ -902,9 +906,9 @@ void* fetch_imgs(void *arg) {
 
           // ---------------- SHM house keeping ------------------
           shm_ROI_live[ri].md->write = 0;
-          ImageStreamIO_sempost(&shm_ROI_live[ri], -1);
           shm_ROI_live[ri].md->cnt0++;
           shm_ROI_live[ri].md->cnt1++;
+          ImageStreamIO_sempost(&shm_ROI_live[ri], -1);
 
           // -------------- writing to ROI cubes ----------------
           liveroi_index = shm_img->md->cnt0 % ROI[ri].nbs;
@@ -915,7 +919,7 @@ void* fetch_imgs(void *arg) {
 #ifdef DEBUG_TIMING
       clock_gettime(CLOCK_REALTIME, &tend);  // end time
       dtother = (tend.tv_sec - tstart.tv_sec) + (tend.tv_nsec - tstart.tv_nsec) / 1e9;
-      printf("Image %d: dtim = %.3f us, dtother = %.3f us\n",
+      info("Image %d: dtim = %.3f us, dtother = %.3f us",
 	     liveindex, dtim * 1e6, dtother * 1e6);
 #endif
       // =============================
@@ -945,7 +949,7 @@ void* fetch_imgs(void *arg) {
       if (timeouts > previous_timeouts){
         previous_timeouts = timeouts;
         timeoutrecovery = true;
-        printf("Registering a camera timeout (current tally: %d)\n", timeouts);
+        warn("Registering a camera timeout (current tally: %d)", timeouts);
       }
       
       if (keepgoing == 0)
@@ -973,10 +977,20 @@ void* fetch_imgs(void *arg) {
  *          Trigger the thread fetching images to shared memory
  * ------------------------------------------------------------------------- */
 void fetch() {
+  pthread_attr_t attr;
+  struct sched_param param;
+  int policy;
   if (keepgoing == 0) {
     keepgoing = 1; // raise the flag
-    printf("Triggering the fetching data\n");
-    pthread_create(&tid_fetch, NULL, fetch_imgs, NULL);
+    info("Triggering the fetching data");
+    pthread_attr_init(&attr);
+    pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+    pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+    param.sched_priority=SCHED_PRIORITY;
+    pthread_attr_setschedparam(&attr, &param);
+    pthread_create(&tid_fetch, &attr, fetch_imgs, NULL);
+    pthread_getschedparam(tid_fetch, &policy, &param);
+    info("Thread priority: %d  Priority policy: %d", param.sched_priority, policy); 
   }
   sprintf(status_cstr, "%s", "running");
 }
@@ -986,7 +1000,7 @@ void fetch() {
  * ------------------------------------------------------------------------- */
 std::string cli(std::string cmd) {
   char out_cli[OUTSIZE];  // holder for CLI responses  
-  
+  camera_command(ed, cmd.c_str());
   read_pdv_cli(ed, out_cli);
   return out_cli;
 }
@@ -1067,8 +1081,10 @@ void update_fps(float fps) {
 
   camconf->fps = fps;
   update_dark();
-  if (wasrunning == 1)
+  if (wasrunning == 1){
+    usleep(400000); //Critical to avoid kernel errors
     fetch();
+  }
 }
 
 /* -------------------------------------------------------------------------
@@ -1084,6 +1100,7 @@ void update_gain(int gain) {
     keepgoing = 0; // to interrupt the fetching process
     wasrunning = 1; //
   }
+  usleep(100000);
   sprintf(cmd_cli, "set gain %d", gain);
   camera_command(ed, cmd_cli);
   read_pdv_cli(ed, out_cli);
@@ -1098,8 +1115,18 @@ void update_gain(int gain) {
  *           server level command to query the current camera frame rate
  * ------------------------------------------------------------------------- */
 float query_fps() {
+  // This causes a kernel error if we don't stop.
+  // if the acquisition is running, interrupt it and remember it was running
+  int wasrunning=0;
+  if (keepgoing == 1) {
+    keepgoing = 0;  // interrupt the acquisition
+    wasrunning = 1; // keep that in mind
+    usleep(100000); // sleep for 100ms
+  }
   float val = camera_query_float(ed, "fps raw");
   camconf->fps = val;
+  if (wasrunning)
+  	keepgoing=1;
   return val;
 }
 
@@ -1134,11 +1161,11 @@ int query_gain() {
 void set_save_mode(int _mode) {
   if (_mode <= 0) {
     camconf->save_mode = 0;
-    printf("Savemode was turned OFF\n");
+    info("Savemode was turned OFF");
   }
   else {
     camconf->save_mode = 1;
-    printf("Savemode was turned ON\n");
+    info("Savemode was turned ON");
     pthread_create(&tid_save, NULL, save_roi_cubes, NULL);
   }
 }
@@ -1165,13 +1192,10 @@ void trigger_save_dark() {
   // This next sleep has to be enough to fill a complete buffer (200 frames at 
   // time of writing).
   double min_sleep_time = 2.0*camconf->nbr_hlf/camconf->fps; 
-  printf("Sleeping this thread for %6.3lf seconds...\n", min_sleep_time);
-  usleep((int)((min_sleep_time + 0.5) * 1000000));
+  info("Sleeping this thread for %6.3lf seconds...", min_sleep_time);
+  usleep((int)((min_sleep_time + 0.1) * 1000000));
   camconf->save_dark = 1;
-  printf("Because Frantz and Mike aren't smart enough, sleeping again for %6.3lf seconds...\n", min_sleep_time);
-  usleep((int)( (min_sleep_time + 0.5) * 1000000 ));
-  fflush(stdout);
-  set_dark_sub_mode(1);  
+  // The save_dark thread will set the dark_sub_mode to 1 at the end. 
 }
 
 /* -------------------------------------------------------------------------
@@ -1189,11 +1213,11 @@ void set_split_mode(int _mode) {
   
   if (_mode <= 0) {
     splitmode = 0;
-    printf("Splitmode was turned OFF\n");
+    info("Splitmode was turned OFF");
   }
   else {
     splitmode = 1;
-    printf("Splitmode was turned ON\n");
+    info("Splitmode was turned ON");
 
     free(ROI);
     refresh_image_splitting_configuration();
@@ -1214,17 +1238,17 @@ void set_dark_sub_mode(int _mode) {
   // update the RT dark subtract internal flag according to the command
   if (_mode <=0) {
     camconf->rt_dark_sub = 0;
-    printf("No live dark subtraction\n");
+    info("No live dark subtraction");
   }
   else {
     update_dark();
     if (camconf->valid_dark == 1) {
       camconf->rt_dark_sub = 1;
-      printf("Dark is live subtracted\n");
+      info("Dark is live subtracted");
     }
     else {
       camconf->rt_dark_sub = 0;
-      printf("No live dark subtraction\n");
+      warn("No live dark subtraction, as no valid dark");
     }
   }
 }
@@ -1292,7 +1316,7 @@ void set_ndmr_mode(unsigned int _mode) {
     sprintf(cmd_cli, "set mode globalresetcds");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
-    usleep(100000);
+    usleep(500000);
     sprintf(cmd_cli, "set rawimages off");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
@@ -1300,17 +1324,17 @@ void set_ndmr_mode(unsigned int _mode) {
 
     sprintf(camconf->readmode, "GCDS");
   }
-  else {  // ------------------- science mode ------------------
+  else {  // ------------------- science mode ------------------    
     camconf->ndmr_mode = 1;
     sprintf(cmd_cli, "set rawimages on");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
-    usleep(200000);
+    usleep(100000);
 
     sprintf(cmd_cli, "set mode globalresetbursts");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
-    usleep(200000);
+    usleep(500000);
     
     camconf->nbreads = _mode;
     sprintf(cmd_cli, "set nbreadworeset %d", _mode); // _mode + 1 ??
@@ -1338,27 +1362,27 @@ void set_ndmr_mode(unsigned int _mode) {
  *            Displays a summary of the camera configuration
  * ========================================================================= */
 void show_cam_conf() {
-  printf("\n%s", dashline);
-  printf("Camera type       : %s\n", camconf->cameratype);
-  printf("detector size     : %d x %d pixels\n",
+  info("\n%s", dashline);
+  info("Camera type       : %s", camconf->cameratype);
+  info("detector size     : %d x %d pixels",
 	 pdv_get_width(pdv_p), pdv_get_height(pdv_p));
 
-  printf("Frame size        : %d x %d pixels\n",
+  info("Frame size        : %d x %d pixels",
 	 camconf->width, camconf->height);
-  printf("Save cube size    : %d images\n",
+  info("Save cube size    : %d images",
 	 camconf->nbr_hlf);
-  printf("FPS               : %.2f Hz\n", camconf->fps);
-  printf("Max-FPS           : %.2f Hz\n", camconf->maxfps);
-  printf("detector gain     : %d\n", camconf->gain);
-  printf("readout mode      : %s\n", camconf->readmode);
+  info("FPS               : %.2f Hz", camconf->fps);
+  info("Max-FPS           : %.2f Hz", camconf->maxfps);
+  info("detector gain     : %d", camconf->gain);
+  info("readout mode      : %s", camconf->readmode);
   if (strncmp(camconf->readmode, "NDMR", 4) == 0)
-    printf("reads w/o reset   : %d\n", camconf->nbreads);
-  if (camconf->rt_dark_sub > 0) printf("subtracting darks : YES\n");
-  else printf("subtracting darks : NO\n");
+    info("reads w/o reset   : %d", camconf->nbreads);
+  if (camconf->rt_dark_sub > 0) info("subtracting darks : YES");
+  else info("subtracting darks : NO");
 
-  if (camconf->cropmode > 0) printf("crop-mode         : YES\n");
-  else printf("crop-mode         : NO\n");
-  printf("%s", dashline);
+  if (camconf->cropmode > 0) info("crop-mode         : YES");
+  else info("crop-mode         : NO");
+  info("%s", dashline);
 }
 
 namespace co=commander;
@@ -1372,7 +1396,7 @@ COMMANDER_REGISTER(m)
   m.def("stop", stop, "Stop fetching data from the. camera.");
   m.def("quit", quit, "Stops and closes the server.");
   m.def("set_fps", update_fps, "Updates the camera FPS and syncs SHM.");
-  m.def("get_fps", query_fps, "Prints the current camera frame rate.");
+  m.def("get_fps", query_fps, "Temporarily stops and restarts readout to ask the camera for it's set frame rate.\n Use 'status' for the internal saved rate.");
   m.def("get_gain", query_gain, "Prints the current camera gain.");
   m.def("get_det_temp", query_det_temp, "Prints the detector temperature.");
   m.def("get_water_temp", query_water_temp, "Prints the water temperature.");
@@ -1393,6 +1417,11 @@ COMMANDER_REGISTER(m)
 int main(int argc, char **argv) {
   char errstr[2*CMDSIZE];
   char edt_devname[CMDSIZE];
+
+  // Exit immediately if another instance of this server is running.
+  if (!acquire_single_instance_lock("/tmp/asg.cam_server.lock")) {
+    return 1;
+  }
 
   sprintf(savedir, "/data/");  // cubes saved in ~/Data/ for now
   sem_init(&sync_save, 0, 0);  // saving semaphore now in place
@@ -1421,17 +1450,17 @@ int main(int argc, char **argv) {
 
   // --------------------- set-up the prompt --------------------
   
-  printf("\n%s", dashline);
-  printf(" _   _      _               _       _ _           ____        _     _      \n");
-  printf("| | | | ___(_)_ __ ___   __| | __ _| | |_ __     | __ )  __ _| | __| |_ __ \n");
-  printf("| |_| |/ _ \\ | '_ ` _ \\ / _` |/ _` | | | '__|____|  _ \\ / _` | |/ _` | '__|\n");
-  printf("|  _  |  __/ | | | | | | (_| | (_| | | | | |_____| |_) | (_| | | (_| | |   \n");
-  printf("|_| |_|\\___|_|_| |_|_|_|\\__,_|\\__,_|_|_|_|       |____/ \\__,_|_|\\__,_|_|   \n");
-  printf("                 / ___|__ _ _ __ ___   ___ _ __ __ _                       \n");
-  printf("                | |   / _` | '_ ` _ \\ / _ \\ '__/ _` |                      \n");
-  printf("                | |__| (_| | | | | | |  __/ | | (_| |                      \n");
-  printf("                 \\____\\__,_|_| |_| |_|\\___|_|  \\__,_|                      \n");
-  printf("\n%s", dashline);
+  info("\n%s", dashline);
+  info(" _   _      _               _       _ _           ____        _     _      ");
+  info("| | | | ___(_)_ __ ___   __| | __ _| | |_ __     | __ )  __ _| | __| |_ __ ");
+  info("| |_| |/ _ \\ | '_ ` _ \\ / _` |/ _` | | | '__|____|  _ \\ / _` | |/ _` | '__|");
+  info("|  _  |  __/ | | | | | | (_| | (_| | | | | |_____| |_) | (_| | | (_| | |   ");
+  info("|_| |_|\\___|_|_| |_|_|_|\\__,_|\\__,_|_|_|_|       |____/ \\__,_|_|\\__,_|_|   ");
+  info("                 / ___|__ _ _ __ ___   ___ _ __ __ _                       ");
+  info("                | |   / _` | '_ ` _ \\ / _ \\ '__/ _` |                      ");
+  info("                | |__| (_| | | | | | |  __/ | | (_| |                      ");
+  info("                 \\____\\__,_|_| |_| |_|\\___|_|  \\__,_|                      ");
+  info("\n%s", dashline);
 
   // initial camera server setup
   camconf = (CREDSTRUCT*) malloc(sizeof(CREDSTRUCT));
@@ -1443,7 +1472,10 @@ int main(int argc, char **argv) {
   update_fps(500.0); // engineering startup configuration
   update_gain(1);   // engineering startup configuration
   show_cam_conf();
-  shm_setup(1);  // setup everything, including the ROI SHMs
+  shm_setup(1);  // setup everything, including the ROI SHMs  
+  set_split_mode(1);
+  usleep(100000); // Sleep - if we don't so this there are Kernel errors.
+  // Now set the split mode.
 
   // --------------------------
   // start the commander server
@@ -1460,8 +1492,10 @@ int main(int argc, char **argv) {
     usleep(100000); // sleep for 100ms  
   }
   sem_destroy(&sync_save);  // saving semaphore erased
-  printf("%s\n", status_cstr);
+  info("%s", status_cstr);
   free(ROI);
   free_shm(1); // erase everything, including ROI SHMs!
+
+  unacquire_single_instance_lock();
   exit(0);
 }

@@ -18,6 +18,9 @@
 #  endif
 #endif
 
+#define SCHED_PRIORITY 70
+#define LOGLEVEL LOG_INFO
+
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -27,6 +30,8 @@
 #include <math.h>
 #include <pthread.h>
 #include <unistd.h>
+
+#include <stdarg.h>
 
 #include <commander/commander.h>
 #include <ImageStreamIO.h>
@@ -49,7 +54,7 @@ int nvact       = 144;   // number of "virtual" acutators of the DM
 int keepgoing   = 0;     // flag to control the DM update loop
 int nch_prev    = 0;     // keep track of the # of channels before a change
 char dashline[80] =
-  "-----------------------------------------------------------------------------\n";
+  "-----------------------------------------------------------------------------";
 
 int ndm = 4; // the number of DMs to be connected
 DM *hdms[4];  // the handles for the different deformable mirrors
@@ -73,7 +78,7 @@ unsigned int targs[4] = {1, 2, 3, 4}; // thread integer arguments
  * ========================================================================= */
 int shm_setup();
 void* dm_control_loop(void *_dmid);
-void* dms_refresh(void *args);
+void* dms_refresh(void *);
 double* map2D_2_cmd(double *map2D);
 void MakeOpen(int dmid, DM* hdm);
 
@@ -82,18 +87,18 @@ void MakeOpen(int dmid, DM* hdm);
  * ========================================================================= */
 void MakeOpen(int dmid, DM* hdm) {
   memset(hdm, 0, sizeof(DM));
-  printf("Attempting to open device %s\n", snumbers[dmid-1]);
+  info("Attempting to open device %s", snumbers[dmid-1]);
   rv = BMCOpen(hdm, snumbers[dmid-1]);
   
   if (rv) {
-    printf("Error %d opening the driver type %u.\n", rv, (unsigned int)hdm->Driver_Type);
-    printf("%s\n\n", BMCErrorString(rv));
+    error("Error %d opening the driver type %u.", rv, (unsigned int)hdm->Driver_Type);
+    error("%s\n", BMCErrorString(rv));
 
-    printf("Press any key to exit.\n");
+    info("Press any key to exit.");
     getc(stdin);
     exit(0);
   }
-  printf("Opened Device %d with %d actuators.\n", hdm->DevId, hdm->ActCount);
+  info("Opened Device %d with %d actuators.", hdm->DevId, hdm->ActCount);
   
   rv = BMCLoadMap(hdm, NULL, map_lut[dmid-1]);  // load the mapping into map_lut
 }
@@ -172,23 +177,15 @@ double* map2D_2_cmd(double *map2D) {
  *                     DM surface control thread
  * ========================================================================= */
 void* dm_control_loop(void *_dmid) {
-  uint64_t cntrs[nch];
   int ii, kk;  // array indices
   double tmp_map[nvact];  // to store the combination of channels
 
   unsigned int dmid = *((unsigned int *) _dmid);
 
-  for (ii = 0; ii < nch; ii++)
-    cntrs[ii] = shmarray[dmid-1][nch].md->cnt0;  // init shm counters
-
   while (keepgoing > 0) {
 
     // all process must post semaphore 1
     ImageStreamIO_semwait(&shmarray[dmid-1][nch], 1);  // waiting for a DM update!
-
-    for (ii = 0; ii < nch; ii++) {
-      cntrs[ii] = shmarray[dmid-1][ii].md->cnt0; // update counter values
-    }
 
     // -------- combine the channels -----------
     for (ii = 0; ii < nvact; ii++) {
@@ -221,7 +218,7 @@ void* dm_control_loop(void *_dmid) {
 /* =========================================================================
  *                       DMs refresh cycle thread
  * ========================================================================= */
-void* dms_refresh(void *args) {
+void* dms_refresh(void *) {
   double *cmd;
   struct timespec now; // clock readout
   FILE* fd;
@@ -235,7 +232,7 @@ void* dms_refresh(void *args) {
       cmd = map2D_2_cmd(shmarray[kk][nch].array.D);
       rv = BMCSetArray(hdms[kk], cmd, map_lut[kk]);  // send cmd to DM
       if (rv) {
-	printf("%s\n\n", BMCErrorString(rv));
+		error("%s\n", BMCErrorString(rv));
       }
       free(cmd);
     }
@@ -258,21 +255,32 @@ void start() {
    *          Starts the monitoring of shared memory data structures
    * ------------------------------------------------------------------------- */
   int kk;
+  pthread_attr_t attr;
+  struct sched_param param;
+  int policy;
 
   if (keepgoing == 0) {
     keepgoing = 1; // raise the flag
-    printf("DM control loop START\n");
+    info("DM control loop START");
+    pthread_attr_init(&attr);
+    pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+    pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+    param.sched_priority=SCHED_PRIORITY;
+    pthread_attr_setschedparam(&attr, &param);
 
     // trigger the shm monitoring threads
     for (kk = 0; kk < ndm; kk++) {
-      pthread_create(&tid_loops[kk], NULL, dm_control_loop, &targs[kk]);
+      pthread_create(&tid_loops[kk], &attr, dm_control_loop, &targs[kk]);
     }
 
-    if (simmode != 1)
-      pthread_create(&tid_refresh, NULL, dms_refresh, NULL);
+    if (simmode != 1){
+      pthread_create(&tid_refresh, &attr, dms_refresh, NULL);
+      pthread_getschedparam(tid_refresh, &policy, &param);
+      info("Thread priority: %d  Priority policy: %d", param.sched_priority, policy); 
+    }
     
   } else
-    printf("DM control loop already running!\n");
+    warn("DM control loop already running!");
   sprintf(drv_status, "%s", "running");
 
 }
@@ -284,7 +292,7 @@ void stop() {
   if (keepgoing == 1)
     keepgoing = 0;
   else
-    printf("DM control loop already off\n");
+    warn("DM control loop already off");
   sprintf(drv_status, "%s", "idle");
 }
 
@@ -329,7 +337,7 @@ void set_nch(int ival) {
   nch_prev = nch; // memory of the previous number of channels
   nch = ival;
   shm_setup();
-  printf("Success: # channels = %d\n", ival);
+  info("Success: # channels = %d", ival);
 }
 
 void reset(int dmid, int channel) {
@@ -343,7 +351,7 @@ void reset(int dmid, int channel) {
   if (dmid <= ndm) {
     if (dmid > 0) {
       if (channel < 0) {
-	printf("Reset all virtual channels of DM %d!\n", dmid);
+	info("Reset all virtual channels of DM %d!", dmid);
 	for (int kk = 0; kk < nch; kk++) {
 	  live_channel = shmarray[dmid-1][kk].array.D;  // live pointer
 	  shmarray[dmid-1][kk].md->write = 1;  // signaling about to write
@@ -356,7 +364,7 @@ void reset(int dmid, int channel) {
 	}
       }
       else if (channel < nch) {
-	printf("Reset virtual channel %d of DM %d\n", channel, dmid);
+	info("Reset virtual channel %d of DM %d", channel, dmid);
 	live_channel = shmarray[dmid-1][channel].array.D;  // live pointer
 	shmarray[dmid-1][channel].md->write = 1;  // signaling about to write
 	memcpy(live_channel,
@@ -367,12 +375,12 @@ void reset(int dmid, int channel) {
 	shmarray[dmid-1][channel].md->write = 0;  // done writing
       }
       else {
-	printf("Virtual channels 0-%d have been set-up!\n", nch);
+	info("Virtual channels 0-%d have been set-up!", nch);
       }
     }
   }
   else
-    printf("Only %d DMs on Asgard\n", ndm);
+    error("Only %d DMs on Asgard", ndm);
 }
 
 void quit() {
@@ -382,23 +390,22 @@ void quit() {
   int kk, ii;
   if (keepgoing == 1) stop();
   
-  printf("DM driver server shutting down!\n");
+  info("DM driver server shutting down!");
     
   if (simmode != 1) {
     for (kk = 0; kk < ndm; kk++)
       rv = BMCClearArray(hdms[kk]);
     if (rv) {
-      printf("%s\n\n", BMCErrorString(rv));
-      printf("Error %d clearing voltages.\n", rv);
+      error("%s\n", BMCErrorString(rv));
+      error("Error %d clearing voltages.", rv);
     }
     
     for (kk = 0; kk < ndm; kk++) {
       rv = BMCClose(hdms[kk]);
       if (rv) {
-	printf("%s\n\n", BMCErrorString(rv));
-	printf("Error %d closing the driver.\n", rv);
+		error("%s\n", BMCErrorString(rv));
+		error("Error %d closing the driver.", rv);
       }
-      printf("%s\n\n", BMCErrorString(rv));
     }
     for (ii = 0; ii < ndm; ii++) {
       free(map_lut[ii]);
@@ -413,6 +420,8 @@ void quit() {
     free(shmarray);
     shmarray = NULL;
   }
+  // Unacquire the lock.
+  unacquire_single_instance_lock();
   exit(0);
 }
 
@@ -434,7 +443,10 @@ COMMANDER_REGISTER(m) {
  *                                Main program
  * ========================================================================= */
 int main(int argc, char **argv) {
-
+  // Exit immediately if another instance of this server is running.
+  if (!acquire_single_instance_lock("/tmp/asg.DM_server.lock")) {
+    return 1;
+  }
 
   for (ii = 0; ii < ndm; ii++) {
     hdms[ii] = (DM *) malloc(sizeof(DM));
@@ -447,21 +459,21 @@ int main(int argc, char **argv) {
       usleep(1000);
     }
   else {
-    printf("Simulated DM scenario: the drivers are not connected\n");
+    info("Simulated DM scenario: the drivers are not connected");
     for (ii = 0; ii < ndm; ii++)
-      printf("Simulated DM id = %d - serial number = %s.\n", ii+1, snumbers[ii]);
+      info("Simulated DM id = %d - serial number = %s.", ii+1, snumbers[ii]);
   }
   shm_setup();  // set up startup configuration
  
 
   // --------------------- set-up the prompt --------------------
-  printf("%s", dashline);
-  printf("    _    ____   ____    _    ____  ____        ____  __  __ \n");
-  printf("   / \\  / ___| / ___|  / \\  |  _ \\|  _ \\      |  _ \\|  \\/  |\n");
-  printf("  / _ \\ \\___ \\| |  _  / _ \\ | |_) | | | |_____| | | | |\\/| |\n");
-  printf(" / ___ \\ ___) | |_| |/ ___ \\|  _ <| |_| |_____| |_| | |  | |\n");
-  printf("/_/   \\_\\____/ \\____/_/   \\_\\_| \\_\\____/      |____/|_|  |_|\n");
-  printf("%s", dashline);
+  info("%s", dashline);
+  info("    _    ____   ____    _    ____  ____        ____  __  __ ");
+  info("   / \\  / ___| / ___|  / \\  |  _ \\|  _ \\      |  _ \\|  \\/  |");
+  info("  / _ \\ \\___ \\| |  _  / _ \\ | |_) | | | |_____| | | | |\\/| |");
+  info(" / ___ \\ ___) | |_| |/ ___ \\|  _ <| |_| |_____| |_| | |  | |");
+  info("/_/   \\_\\____/ \\____/_/   \\_\\_| \\_\\____/      |____/|_|  |_|");
+  info("%s", dashline);
 
   start();  // start the DM with the default number of channels
   co::Server s(argc, argv);    // start the commander server

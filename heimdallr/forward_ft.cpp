@@ -1,4 +1,5 @@
 #include "heimdallr.h"
+#include <cstring>
 //#define PRINT_TIMING
 #define DARK_OFFSET 1000.0
 
@@ -43,16 +44,17 @@ ForwardFt::ForwardFt(IMAGE * subarray_in) {
     subim = (double*) fftw_malloc(sizeof(double) * subim_sz * subim_sz);
     ift_result = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * rft_sz * rft_sz);
     ift = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * rft_sz * rft_sz);
-    
+    std::memset(ift, 0, sizeof(fftw_complex) * rft_sz * rft_sz);
+
     // Allocate the memory for the boxcar averaged baseline power, and
     // fill with zeros. We allocate the boxcar arrays as a contiguous block of 
     // memory for each baseline, and then set the pointers.
     // Lots of small mallocs is meant to be avoided for speed.
     for (int ii=0; ii<N_BL; ii++) {
-        baseline_power_avg[ii] = (double*) malloc(sizeof(double) * rft_sz * rft_sz);
+        baseline_power_avg[ii] = (float*) malloc(sizeof(float) * rft_sz * rft_sz);
         for (unsigned int kk=0; kk<rft_sz*rft_sz; kk++)
             baseline_power_avg[ii][kk] = 0.0;
-        baseline_power_boxcar[ii][0] = (double*) malloc(sizeof(double) * rft_sz * rft_sz * MAX_N_GD_BOXCAR);
+        baseline_power_boxcar[ii][0] = (float*) malloc(sizeof(float) * rft_sz * rft_sz * MAX_N_GD_BOXCAR);
         for (int jj=0; jj<MAX_N_GD_BOXCAR; jj++){
             baseline_power_boxcar[ii][jj] = baseline_power_boxcar[ii][0] + jj * rft_sz * rft_sz ;
             for (unsigned int kk=0; kk<rft_sz*rft_sz; kk++){
@@ -154,32 +156,50 @@ void ForwardFt::start() {
 void ForwardFt::stop() {
     mode = FT_STOPPING;
     if (thread.joinable()) thread.join();
+    if (reverse_thread.joinable()) reverse_thread.join();
 }
 
 void ForwardFt::loop() {
 #ifdef PRINT_TIMING
     timespec now, then;
 #endif
-    unsigned int ii_shift, jj_shift, szj;
+    unsigned int ii_shift, jj_shift, szj, last_logged=0;
     cnt = subarray->md->cnt0;
     catch_up_with_sem(subarray, 2);
     while (mode != FT_STOPPING) {
         ImageStreamIO_semwait(subarray, 2);
+        catch_up_with_sem(subarray, 2);
         // At this point, subarray->md->cnt0 has been incremented by the camera thread, 
         // and the new frame is available in subarray->array.SI32. 
         if (subarray->md->cnt0 != cnt) {
+            // Snapshot the cnt0.
+            long unsigned int current_cnt0 = subarray->md->cnt0;
             // Put this here just in case there is a re-start with a new size. Unlikely!
             szj = subim_sz/2 + 1;
-            if ((subarray->md->cnt0 > cnt+2)  && (mode == FT_RUNNING)) {
-                std::cout << "Missed cam frames: " << subarray->md->cnt0 << " " << cnt << std::endl;
-                catch_up_with_sem(subarray,2);
-                cnt = subarray->md->cnt0-1;
+            // cnt0 shoudl be exactly 1 frame advanced from cnt.
+            // The next line means at least 2 frames are skipped.
+            // This is bad - we shoudl catch up with the semafore and continue.
+            if ((current_cnt0 > cnt+2)  && (mode == FT_RUNNING)) {
+                if (cnt - last_logged > 500){
+                    warn("Missed cam frames: %lu %lu",
+                    (unsigned long) current_cnt0,
+                    (unsigned long) cnt);
+                    last_logged = cnt;
+                }
+                // Signal to the fringe tracker that there is a 
+                // bad frame (i.e. this thread continuing, but no
+                // processing required)
+                bad_frame=true;
+                cnt = current_cnt0;
+                sem_post(&sem_new_frame);
                 nerrors++;
+                continue;
             }
-            mode = FT_RUNNING;
+            // change from starting to running just once.
+            if (mode == FT_STARTING) mode = FT_RUNNING;
             // Check the write parameter. It really shouldn't be active.
             if (subarray->md->write) {
-                std::cout << "FT: Semaphore signalled but write flag is still set. Skipping frame." << std::endl;
+                warn("FT: Semaphore signalled but write flag is still set. Skipping frame.");
                 continue;
             }
             // In NDMR mode, the first pixel of the image contains the frame counter. 
@@ -187,7 +207,7 @@ void ForwardFt::loop() {
             // control_u.nbreads - 1 - control_u.tsig_len
             if ( (control_u.nbreads > 1) && (subarray->array.SI32[0] > (int)(control_u.nbreads - 1 - control_u.tsig_len)) ) {
             	 bad_frame=true;
-                 cnt++;
+                 cnt = current_cnt0;
                  sem_post(&sem_new_frame);
                  continue;
             }
@@ -232,7 +252,7 @@ void ForwardFt::loop() {
 #ifdef PRINT_TIMING
             clock_gettime(CLOCK_REALTIME, &now);
             if (then.tv_sec == now.tv_sec)
-                std::cout << "Window and FFT time: " << now.tv_nsec-then.tv_nsec << std::endl;
+                info("Window and FFT time: %ld", now.tv_nsec - then.tv_nsec);
             then = now;
 #endif
             // If the flux is negative, signal a bad frame.
@@ -242,13 +262,13 @@ void ForwardFt::loop() {
             else
                 {
                     bad_frame=true;
-                    cnt++;
+                    cnt = current_cnt0;
                     sem_post(&sem_new_frame);
                     continue;
                 }
             // Compute the power spectrum. Other than SNR purposes, this isn't 
             // time critical, but doesn't take long so we can do it here. 
-            ps_index = (subarray->md->cnt0 + 1) % MAX_N_PS_BOXCAR;
+            ps_index = (current_cnt0 + 1) % MAX_N_PS_BOXCAR;
             for (unsigned int ii=0; ii<subim_sz; ii++) {
                 for (unsigned int jj=0; jj<szj; jj++) {
                     int f_ix = ii*szj + jj; // Flattened index
@@ -279,15 +299,12 @@ void ForwardFt::loop() {
 #ifdef PRINT_TIMING
             clock_gettime(CLOCK_REALTIME, &now);
             if (then.tv_sec == now.tv_sec)
-                std::cout << "PS time: " << now.tv_nsec-then.tv_nsec << std::endl;
+                debug("PS time: %ld", now.tv_nsec - then.tv_nsec);
             then = now;
 #endif
-            // As long as this is the same type as cnt0, it should wrap around correctly
-            // The reason it is here and not before power spectrum computation is because we need at
-            // lease 1 power spectrum in order for the group delay.
-            cnt++;
-
-            // Signal that a new frame is available.
+            // Update cnt in a very robust simple way, and signal that a new frame is available.
+			// This is here and not earlier 
+            cnt = current_cnt0;
             sem_post(&sem_new_frame);
 
             // Copy the Fourier Transform to the place needed for reverse_ft
@@ -302,10 +319,12 @@ void ForwardFt::loop() {
             //std::cout << subarray->name << ": " << cnt << std::endl;
         } else {
             // This shouldn't happen, but if it does, just continue
-            std::cout << "FT: Semaphore signalled but no new frame" << std::endl;
+            warn("FT: Semaphore signalled but no new frame");
             nerrors++;
         }
     }
+    // Make sure the reverse ft thread is also able to exit cleanly
+    sem_post(&sem_reverse_ft_ready);
 }
 
 void ForwardFt::reverse_ft() {
@@ -313,6 +332,7 @@ void ForwardFt::reverse_ft() {
     // It should be called after sem_wait(&sem_reverse_ft_ready).
     // It executes the core code if bad_frame is false.
     int boxcar_index=0, x_px, y_px;
+    unsigned int ift_ii, ift_jj, ift_ix, ii_jj;
     while (mode != FT_STOPPING) {
         // No counters here. Just go whenever we can!
         sem_wait(&sem_reverse_ft_ready);
@@ -330,7 +350,7 @@ void ForwardFt::reverse_ft() {
                 x_px = lround(fs.x_px_K2[bl]) % K2ft->subim_sz;
                 y_px = lround(fs.y_px_K2[bl]) % K2ft->subim_sz;
             } else {
-                std::cout << "Wrong filternum! " << std::endl;
+                error("Wrong filternum!");
                 continue;
             }
             // During the copying loop only, we need a lock
@@ -359,14 +379,21 @@ void ForwardFt::reverse_ft() {
             fftw_execute(rplan);
             
             // Take square modulus and add to the boxcar average.
+            // Do an fftshift equialent here.
             // !!! TODO: use settings.s.n_gd_boxcar instead of MAX_N_GD_BOXCAR
             baseline_power_mutex.lock();
-            for (unsigned int ii=0; ii<rft_sz*rft_sz; ii++) {
-                baseline_power_avg[bl][ii] -= baseline_power_boxcar[bl][boxcar_index][ii]/MAX_N_GD_BOXCAR;
-                baseline_power_boxcar[bl][boxcar_index][ii] = 
-                    ift_result[ii][0]*ift_result[ii][0] + 
-                    ift_result[ii][1]*ift_result[ii][1];
-                baseline_power_avg[bl][ii] += baseline_power_boxcar[bl][boxcar_index][ii]/MAX_N_GD_BOXCAR;
+            for (unsigned int ii=0; ii<rft_sz; ii++) {
+                for (unsigned int jj=0; jj<rft_sz; jj++) {
+                    ift_ii = (ii + rft_sz/2) % rft_sz;
+                    ift_jj = (jj + rft_sz/2) % rft_sz;
+                    ift_ix = ift_ii*rft_sz + ift_jj;
+                    ii_jj = ii*rft_sz + jj;
+                    baseline_power_avg[bl][ii_jj] -= baseline_power_boxcar[bl][boxcar_index][ii_jj]/MAX_N_GD_BOXCAR;
+                    baseline_power_boxcar[bl][boxcar_index][ii_jj] = 
+                        ift_result[ift_ix][0]*ift_result[ift_ix][0] + 
+                        ift_result[ift_ix][1]*ift_result[ift_ix][1];
+                    baseline_power_avg[bl][ii_jj] += baseline_power_boxcar[bl][boxcar_index][ii_jj]/MAX_N_GD_BOXCAR;
+                }
             }
             baseline_power_mutex.unlock();
 

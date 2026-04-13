@@ -39,4 +39,5 @@ mrproper: clean
 
 install:
 	install -D $(EXEC) $(PREFIX)/bin/
+	setcap 'cap_sys_nice=eip' $(PREFIX)/bin/$(EXEC)
 	install -D 17DW019* /opt/Boston\ Micromachines/Profiles/

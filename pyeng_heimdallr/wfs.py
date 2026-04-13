@@ -14,12 +14,11 @@ import os
 
 import asgard_alignment.controllino as co
 
-
 # ----------------------------------------
 # pupil geometry design
 hcoords = np.loadtxt("N1_hole_coordinates.txt")
 
-ddir = os.getenv('HOME') + '/Data/fringe_monitor/'
+ddir = os.getenv("HOME") + "/Data/fringe_monitor/"
 if not os.path.exists(ddir):
     os.makedirs(ddir)
 
@@ -29,7 +28,7 @@ default_log = ddir + "log_fringe_monitor.log"
 dms = 12
 dd = dist(dms, dms, between_pix=True)  # auxilliary array
 tprad = 5.5  # the taper function radius
-taper = np.exp(-(dd/tprad)**20)  # power to be adjusted ?
+taper = np.exp(-((dd / tprad) ** 20))  # power to be adjusted ?
 amask = taper > 0.4  # seems to work well
 
 pst = np.zeros((dms, dms))
@@ -37,7 +36,8 @@ pst[amask] = 0.02  # 0.2 DM piston on GUI -> 10 ADU units
 
 im_offset = 1000.0
 ogain = 3.5  # DM optical gain (in microns / control unit)
-oscale = 1e6 / (4*np.pi * ogain) # phase to microns conversion factor (* wl)
+oscale = 1e6 / (4 * np.pi * ogain)  # phase to microns conversion factor (* wl)
+
 
 # ------------------------------------------------
 # a simple unwrapping procedure for RT processing?
@@ -46,29 +46,31 @@ def unwrap(val, prev):
     if np.abs(val - prev) < np.pi:
         return val
     elif val > prev:
-        return val - 2*np.pi
+        return val - 2 * np.pi
     else:
-        return val + 2*np.pi
+        return val + 2 * np.pi
+
 
 def log(message="", logfile=default_log, echo=True):
-    ''' -----------------------------------------------------------------------
+    """-----------------------------------------------------------------------
     Simple logging utility to keep track of HFO and HPOL modulation sequences
-    ----------------------------------------------------------------------- '''
-    tstamp = datetime.utcnow().strftime('%D %H:%M:%S')
+    -----------------------------------------------------------------------"""
+    tstamp = datetime.utcnow().strftime("%D %H:%M:%S")
     myline = f"{tstamp}: {message}"
     with open(logfile, "a") as mylog:
-        mylog.write(myline+'\n')
+        mylog.write(myline + "\n")
     if echo:
         print(myline)
 
-class Heimdallr():
+
+class Heimdallr:
     # =========================================================================
     def __init__(self):
         self.ndm = 4  # number of DMs
         self.chn = 4  # channel number dedicated to Heimdallr
         self.xsz = 32
         self.dd = dist(self.xsz, self.xsz, between_pix=True)
-        self.apod = np.exp(-(self.dd/10)**4)
+        self.apod = np.exp(-((self.dd / 10) ** 4))
 
         self.nbl = 6  # number of baselines
         self.ncp = 3  # number of closure-phases
@@ -77,7 +79,7 @@ class Heimdallr():
         self.K2_norm = 100000.0  # used to fix the K2 photometry
 
         self.gd_offset = np.zeros(self.nbl)
-        
+
         self.pscale = 35 * 1.85
         self.Ks_wl = 2.05e-6  # True Heimdallr Ks wavelength (in meters)
         self.Kl_wl = 2.25e-6  # True Heimdallr Kl wavelength (in meters)
@@ -90,22 +92,29 @@ class Heimdallr():
         self.hdlr2 = IWFS(array=hcoords)
 
         # hard-coded closure-phase matrix
-        self.CPM = np.array([[ 0,  0,  0,  1, -1, -1],
-                             [ 1, -1,  0,  0,  0, -1],
-                             [ 1,  0, -1, -1,  0,  0],
-                             [-1,  1,  0,  0,  0,  1]])
+        self.CPM = np.array(
+            [
+                [0, 0, 0, 1, -1, -1],
+                [1, -1, 0, 0, 0, -1],
+                [1, 0, -1, -1, 0, 0],
+                [-1, 1, 0, 0, 0, 1],
+            ]
+        )
 
         # phase and group delay to be measured relative to beam 3
         # so a custom PINV is requested here
-        self.PINV = np.round(np.linalg.pinv(
-            np.delete(self.hdlr1.kpi.BLM, 2, axis=1)), 2)
+        self.PINV = np.round(
+            np.linalg.pinv(np.delete(self.hdlr1.kpi.BLM, 2, axis=1)), 2
+        )
 
         # self.PINV = np.round(np.linalg.pinv(self.hdlr1.kpi.BLM), 2)
 
         self.hdlr1.update_img_properties(
-            isz=self.xsz, wl=self.Ks_wl, pscale=self.pscale)
+            isz=self.xsz, wl=self.Ks_wl, pscale=self.pscale
+        )
         self.hdlr2.update_img_properties(
-            isz=self.xsz, wl=self.Kl_wl, pscale=self.pscale)
+            isz=self.xsz, wl=self.Kl_wl, pscale=self.pscale
+        )
 
         self.Ks = shm("/dev/shm/hei_k1.im.shm", nosem=False)
         self.Kl = shm("/dev/shm/hei_k2.im.shm", nosem=False)
@@ -132,17 +141,17 @@ class Heimdallr():
         self.hfo_pos = np.zeros(self.ndm)
         print("---")
         for ii in range(self.ndm):
-            self.hfo_pos[ii] = self.get_dl_pos(ii+1)
+            self.hfo_pos[ii] = self.get_dl_pos(ii + 1)
             log(f"HFO{ii+1} = {self.hfo_pos[ii]:8.2f} um")
         print("---")
 
         # connecting to HPOLs
         # ===================
-        self.cc = co.Controllino("192.168.100.12", init_motors=False)
-        self.hpol_IDs = [4,5,6,7]  # check first w/ Mike
+        self.cc = co.RotationMotorTeensy("192.168.100.12")
+        self.hpol_IDs = [4, 5, 6, 7]  # check first w/ Mike
         self.hpol_pos = np.zeros(self.ndm, dtype=int)
         for ii in range(self.ndm):
-            self.hpol_pos[ii] = self.get_hpol_pos(ii+1)
+            self.hpol_pos[ii] = self.get_hpol_pos(ii + 1)
             log(f"HPOL{ii+1} = {self.hpol_pos[ii]:+6d} (steps)")
         print("---")
 
@@ -163,6 +172,7 @@ class Heimdallr():
             bm1_id = np.argmax(self.hdlr1.kpi.BLM[ii]) + 1
             bm2_id = np.argmin(self.hdlr1.kpi.BLM[ii]) + 1
             self.bl_lbls.append(f"(B{bm1_id}-B{bm2_id})")
+
     # =========================================================================
     def init_logs(self):
         self.opds = [[], [], []]  # the log of the measured OPDs
@@ -171,8 +181,8 @@ class Heimdallr():
         self.vis_k2 = [[], [], [], [], [], []]  # log of K2 visibility
         self.phi_k1 = [[], [], [], [], [], []]  # log of K1 phase
         self.phi_k2 = [[], [], [], [], [], []]  # log of K2 phase
-        self.cp_k1 = [[], [], [], []]           # log of K1 closure-phase
-        self.cp_k2 = [[], [], [], []]           # log of K2 closure-phase
+        self.cp_k1 = [[], [], [], []]  # log of K1 closure-phase
+        self.cp_k2 = [[], [], [], []]  # log of K2 closure-phase
         self.first_time = True
 
     # =========================================================================
@@ -204,7 +214,7 @@ class Heimdallr():
             self.first_time = True
             # print("First time")
             self.K1_norm = self.norm1
-            self.K2_norm = self.norm2            
+            self.K2_norm = self.norm2
             # pass
 
         self._pd_k1 = np.angle(self.hdlr1.cvis[0])
@@ -213,19 +223,16 @@ class Heimdallr():
 
         if not self.first_time:  # real-time unwrapping of phase
             for ii in range(self.nbl):
-                self._gd_rad[ii] = unwrap(self._gd_rad[ii],
-                                          self._prev_gd_rad[ii])
-                self._pd_k1[ii] = unwrap(self._pd_k1[ii],
-                                          self._pd_prev_k1[ii])
-                self._pd_k2[ii] = unwrap(self._pd_k2[ii],
-                                          self._pd_prev_k2[ii])
+                self._gd_rad[ii] = unwrap(self._gd_rad[ii], self._prev_gd_rad[ii])
+                self._pd_k1[ii] = unwrap(self._pd_k1[ii], self._pd_prev_k1[ii])
+                self._pd_k2[ii] = unwrap(self._pd_k2[ii], self._pd_prev_k2[ii])
 
         self._cp_now_k1 = self.CPM.dot(self._pd_k1)
         self._cp_now_k2 = self.CPM.dot(self._pd_k2)
 
         for ii in range(self.ncp):
-            self._cp_now_k1[ii] = (self._cp_now_k1[ii] + 1) % (2*np.pi) - 1
-            self._cp_now_k2[ii] = (self._cp_now_k2[ii] + 1) % (2*np.pi) - 1
+            self._cp_now_k1[ii] = (self._cp_now_k1[ii] + 1) % (2 * np.pi) - 1
+            self._cp_now_k2[ii] = (self._cp_now_k2[ii] + 1) % (2 * np.pi) - 1
 
         self.gdlay = self._gd_rad * self.gd_factor - self.gd_offset
         self.opd_now_k1 = self.PINV.dot(self._pd_k1 * self.pd1_factor)
@@ -237,7 +244,7 @@ class Heimdallr():
             self.dms_cmds = self.opd_now_k2
         else:  # self.tracking_mode == "group":
             self.dms_cmds = self.PINV.dot(self.gdlay)
-            
+
         # self.dms_cmds = self.opd_now_k1  # (or k2) - as a test?
         # self.dms_cmds = np.insert(self.dms_cmds, 0, 0)
         # self.dms_cmds -= self.dms_cmds[2] # everything relative to Beam 3
@@ -248,12 +255,12 @@ class Heimdallr():
         for ii in range(self.nbl):
             self.gdlays[ii].append(self.gdlay[ii])
 
-        for ii in range(self.ndm-1):
+        for ii in range(self.ndm - 1):
             # self.opds[ii].append(self.opd_now_k1[ii])
             self.opds[ii].append(self.dms_cmds[ii])
 
         if len(self.opds[0]) > self.log_len:
-            for ii in range(self.ndm-1):
+            for ii in range(self.ndm - 1):
                 self.opds[ii].pop(0)
 
             for ii in range(self.nbl):
@@ -300,30 +307,38 @@ class Heimdallr():
 
     # =========================================================================
     def get_hpol_pos(self, beamid=1):
-        """ Get the HPOL stepper motor position for the requested beam ID # """
-        return self.cc.where(self.hpol_IDs[beamid-1])
+        """Get the HPOL stepper motor position for the requested beam ID #"""
+        # print(self.hpol_IDs[beamid-1])
+        # return self.cc.where(self.hpol_IDs[beamid-1])
+
+        self.socket.send_string(f"read HPOL{beamid}")
+
+        return int(self.socket.recv_string().strip())
 
     # =========================================================================
     def move_hpol(self, pos, beamid=1):
-        """ Move the HPOL stepper motor to *pos*  the requested beam ID # """
-        self.cc.amove(self.hpol_IDs[beamid-1], pos)
+        """Move the HPOL stepper motor to *pos*  the requested beam ID #"""
+        # self.cc.amove(self.hpol_IDs[beamid-1], pos)
+        self.socket.send_string(f"moveabs HPOL{beamid} {float(pos)}")
+        self.socket.recv_string()
 
     # =========================================================================
     def get_dl_pos(self, beamid=1):
-        """ Get delay line position (HFO) for the requested beam ID # """
+        """Get delay line position (HFO) for the requested beam ID #"""
         self.socket.send_string(f"read HFO{beamid}")
         return float(self.socket.recv_string().strip()) * 1e3
 
     # =========================================================================
     def move_dl(self, pos, beamid=1):
-        """ Move delay line (HFO) to *pos* for the requested beam ID # """
+        """Move delay line (HFO) to *pos* for the requested beam ID #"""
         self.socket.send_string(f"moveabs HFO{beamid} {1e-3 * pos:.5f}")
         self.socket.recv_string()  # acknowledgement
 
     # =========================================================================
-    def fringe_search(self, beamid=1, srange=100.0, step=5.0, band="K1",
-                      thorough=False):
-        ''' -------------------------------------------------- 
+    def fringe_search(
+        self, beamid=1, srange=100.0, step=5.0, band="K1", thorough=False
+    ):
+        """--------------------------------------------------
         Fringe search!
 
         Parameters:
@@ -334,29 +349,28 @@ class Heimdallr():
         - step     : the scan step in microns (float)
         - band     : "K1" or "K2"
         - thorough : if False, stops faster after optimum found
-        -------------------------------------------------- '''
+        --------------------------------------------------"""
         nav = 5  # number of measurements to average
 
         for ii in range(self.ndm):
-            self.hfo_pos[ii] = self.get_dl_pos(ii+1)
-            
-        x0 = self.hfo_pos[beamid-1] # startup position
+            self.hfo_pos[ii] = self.get_dl_pos(ii + 1)
+
+        x0 = self.hfo_pos[beamid - 1]  # startup position
         # steps = np.arange(x0 - srange, x0 + srange, step)
-        steps = np.linspace(x0 - srange, x0 + srange,
-                            int(1+2*srange/step))
+        steps = np.linspace(x0 - srange, x0 + srange, int(1 + 2 * srange / step))
         sensor = self.hdlr1 if band == "K1" else self.hdlr2
 
         log(f"---- HFO{beamid} SCAN sequence starting ----")
         BLM = sensor.kpi.BLM.copy()
-        bl_ii = np.argwhere(BLM[:, beamid-1] != 0)[:, 0]  # concerned BLines
+        bl_ii = np.argwhere(BLM[:, beamid - 1] != 0)[:, 0]  # concerned BLines
         # the starting point
         best_pos = x0
         vis = []
         for jj in range(nav):
             vis.append(np.abs(sensor.cvis[0]))
-        vis = np.mean(np.array(vis), axis = 0)
+        vis = np.mean(np.array(vis), axis=0)
         uvis = np.round(np.abs(vis)[bl_ii], 2)  # "useful" visibilities
-        best_vis = np.round(np.sqrt(np.mean(uvis**2)), 2)        
+        best_vis = np.round(np.sqrt(np.mean(uvis**2)), 2)
         print(f"HFO{beamid} x0  = {x0:8.2f}", end="")  # initial state
         print(uvis, best_vis)
         found_one = 0
@@ -373,7 +387,7 @@ class Heimdallr():
             vis = []
             for jj in range(nav):
                 vis.append(np.abs(sensor.cvis[0]))
-            vis = np.mean(np.array(vis), axis = 0)
+            vis = np.mean(np.array(vis), axis=0)
 
             uvis = np.round(vis[bl_ii], 2)  # the useful visibilities here
             global_vis = np.round(np.sqrt(np.mean(uvis**2)), 2)
@@ -381,14 +395,15 @@ class Heimdallr():
 
             # logging all 6 visibilities
             data2print = np.array2string(
-                uvis, precision=2, floatmode='fixed', separator=', ')
+                uvis, precision=2, floatmode="fixed", separator=", "
+            )
             logline += f"vis={data2print}"
             log(logline)
 
-            if (global_vis >= 1.01 * best_vis) and (global_vis > 0.15) :
+            if (global_vis >= 1.01 * best_vis) and (global_vis > 0.15):
                 best_vis = global_vis
                 best_pos = pos
-                found_one += 1 # (found_one == 1) and
+                found_one += 1  # (found_one == 1) and
                 print(f"    - Current best pos: {pos:.2f}")
             else:
                 print()
@@ -400,8 +415,7 @@ class Heimdallr():
                 break
 
             if not thorough:
-                if (global_vis < 0.8 * best_vis) and \
-                   (pos > x0) and (best_vis > 0.15):
+                if (global_vis < 0.8 * best_vis) and (pos > x0) and (best_vis > 0.15):
                     time.sleep(0.5)
                     break
 
@@ -416,10 +430,9 @@ class Heimdallr():
         return best_pos, best_vis
 
     # =========================================================================
-    def dual_fringe_scan(self, beamid=1, srange=100.0, step=5.0,
-                         logname=default_log):
-        ''' -------------------------------------------------- 
-        Fringe scan across provided range of HFO, recording 
+    def dual_fringe_scan(self, beamid=1, srange=100.0, step=5.0, logname=default_log):
+        """--------------------------------------------------
+        Fringe scan across provided range of HFO, recording
         the response in both K1 and K2 bands. Called by the
         hpol_pos_scan()
 
@@ -432,18 +445,16 @@ class Heimdallr():
         - beamid   : 1, 2, 3 or 4 (BEAM ID #) (int)
         - srange   : the +/- search range in microns (float)
         - step     : the scan step in microns (float)
-        -------------------------------------------------- '''
+        --------------------------------------------------"""
         nav = 5  # number of measurements to average
 
         for ii in range(self.ndm):
-            self.hfo_pos[ii] = self.get_dl_pos(ii+1)
-            
-        x0 = self.hfo_pos[beamid-1] # startup position
-        steps = np.linspace(x0 - srange, x0 + srange,
-                            int(1+2*srange/step))
+            self.hfo_pos[ii] = self.get_dl_pos(ii + 1)
 
-        log(f"---- HFO{beamid} SCAN sequence starting ----",
-            logfile=logname)
+        x0 = self.hfo_pos[beamid - 1]  # startup position
+        steps = np.linspace(x0 - srange, x0 + srange, int(1 + 2 * srange / step))
+
+        log(f"---- HFO{beamid} SCAN sequence starting ----", logfile=logname)
 
         if self.cloop_on:
             self.cloop_on = False  # interrupting the loop
@@ -452,7 +463,7 @@ class Heimdallr():
         for ii, pos in enumerate(steps):
             msg1 = f"K1-HFO{beamid} pos={pos:8.2f} vis="
             msg2 = f"K2-HFO{beamid} pos={pos:8.2f} vis="
-            self.move_dl(pos, beamid)            
+            self.move_dl(pos, beamid)
             time.sleep(0.25)
 
             vis1, vis2 = [], []
@@ -460,21 +471,22 @@ class Heimdallr():
                 vis1.append(np.abs(self.hdlr1.cvis[0]))
                 vis2.append(np.abs(self.hdlr2.cvis[0]))
 
-            vis1 = np.mean(np.array(vis1), axis = 0)
-            vis2 = np.mean(np.array(vis2), axis = 0)
+            vis1 = np.mean(np.array(vis1), axis=0)
+            vis2 = np.mean(np.array(vis2), axis=0)
 
             # logging all 6 visibilities
             msg1 += np.array2string(
-                vis1, precision=2, floatmode='fixed', separator=', ')
+                vis1, precision=2, floatmode="fixed", separator=", "
+            )
             msg2 += np.array2string(
-                vis2, precision=2, floatmode='fixed', separator=', ')
+                vis2, precision=2, floatmode="fixed", separator=", "
+            )
 
             log(msg1, logfile=logname)
             log(msg2, logfile=logname)
 
             if self.abort is True:
-                log(f"---- HFO{beamid} SCAN aborted ----",
-                    logfile=logname)
+                log(f"---- HFO{beamid} SCAN aborted ----", logfile=logname)
                 time.sleep(0.5)
                 self.abort = False
                 break
@@ -486,21 +498,21 @@ class Heimdallr():
 
     # =========================================================================
     def hpol_pos_scan(self, beamid, pmin, pmax, srange=100.0, step=5.0):
-        ''' -------------------------------------------------------------------
+        """-------------------------------------------------------------------
         HPOL optimal position procedure
 
         The idea is as follows: doing a ramp of HPOL commands.
         At each step, scan corresponding HFO and log output.
 
         At the end, bring back HFO and HPOL to their original spot.
-        ------------------------------------------------------------------- '''
+        -------------------------------------------------------------------"""
         ssize = 25  # step size for HPOL
-        pos_all = np.linspace(pmin, pmax, int((pmax-pmin)/ssize+1))
+        pos_all = np.linspace(pmin, pmax, int((pmax - pmin) / ssize + 1))
 
         utcnow = datetime.utcnow()
         tstamp = utcnow.strftime("%Y%m%d_%H:%M:%S")
         logname = ddir + f"log_{tstamp}_HPOL{beamid}_scan.log"
-        
+
         log(f"---- HPOL{beamid} SCAN sequence starting ----")
         x0_hpol = self.get_hpol_pos(beamid)  # initial position
 
@@ -514,34 +526,35 @@ class Heimdallr():
                 self.abort = False
                 break
 
-            self.dual_fringe_scan(beamid=beamid, srange=srange,
-                                  step=step, logname=logname)
+            self.dual_fringe_scan(
+                beamid=beamid, srange=srange, step=step, logname=logname
+            )
 
         print(f"HPOL{beamid} back to initial position {x0_hpol}")
         self.move_hpol(x0_hpol, beamid)
 
     # =========================================================================
     def dm_modulation_response(self):
-        ''' -------------------------------------------------------------------
+        """-------------------------------------------------------------------
         Sinusoidal DM modulation sequence to characterize PD/GD behavior
-        ------------------------------------------------------------------- '''
+        -------------------------------------------------------------------"""
         nmod = 100
         nc = [1, 2, 3, 4]
-        a0 = 10.0 # 0.5
+        a0 = 10.0  # 0.5
         nav = 10  # number of measures per modulation
-        
+
         self.reset_dms()
         now = datetime.utcnow()
 
         # prepare sinusoidal modulation commands
         cmds = np.zeros((self.ndm, nmod))
         for jj in range(self.ndm):
-            cmds[jj] = a0 * np.sin(np.linspace(0, nc[jj] * 2*np.pi, nmod))
+            cmds[jj] = a0 * np.sin(np.linspace(0, nc[jj] * 2 * np.pi, nmod))
 
         # cmds[0] *= 0.0
         # cmds[1] *= 0.0
         # cmds[3] *= 0.0
-        
+
         # to store the data
         cvis1 = np.zeros((self.hdlr1.kpi.nbuv, nmod * nav), dtype=complex)
         cvis2 = np.zeros((self.hdlr2.kpi.nbuv, nmod * nav), dtype=complex)
@@ -571,16 +584,18 @@ class Heimdallr():
         sdir = f"/home/asg/Data/{now.year}{now.month:02d}{now.day:02d}/custom/"
         if not os.path.exists(sdir):
             os.makedirs(sdir)
-        
-        fname_root = sdir+f"data_{now.hour:02d}:{now.minute:02d}:{now.second:02d}_"
+
+        fname_root = sdir + f"data_{now.hour:02d}:{now.minute:02d}:{now.second:02d}_"
 
         np.savetxt(fname_root + f"modulation_cvis1_a0={a0:.2f}.txt", cvis1)
         np.savetxt(fname_root + f"modulation_cvis2_a0={a0:.2f}.txt", cvis2)
 
-        pf.writeto(fname_root + f"modulation_cube_k1_a0={a0:.2f}.fits", cube1,
-                   overwrite=True)
-        pf.writeto(fname_root + f"modulation_cube_k2_a0={a0:.2f}.fits", cube2,
-                   overwrite=True)
+        pf.writeto(
+            fname_root + f"modulation_cube_k1_a0={a0:.2f}.fits", cube1, overwrite=True
+        )
+        pf.writeto(
+            fname_root + f"modulation_cube_k2_a0={a0:.2f}.fits", cube2, overwrite=True
+        )
         print("modulation test done")
 
     # =========================================================================

@@ -29,7 +29,7 @@ mrproper: clean
 
 install:
 	install -D $(EXEC) $(PREFIX)/bin/
-	chmod +s $(PREFIX)/bin/$(EXEC)
+	setcap 'cap_sys_nice=eip' $(PREFIX)/bin/$(EXEC)
 	cp def1.toml $(PREFIX)/etc
 	cp def2.toml $(PREFIX)/etc
 	cp def3.toml $(PREFIX)/etc

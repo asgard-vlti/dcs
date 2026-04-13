@@ -1,0 +1,38 @@
+name = "Default Configuration"
+
+# Beam. This should be over-written as an input.
+beam = 4
+
+# DM Rotations in radians
+dm_rotation = [-20,0,0,50]
+
+#Wavelength in microns
+wave = 1.65
+
+#Pixels to aim for
+px = 15
+py = 15
+
+#Width with respect to the central pixel. Must be odd!
+width = 21
+focus_amp = 0.00
+
+#Tip/tilt Gaussian weight 1/e^2 half width
+gauss_hwidth = 3.5
+
+# Tip/tilt gain in units of DM stroke per pixel.
+ttg = 0.01
+ttl = 0.01
+# High-order gain - normalised to unity 
+hog = 0.2
+hol = 0.01
+# Flux threshold
+flux_threshold = 1000
+
+modefile = "/usr/local/etc/modes.fits"
+
+#All units are in radians and microns
+[geometry] 
+beam_diameter   = 3e-2
+pix = 24.0
+

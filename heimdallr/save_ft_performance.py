@@ -17,7 +17,6 @@ from dcs.ZMQutils import ZmqReq
 
 import threading
 
-
 keys_of_interest = [
     "gd_snr",
     "pd_snr",
@@ -39,22 +38,15 @@ settings_keys = [
     "kp",
 ]
 
-# Global from the settings thread used for the status thread
-servo_mode = 4  # Default to "off" mode
 
-def log_ft_performance(log_path="ft_performance_log.txt", rate_hz=1000, gd_rate_hz=10):
-    # Each thread gets its own ZmqReq instance, with reconnection logic
-    def get_zmq():
-        while True:
-            try:
-                return ZmqReq("tcp://192.168.100.2:6660")
-            except Exception as e:
-                print(
-                    f"[FT Performance] Could not connect to server: {e}. Retrying in 2s..."
-                )
-                time.sleep(2)
-
-    h_z = get_zmq()
+def log_ft_performance(
+    h_z,
+    lock,
+    shared_state,
+    log_path="ft_performance_log.txt",
+    rate_hz=1000,
+    gd_rate_hz=10,
+):
     # Write header only if file is empty
     write_header = True
     try:
@@ -72,13 +64,11 @@ def log_ft_performance(log_path="ft_performance_log.txt", rate_hz=1000, gd_rate_
         while True:
             t0 = time.time()
             try:
-                reply = h_z.send_payload("status", is_str=True, decode_ascii=False)
+                with lock:
+                    reply = h_z.send_payload("status", is_str=True, decode_ascii=False)
             except Exception as e:
-                print(
-                    f"[FT Performance] Lost connection to server: {e}. Reconnecting in 2s..."
-                )
-                time.sleep(2)
-                h_z = get_zmq()
+                print(f"[FT Performance] Error during request: {e}. Retrying...")
+                time.sleep(1)
                 continue
             if reply:
                 if "cnt" in reply:
@@ -107,28 +97,18 @@ def log_ft_performance(log_path="ft_performance_log.txt", rate_hz=1000, gd_rate_
                 line = "{} {}".format(timestamp, " ".join(values))
                 f.write(line + "\n")
                 f.flush()
-            if servo_mode == 4:  # If in "off" mode, we can log settings at a slower rate
+            if (
+                shared_state.get("servo_mode", 4) == 4
+            ):  # If in "off" mode, we can log settings at a slower rate
                 time.sleep(max(0, (1.0 / gd_rate_hz) - (time.time() - t0)))
             else:
                 time.sleep(max(0, (1.0 / rate_hz) - (time.time() - t0)))
 
 
-def log_ft_settings(log_path="ft_settings_log.txt", rate_hz=1):
+def log_ft_settings(h_z, lock, shared_state, log_path="ft_settings_log.txt", rate_hz=1):
     """
     Logs FT settings to a file at a slower rate (default 1 Hz).
     """
-
-    def get_zmq():
-        while True:
-            try:
-                return ZmqReq("tcp://192.168.100.2:6660")
-            except Exception as e:
-                print(
-                    f"[FT Settings] Could not connect to server: {e}. Retrying in 2s..."
-                )
-                time.sleep(2)
-
-    h_z = get_zmq()
     write_header = True
     try:
         with open(log_path, "r") as f_check:
@@ -146,19 +126,18 @@ def log_ft_settings(log_path="ft_settings_log.txt", rate_hz=1):
         while True:
             t0 = time.time()
             try:
-                reply = h_z.send_payload("settings", is_str=True, decode_ascii=False)
+                with lock:
+                    reply = h_z.send_payload(
+                        "settings", is_str=True, decode_ascii=False
+                    )
             except Exception as e:
-                print(
-                    f"[FT Settings] Lost connection to server: {e}. Reconnecting in 2s..."
-                )
-                time.sleep(2)
-                h_z = get_zmq()
+                print(f"[FT Settings] Error during request: {e}. Retrying...")
+                time.sleep(1)
                 continue
             if reply:
                 # Adjust gd rate
                 if "servo_mode" in reply:
-                    global servo_mode
-                    servo_mode = reply["servo_mode"]
+                    shared_state["servo_mode"] = reply["servo_mode"]
                 timestamp = "{:.3f}".format(t0)
                 values = []
                 for k in settings_keys:
@@ -172,9 +151,15 @@ def log_ft_settings(log_path="ft_settings_log.txt", rate_hz=1):
                 f.flush()
             time.sleep(max(0, (1.0 / rate_hz) - (time.time() - t0)))
 
+
 def main():
     parser = argparse.ArgumentParser(description="FT performance data logging script")
-    parser.add_argument("--gdrate", type=int, default=10, help="Sample rate when group delay tracking in Hz")
+    parser.add_argument(
+        "--gdrate",
+        type=int,
+        default=10,
+        help="Sample rate when group delay tracking in Hz",
+    )
     parser.add_argument("--rate", type=int, default=1000, help="Sample rate in Hz")
     args = parser.parse_args()
     # time in UTC
@@ -189,12 +174,21 @@ def main():
     settings_fname = f"ft_settings_{cur_datetime}.log"
     settings_full_pth = os.path.join(pth, settings_fname)
 
+    # single socket and lock
+    h_z = ZmqReq("tcp://192.168.100.2:6660")
+    lock = threading.Lock()
+    shared_state = {"servo_mode": 4}
+
     # Start both logging functions in separate threads
     t1 = threading.Thread(
-        target=log_ft_performance, args=(full_pth, args.rate, args.gdrate), daemon=True
+        target=log_ft_performance,
+        args=(h_z, lock, shared_state, full_pth, args.rate, args.gdrate),
+        daemon=True,
     )
     t2 = threading.Thread(
-        target=log_ft_settings, args=(settings_full_pth, 1), daemon=True
+        target=log_ft_settings,
+        args=(h_z, lock, shared_state, settings_full_pth, 1),
+        daemon=True,
     )
     t1.start()
     t2.start()
@@ -204,6 +198,7 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         print("Logging stopped.")
+
 
 # Example usage:
 if __name__ == "__main__":

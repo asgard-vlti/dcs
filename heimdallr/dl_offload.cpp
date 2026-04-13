@@ -32,7 +32,7 @@ auto last_hfo_offset = std::chrono::high_resolution_clock::now();
 zmq::context_t mds_zmq_context(1);
 int timeout_ms = 1000;
 zmq::socket_t mds_zmq_socket(mds_zmq_context, zmq::socket_type::req);
-const std::string mds_host_str = "tcp://mimir:5555";
+const std::string mds_host_str = "tcp://192.168.100.2:5555";
 zmq::context_t wag_rmn_context(1);
 zmq::socket_t wag_rmn_socket(wag_rmn_context, zmq::socket_type::req);
 #ifndef SIMULATE
@@ -98,7 +98,7 @@ std::string send_mds_cmd(const std::string& message) {
     zmq::message_t reply;
     auto result = mds_zmq_socket.recv(reply, zmq::recv_flags::none);
     if (!result.has_value()) {
-        fmt::print("Timeout or error receiving reply from MDS.");
+        error("Timeout or error receiving reply from MDS.");
         mds_zmq_initialized=false;
         return "0.0";
     }
@@ -111,13 +111,13 @@ bool initialize_delay_line(std::string type){
     if (type == "piezo") {
         init_controllino();
         if (!controllino_initialized) {
-            std::cout << "Failed to initialize Controllino for piezo delay lines." << std::endl;
+            error("Failed to initialize Controllino for piezo delay lines.");
             return false;
         }
     } else if (type == "hfo") {
         init_mds_zmq();
         if (!mds_zmq_initialized) {
-            std::cout << "Failed to initialize ZMQ for MDS HFO delay lines." << std::endl;
+            error("Failed to initialize ZMQ for MDS HFO delay lines.");
             return false;
         }
         // Connect to MDS and find the delay line positions.
@@ -125,18 +125,18 @@ bool initialize_delay_line(std::string type){
         for (int i = 0; i < N_TEL; i++) {
             std::string message = "read HFO" + std::to_string(i+1);
             std::string reply = send_mds_cmd(message);
-            fmt::print(reply);
+            info("%s", reply.c_str());
             hfo_offsets[i] = std::stod(reply);
-            fmt::print("HFO{} offset: {}\n", i+1, hfo_offsets[i]);
+            info("HFO%d offset: %g", i + 1, hfo_offsets[i]);
         }
     } else if (type == "rmn") {
         init_wag_rmn();
         if (!wag_rmn_initialized) {
-            std::cout << "Failed to initialize ZMQ for WAG RMN delay lines." << std::endl;
+            error("Failed to initialize ZMQ for WAG RMN delay lines.");
             return false;
         }
     } else if (type != "off") {
-        std::cout << "Delay line type not recognised: " << type << std::endl;
+        error("Delay line type not recognised: %s", type.c_str());
         return false;
     } 
  return true;
@@ -148,12 +148,14 @@ bool initialize_delay_line(std::string type){
 Eigen::Vector4d center_dls(Eigen::Vector4d dl) {
     if (settings.s.fixed_dl == 0) {
         double mean = dl.mean();
-        return dl - Eigen::Vector4d::Constant(mean);
+        return control_u.beams_active.asDiagonal() * (dl - Eigen::Vector4d::Constant(mean));
     } else if (settings.s.fixed_dl > 0 && settings.s.fixed_dl <= N_TEL) {
         double value = dl(settings.s.fixed_dl - 1);
-        return dl - Eigen::Vector4d::Constant(value);
-    } else {    
-        return dl;
+        return control_u.beams_active.asDiagonal() * (dl - Eigen::Vector4d::Constant(value));
+    } else {   
+        // Not really implemented, but in principle we could have 
+        // no zero mean or a fixed DL. 
+        return control_u.beams_active.asDiagonal() * dl;
     }
 }
 
@@ -174,7 +176,7 @@ void add_to_delay_lines(Eigen::Vector4d dl) {
         auto now = std::chrono::high_resolution_clock::now();
         double seconds_since_last = std::chrono::duration<double>(now - last_hfo_offset).count();
         if (seconds_since_last < 0.5) {
-            fmt::print("Not enough time for a new offload.\n");
+            info("Not enough time for a new offload.");
             return;
         }
         // Check to find the total offload requested, adding all values of
@@ -193,7 +195,7 @@ void set_delay_line(int dl, double value) {
     // This function sets the delay line value for a specific telescope.
     // The value is in K1 wavelengths.
     if (dl == 0 || dl >= N_TEL) {
-        std::cout << "Delay line number out of range" << std::endl;
+        info("Delay line number out of range");
         return;
     }
     next_offload[dl-1] = value;
@@ -225,13 +227,13 @@ void move_piezos(){
             dl_value = 2048 + (int)( (next_offload(i) + search_offset(i) + mod_offload(i)) / OPD_PER_PIEZO_UNIT);
             sprintf(message, "a%d %d\n", i, dl_value);
             recv(controllinoSocket, buffer, sizeof(buffer), 0);
-            if (strlen(buffer) > 0) std::cout << "Before starting, controllino: " << buffer << std::endl;
+            if (strlen(buffer) > 0) info("Before starting, controllino: %s", buffer);
             send(controllinoSocket, message, strlen(message), 0);
-            std::cout << "Sending to controllino: " << message << std::endl;
+            info("Sending to controllino: %s", message);
             usleep(CONTROLLINO_USLEEP);
             recv(controllinoSocket, buffer, sizeof(buffer), 0);
             if (buffer[0] != 'S') {
-                std::cout << "Controllino error! Setting state uninitialised." << std::endl;
+                info("Controllino error! Setting state uninitialised.");
                 controllino_initialized = false;
                 return;
             }
@@ -247,8 +249,11 @@ void move_hfo(){
             // Set the delay line value for the current telescope (value in mm of physical motion)
             double dl_value = hfo_offsets[i] - (next_offload(i) + search_offset(i) + mod_offload(i)) * 0.0005;
             std::string message = "moveabs HFO" + std::to_string(i+1) + " " + std::to_string(dl_value);
-            fmt::print(message + "\n");
-            fmt::print(send_mds_cmd(message));
+            info("%s", message.c_str());
+            {
+                std::string reply = send_mds_cmd(message);
+                info("%s", reply.c_str());
+            }
             last_offload(i) = next_offload(i) + search_offset(i) + mod_offload(i);
         } 
     }
@@ -344,7 +349,7 @@ void move_main_dl()
         //fmt::print("WAG RMN reply: {}\n", reply_str);
     } else {
         wag_rmn_initialized=false;
-        fmt::print("Timeout or error receiving reply from WAG RMN.\n");
+        info("Timeout or error receiving reply from WAG RMN.");
     }
     last_offload = next_offload + search_offset + mod_offload;
 }
@@ -369,9 +374,9 @@ void dl_offload(){
                 for (int i = 0; i < N_TEL; i++) {
                     std::string message = "read HFO" + std::to_string(i+1);
                     std::string reply = send_mds_cmd(message);
-                    fmt::print(reply);
+                    info("%s", reply.c_str());
                     hfo_offsets[i] = std::stod(reply);
-                    fmt::print("HFO{} offset: {}\n", i+1, hfo_offsets[i]);
+                    info("HFO%d offset: %g", i + 1, hfo_offsets[i]);
                     last_offload(i) = 0.0;
                     next_offload(i) = 0.0;
                 }
@@ -395,7 +400,7 @@ void dl_offload(){
                         max_snr = snr;
                     }
                 }
-                fmt::print("Search beam max SNR: {}\n", max_snr);
+                info("Search beam max SNR: %g", max_snr);
                 // Check if the SNR is above the threshold
                 if (max_snr > search_snr_threshold) {
                     search_length = 0;
@@ -431,7 +436,7 @@ void dl_offload(){
                 // Do nothing, but update last_offload to avoid repeated logging.
                 last_offload = next_offload + search_offset + mod_offload;
 		    } else {
-		        std::cout << "Delay line type not recognised" << std::endl;
+                info("Delay line type not recognised");
 		    }
 		    // Log delay line type and values to file with timestamp
 		    std::ofstream log_file("/data/dl_offload.log", std::ios::app);
