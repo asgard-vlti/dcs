@@ -216,10 +216,13 @@ class MyMainWidget(QtWidgets.QWidget):
         self.imv_data = pg.ImageItem()
         self.overlay = pg.GraphItem()
         self.gView_live.addItem(self.imv_data)
-        self.dark_check_text = pg.TextItem("check dark", color="r", anchor=(0, 0))
-        self.dark_check_text.setZValue(10)
+        self.dark_check_text = QtWidgets.QLabel(
+            "check dark", self.gView_live.viewport()
+        )
+        self.dark_check_text.setStyleSheet("color: red; background: transparent;")
+        self.dark_check_text.setAutoFillBackground(False)
+        self.dark_check_text.adjustSize()
         self.dark_check_text.hide()
-        self.gView_live.addItem(self.dark_check_text)
 
         # stat display
         self.lbl_stats.setGeometry(QRect(self.imw + 2 * pad, 40, 180, 180))
@@ -385,7 +388,6 @@ class MyMainWidget(QtWidgets.QWidget):
             ),
             border=2,
         )
-        self.dark_check_text.setPos(5, 5)
         if self.pxi < self.imsize[1] and self.pyi < self.imsize[0]:
             self.pxval = self.data_img[self.pyi, self.pxi]
 
@@ -420,6 +422,13 @@ class MyMainWidget(QtWidgets.QWidget):
         msg += "</pre>"
         self.lbl_stats.setText(msg)
         if dark_check:
+            viewport = self.gView_live.viewport()
+            viewport_height = viewport.height() if viewport is not None else 0
+            self.dark_check_text.adjustSize()
+            self.dark_check_text.move(
+                5,
+                max(5, viewport_height - self.dark_check_text.height() - 5),
+            )
             self.dark_check_text.show()
         else:
             self.dark_check_text.hide()
