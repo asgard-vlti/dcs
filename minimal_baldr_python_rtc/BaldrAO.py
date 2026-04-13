@@ -221,7 +221,7 @@ class BaldrAO:
 
         if kind.lower() == "linear":
             self.recon = AO.LinearReconstructor(im, ref, rcond=rcond)
-        elif kind.lower() == "PALinear":
+        elif kind.lower() == "palinear":
             pupil_img = self.take_pupil_img()
             self.recon = AO.PupilAwareLinearReconstructor(
                 im,
@@ -481,9 +481,6 @@ class BaldrAO:
                 self.estimator.close_threshold if self.estimator else None
             ),
             "L_max": self.L_max,
-            "controller_type": (
-                type(self.controller).__name__ if self.controller else None
-            ),
             "controller_settings": (
                 self.get_controller_params() if self.controller else None
             ),

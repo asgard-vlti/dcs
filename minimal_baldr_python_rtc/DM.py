@@ -68,7 +68,7 @@ class DM:
             cmd = cmd - cmd.mean()
 
         if self.L_max < 0.1:
-            logging.info("Applying Laplacian limiter with L_max = %.3f", self.L_max)
+            # logging.info("Applying Laplacian limiter with L_max = %.3f", self.L_max)
             cmd = self.laplacian_limiter(
                 cmd.reshape(consts.act_shape), self.L_max
             ).flatten()
