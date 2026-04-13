@@ -223,7 +223,12 @@ class BaldrAO:
             self.recon = AO.LinearReconstructor(im, ref, rcond=rcond)
         elif kind.lower() == "PALinear":
             pupil_img = self.take_pupil_img()
-            self.recon = AO.PupilAwareLinearReconstructor(im, pupil_img, rcond=rcond)
+            self.recon = AO.PupilAwareLinearReconstructor(
+                im,
+                pupil_img,
+                self.cam,
+                rcond=rcond,
+            )
 
         logger.info("made new recon %s", self.recon)
 
