@@ -74,6 +74,9 @@ class PupilAwareLinearReconstructor(Reconstructor):
 
         self.recon_matrix = hcipy.inverse_tikhonov(self.labIM.T, rcond=rcond)
 
+    def reconstruct(self, normed_img):
+        return self.recon_matrix @ (normed_img - self.ref)
+
     def img_to_hcfield(self, img):
         # convert a 2D image to an hcipy Field, using the same grid as the model reference
         return hcipy.Field(img.flatten(), model.detector_grid)
@@ -142,7 +145,6 @@ class LeakyIntegrator(Controller):
 
     def reset(self):
         self.command = np.zeros(self.n)
-
 
 
 class StrehlEstimator:
