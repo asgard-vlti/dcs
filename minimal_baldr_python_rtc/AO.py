@@ -144,49 +144,6 @@ class LeakyIntegrator(Controller):
         self.command = np.zeros(self.n)
 
 
-class LapLimitedLeakyIntegrator(LeakyIntegrator):
-    @staticmethod
-    def laplacian_limiter(surface, L_max, return_L=False):
-        # surface is a 2D array of actuator values
-        # we will modify surface in place
-        new_surface = surface.copy()
-
-        laplacian = (
-            -4 * surface[1:-1, 1:-1]
-            + surface[1:-1, 2:]
-            + surface[1:-1, :-2]
-            + surface[2:, 1:-1]
-            + surface[:-2, 1:-1]
-        )
-
-        new_surface[1:-1, 1:-1] += np.clip((laplacian - L_max) / 4, 0, None)
-        # and the opposite for negative Laplacian
-        new_surface[1:-1, 1:-1] += np.clip((laplacian + L_max) / 4, None, 0)
-
-        # retain pinning
-        new_surface[0, 1:-1] = new_surface[1, 1:-1]
-        new_surface[-1, 1:-1] = new_surface[-2, 1:-1]
-        new_surface[1:-1, 0] = new_surface[1:-1, 1]
-        new_surface[1:-1, -1] = new_surface[1:-1, -2]
-
-        if return_L:
-            L_values = np.zeros_like(surface)
-            L_values[1:-1, 1:-1] = laplacian
-            return new_surface, L_values
-        return new_surface
-
-    def __init__(self, n, gains=None, leaks=None, L_max=0.1):
-        super().__init__(n, gains, leaks)
-        self.L_max = L_max
-
-    def compute_command(self, error):
-        raw_command = super().compute_command(error)
-        command_2d = raw_command.reshape(consts.act_shape)
-        limited_command_2d = self.laplacian_limiter(
-            command_2d, self.L_max, return_L=False
-        )
-        return limited_command_2d.flatten()
-
 
 class StrehlEstimator:
     def __init__(self, mask, close_threshold, open_threshold):

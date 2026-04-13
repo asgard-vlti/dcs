@@ -57,6 +57,8 @@ class DM:
 
         self.piston_free = piston_free
 
+        self.L_max = 0.11
+
     def set_data(self, cmd):
         """
         convention to apply any user specific commands on channel 2!
@@ -64,12 +66,49 @@ class DM:
         cmd = self.basis @ cmd
         if self.piston_free:
             cmd = cmd - cmd.mean()
+
+        if self.L_max < 0.1:
+            logging.info("Applying Laplacian limiter with L_max = %.3f", self.L_max)
+            cmd = self.laplacian_limiter(
+                cmd.reshape(consts.act_shape), self.L_max
+            ).flatten()
+
         self.shms[self.main_chn].set_data(cmd)
         ##
         self.shm0.post_sems(1)
 
     def flatten(self):
         self.set_data(np.zeros(self.n_acts))
+
+    @staticmethod
+    def laplacian_limiter(surface, L_max, return_L=False):
+        # surface is a 2D array of actuator values
+        # we will modify surface in place
+        new_surface = surface.copy()
+
+        laplacian = (
+            -4 * surface[1:-1, 1:-1]
+            + surface[1:-1, 2:]
+            + surface[1:-1, :-2]
+            + surface[2:, 1:-1]
+            + surface[:-2, 1:-1]
+        )
+
+        new_surface[1:-1, 1:-1] += np.clip((laplacian - L_max) / 4, 0, None)
+        # and the opposite for negative Laplacian
+        new_surface[1:-1, 1:-1] += np.clip((laplacian + L_max) / 4, None, 0)
+
+        # retain pinning
+        new_surface[0, 1:-1] = new_surface[1, 1:-1]
+        new_surface[-1, 1:-1] = new_surface[-2, 1:-1]
+        new_surface[1:-1, 0] = new_surface[1:-1, 1]
+        new_surface[1:-1, -1] = new_surface[1:-1, -2]
+
+        if return_L:
+            L_values = np.zeros_like(surface)
+            L_values[1:-1, 1:-1] = laplacian
+            return new_surface, L_values
+        return new_surface
 
 
 class FourierDM(DM):

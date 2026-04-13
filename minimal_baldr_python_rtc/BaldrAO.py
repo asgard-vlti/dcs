@@ -30,6 +30,7 @@ class BaldrAO:
 
         self.cam = Cam.Cam(beam)
         self.dm = DM.FourierDM(beam)
+        self.L_max = float(getattr(self.dm, "L_max", 0.0))
 
         self.MDS = LazyPirateZMQ.ZmqLazyPirateClient(zmq.Context(), "tcp://mimir:5555")
 
@@ -235,20 +236,17 @@ class BaldrAO:
         sky_pupil_img = self.take_pupil_img()
         self.recon.update_reference(sky_pupil_img)
 
-    def create_controller(self, type="leaky_integrator", L_max=0.1):
+    def create_controller(self, type="leaky_integrator"):
         if type == "leaky_integrator":
             self.controller = AO.LeakyIntegrator(
                 self.dm.n_acts,
                 gains=np.full(self.dm.n_acts, 0.0, dtype=float),
                 leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
             )
-        elif type == "laplacian_limited_leaky_integrator":
-            self.controller = AO.LapLimitedLeakyIntegrator(
-                self.dm.n_acts,
-                gains=np.full(self.dm.n_acts, 0.0, dtype=float),
-                leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
-                L_max=L_max,
-            )
+        else:
+            logger.error("Unknown controller type %s", type)
+            raise ValueError(f"Unknown controller type {type}")
+
         logger.info("made new controller %s", self.controller)
 
     def _parse_indices(self, idxs):
@@ -353,12 +351,18 @@ class BaldrAO:
         ref = imgs.mean(0)
         return self.cam.normalise(ref)
 
+    def set_L_max(self, new_L_max):
+        self.L_max = float(new_L_max)
+        self.dm.L_max = self.L_max
+        logger.info("Set L_max to %.3f", self.L_max)
+
     def save_state(self, filename):
         state = {
             "recon": self.recon,
             "controller": self.controller,
             "estimator": self.estimator,
             "cam_dark": self.cam.dark,
+            "L_max": self.L_max,
             "desc": filename,
         }
         filename_with_time = (
@@ -416,6 +420,10 @@ class BaldrAO:
         self.recon = state["recon"]
         self.controller = state["controller"]
         self.estimator = state.get("estimator")
+        if "L_max" in state:
+            self.set_L_max(state["L_max"])
+        else:
+            self.L_max = float(getattr(self.dm, "L_max", self.L_max))
         if "cam_dark" in state:
             self.cam.dark = np.asarray(state["cam_dark"])
 
