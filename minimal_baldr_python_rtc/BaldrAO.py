@@ -400,11 +400,15 @@ class BaldrAO:
             if candidate.exists():
                 filename_with_time = candidate
             else:
-                matches = sorted(
-                    state_dir.glob(f"bao_state_{filename}_*.pkl"),
+                fragment = str(filename)
+                all_states = sorted(
+                    state_dir.glob("bao_state_*.pkl"),
                     key=lambda p: p.stat().st_mtime,
                     reverse=True,
                 )
+                matches = [
+                    p for p in all_states if fragment in p.name[len("bao_state_") :]
+                ]
                 if not matches:
                     raise FileNotFoundError(
                         f"No saved state found for beam {self.beam} matching '{filename}'"
