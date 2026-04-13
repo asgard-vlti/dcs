@@ -273,8 +273,11 @@ class BackEndServer:
                 continue
 
             try:
+                logging.info(f"Sending to {key}: {cmd_text}")
                 sock.send_string(cmd_text)
                 raw = sock.recv_string()  # commander replies as string (often JSON)
+
+                logging.info(f"Received from {key}: {raw}")
             except Exception as e:
                 errors.append(f"{key}: ZMQ error: {e}")
                 continue
