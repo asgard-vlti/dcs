@@ -716,7 +716,7 @@ class Watchdog:
             ),
             "HDLR": hdlr_zmq,
             "back_end": ZmqReq(
-                "tcp://mimir:7001", timeout_ms=self.watchdog_fast_timeout_ms
+                "tcp://mimir:7002", timeout_ms=self.watchdog_fast_timeout_ms
             ),
         }
 
