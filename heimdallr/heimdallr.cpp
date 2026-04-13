@@ -719,7 +719,7 @@ int main(int argc, char* argv[]) {
     settings.s.offload_gd_gain = 1.0;
     settings.s.servo_mode=SERVO_OFF;
     settings.s.offload_mode=OFFLOAD_OFF;
-    settings.s.delay_line_type="rmn";
+    settings.s.delay_line_type="off";
     settings.s.offload_time_ms=10;
     settings.s.fixed_dl=3;
     settings.s.search_offset = {0.0, 0.0, 0.0, 0.0};

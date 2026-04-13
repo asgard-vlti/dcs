@@ -148,12 +148,14 @@ bool initialize_delay_line(std::string type){
 Eigen::Vector4d center_dls(Eigen::Vector4d dl) {
     if (settings.s.fixed_dl == 0) {
         double mean = dl.mean();
-        return dl - Eigen::Vector4d::Constant(mean);
+        return control_u.beams_active.asDiagonal() * (dl - Eigen::Vector4d::Constant(mean));
     } else if (settings.s.fixed_dl > 0 && settings.s.fixed_dl <= N_TEL) {
         double value = dl(settings.s.fixed_dl - 1);
-        return dl - Eigen::Vector4d::Constant(value);
-    } else {    
-        return dl;
+        return control_u.beams_active.asDiagonal() * (dl - Eigen::Vector4d::Constant(value));
+    } else {   
+        // Not really implemented, but in principle we could have 
+        // no zero mean or a fixed DL. 
+        return control_u.beams_active.asDiagonal() * dl;
     }
 }
 
@@ -336,7 +338,7 @@ void move_main_dl()
     std::string msg = j.dump(); // No newlines
     //fmt::print("Sent to wag: {} \n", j.dump());
 #else
-    std::string msg = fmt::format("simrmn [{:.2f}, {:.2f}, {:.2f}, {:.2f}]", -next_offload(0), -next_offload(1), -next_offload(2), -next_offload(3));
+    std::string msg = fmt::format("simrmn [{:.2f}, {:.2f}, {:.2f}, {:.2f}]", -next_offload(0)-search_offset(0)-mod_offload(0), -next_offload(1)-search_offset(1)-mod_offload(1), -next_offload(2)-search_offset(2)-mod_offload(2), -next_offload(3)-search_offset(3)-mod_offload(3));
 #endif
 
     wag_rmn_socket.send(zmq::buffer(msg), zmq::send_flags::none);

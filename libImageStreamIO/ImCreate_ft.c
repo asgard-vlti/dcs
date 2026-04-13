@@ -19,8 +19,9 @@
  */
 #define SZ 32
 #define NWAVE 11 // Number of wavelengths per bandpass. Must be odd.
-#define DTUS 2000              // Wait 5ms = 5000 microseconds
-#define ATM_DAMPING 4e-5      // Damping factor for atmospheric delay evolution
+#define DT_US 2000              // Wait 2ms = 2000 microseconds
+#define ATM_DAMPING 1e-2      // Damping factor for atmospheric delay evolution
+
 
 #include <math.h>
 #include <stdio.h>
@@ -178,7 +179,7 @@ void* simulate_heimdallr(void *arg)
             atm_delays[kk] *= 1 - ATM_DAMPING;
             atm_delays[kk] += (std::rand()/(double)RAND_MAX - 0.5) * atm_delta * 3.46; //2 * sqrt(3)
         }
-        usleep(DTUS);           // Wait 10ms
+        usleep(DT_US);           // Wait 
     }
     return NULL;
 }
@@ -187,6 +188,12 @@ std::string simrmn(std::vector<double> delays_in) {
     // This function simulates the RMN delay by applying a phase shift based on the input delay.
     // The delay is in microns, and we convert to radians using the K1 wavelength.
     delays = delays_in;
+    // print new delays
+    std::cout << "Updated delays: ";
+    for (size_t i = 0; i < delays.size(); i++) {
+        std::cout << delays[i] << " ";
+    }
+    std::cout << std::endl;
     return "OK";
 }
 
@@ -203,7 +210,7 @@ Status get_status(){
     status.nbreads = 1;
     status.tsig_len = 2;
     status.shm_error = false;
-    status.fps = 1000000/DTUS;
+    status.fps = 1000000/DT_US;
     return status;
 }
 
