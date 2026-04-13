@@ -280,7 +280,6 @@ class BAOServer:
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser(description="BAO ZMQ Server")
     parser.add_argument(
         "--beam", type=int, required=True, help="Beam number to control"
