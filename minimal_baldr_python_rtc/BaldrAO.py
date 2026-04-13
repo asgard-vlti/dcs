@@ -118,13 +118,7 @@ class BaldrAO:
     def servo(self, new_state: str):
         print(f"in servo fn, {new_state}")
         if new_state == "on":
-<<<<<<< HEAD
-            self.wants_to_close = True # TODO: this is the bug... save state must be throwing an error or smth...
-            print()
-            print(f"self.wants_to_close {self.wants_to_close}")
-=======
             self.wants_to_close = True
->>>>>>> 8c531a4365451dfb63f3d6d1d1848210d64a8cf0
             self.save_state("closing_loop")
         else:
             self.wants_to_close = False
@@ -189,16 +183,47 @@ class BaldrAO:
             "leaks": self.parse_block(leaks),
         }
 
-    def create_reconstructor(self, ref_stack_nframes=1000, rcond=1e-3):
+    def create_reconstructor(
+        self,
+        kind="Linear",
+        ref_stack_nframes=1000,
+        rcond=1e-3,
+        amp=0.03,
+        sleep=0.01,
+        n_im=2,
+        n_pokes=10,
+        n_discard=1,
+    ):
         ref = self.take_ref(ref_stack_nframes).flatten()
         print(f"\n making new recon...")
         im = self.take_interaction_matrix(
-            amp=0.03, sleep=0.01, n_im=2, n_discard=1, n_pokes=10
+            amp=amp,
+            sleep=sleep,
+            n_im=n_im,
+            n_discard=n_discard,
+            n_pokes=n_pokes,
         )
         print(f"\n IM has shape {im.shape}")
-        self.recon = AO.LinearReconstructor(im, ref, rcond=rcond)
+
+        if kind == "Linear":
+            self.recon = AO.LinearReconstructor(im, ref, rcond=rcond)
+        elif kind == "PupilAwareLinear":
+            pupil_img = self.take_pupil_img()
+            self.recon = AO.PupilAwareLinearReconstructor(im, pupil_img, rcond=rcond)
 
         print(f"\n made new recon {self.recon}")
+
+    def update_reconstructor_pupil(self):
+        if self.recon is None:
+            raise ValueError("Reconstructor not created yet")
+
+        if not isinstance(self.recon, AO.PupilAwareLinearReconstructor):
+            raise ValueError(
+                "Current reconstructor is not pupil aware, cannot update pupil"
+            )
+
+        sky_pupil_img = self.take_pupil_img()
+        self.recon.update_reference(sky_pupil_img)
 
     def create_controller(self, type="leaky_integrator", L_max=0.1):
         if type == "leaky_integrator":
@@ -326,6 +351,7 @@ class BaldrAO:
             "controller": self.controller,
             "estimator": self.estimator,
             "cam_dark": self.cam.dark,
+            "desc": filename,
         }
         filename_with_time = (
             savepth
@@ -379,4 +405,3 @@ class BaldrAO:
             ),
         }
         return status
-

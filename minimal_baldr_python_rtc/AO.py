@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 
 import utils
 import basis_funcs
+import model
 import consts
 
 
@@ -34,6 +35,61 @@ class LinearReconstructor(Reconstructor):
 
     def reconstruct(self, normed_img):
         return self.recon_matrix @ (normed_img - self.ref)
+
+
+class PupilAwareLinearReconstructor(Reconstructor):
+    def __init__(
+        self,
+        labIM,
+        lab_pupil_img,
+        rcond=1e-3,
+        phasemask_diam=44e-6,
+        wavels=np.linspace(1.5e-6, 1.7e-6, 5),
+    ):
+        """
+        note that all images are assumed to be normed already!!
+        """
+        self.ref = model.create_model_reference(phasemask_diam, lab_pupil_img, wavels)
+
+        self.model_phasemask_diam = phasemask_diam
+        self.model_wavels = wavels
+
+        self.lab_pupil_img = lab_pupil_img
+
+        pupil_center, img_center, cam_grid = utils.fit_pupil_centre(lab_pupil_img)
+        self.pupil_soft_mask = utils.smooth_circle(
+            cam_grid, 9.0, centre=pupil_center - img_center, softening=0.01
+        ).reshape(cam_grid.shape)
+
+        self.labIM = labIM
+
+        self.rcond = rcond
+
+        self.recon_matrix = hcipy.inverse_tikhonov(self.labIM.T, rcond=rcond)
+
+    def update_reference(self, sky_pupil_img):
+        self.ref = model.create_model_reference(
+            self.model_phasemask_diam, sky_pupil_img, self.model_wavels
+        )
+
+        scaling_mask = np.sqrt(sky_pupil_img / self.lab_pupil_img)
+        scaling_mask[self.pupil_soft_mask < 0.5] = 0.0
+        scaling_mask = np.clip(scaling_mask, 0.0, 2.0)
+
+        IM = self.labIM.copy()
+        for i in range(IM.shape[1]):
+            # scale each part of the IM according to the pupil image
+            IM[:, i] *= scaling_mask.flatten()
+
+        self.recon_matrix = hcipy.inverse_tikhonov(IM.T, rcond=self.rcond)
+
+        self.save_arr(IM, self.ref, self.lab_pupil_img, sky_pupil_img)
+
+    def save_arr(self, IM, ref, lab_pupil_img, sky_pupil_img):
+        pth = pathlib.Path(
+            f"~/tmp/baldr_minimal_py/arr_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.npz"
+        ).expanduser()
+        np.savez(pth, IM=IM, ref=ref, lab_pupil_img=lab_pupil_img, sky_pupil_img=sky_pupil_img)
 
 
 class Controller(abc.ABC):
@@ -124,16 +180,7 @@ class StrehlEstimator:
         scattered_flux_mask_r_outer=12.0,
         scattered_flux_mask_r_inner=9.5,
     ):
-        cam_grid = hcipy.make_pupil_grid(32, diameter=32)
-
-        res = opt.minimize(
-            utils.xcor_sum_model,
-            x0=[8, 0, 0],
-            args=((pupil_img, cam_grid, 0.5),),
-            bounds=((8, 8), (-10, 10), (-10, 10)),
-        )
-        img_center = np.array([15.5, 15.5])
-        pupil_center = np.array([res.x[1], res.x[2]]) + img_center
+        pupil_center, img_center, cam_grid = utils.fit_pupil_centre(pupil_img)
 
         scattered_flux_mask = (
             utils.smooth_circle(

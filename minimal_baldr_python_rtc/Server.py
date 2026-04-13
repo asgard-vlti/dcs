@@ -160,7 +160,10 @@ class BAOServer:
                             self.sock.send_string(self._format_result(result))
                     except Exception as exc:
                         self.sock.send_string(f"Error: {exc}")
+                        print()
+                        print(f"Error while executing command '{cmd_name}':")
                         print(exc)
+                        print()
 
             self.BAO.run_iteration()
 
