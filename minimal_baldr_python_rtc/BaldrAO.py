@@ -1,6 +1,7 @@
 from typing import Any, Callable, Optional
 from dataclasses import dataclass, field
 import inspect
+import logging
 
 import numpy as np
 import zmq
@@ -17,6 +18,7 @@ import datetime
 # TODO: saving/loading of class and subclass from pickle
 # TODO: ignore pix in BAO, needs pupil fitting and thinking about that, maybe fine tuning offload to detector
 savepth = pathlib.Path("~/.config/minimal_baldr_rtc/").expanduser()
+logger = logging.getLogger(__name__)
 
 
 class BaldrAO:
@@ -54,24 +56,24 @@ class BaldrAO:
         self.iter += 1
         if self.iter == 1000:
             elapsed = time.time() - self.start_time
-            print(f"\rFPS: {self.iter / elapsed:.2f}", end="")
+            msg = f"FPS: {self.iter / elapsed:.2f}"
             self.iter = 0
             self.start_time = time.time()
-            # print("\t\t", self.estimator.close_threshold, self.estimator.open_threshold)
 
             if self.recon is None:
-                print(" ... no recon", end="")
+                msg += " ... no recon"
 
             if self.controller is None:
-                print(" ... no controller", end="")
+                msg += " ... no controller"
 
             if np.all(np.abs(self.cam.dark) == 0.0):
-                print(" ... no dark", end="")
+                msg += " ... no dark"
 
-            print(
-                f" Close thresh: {self.estimator.close_threshold}, open thresh: {self.estimator.open_threshold}",
-                end="",
+            msg += (
+                f" Close thresh: {self.estimator.close_threshold}, "
+                f"open thresh: {self.estimator.open_threshold}"
             )
+            logger.info(msg)
 
         if self.recon is None or self.controller is None or self.cam.dark is None:
             return
@@ -79,34 +81,37 @@ class BaldrAO:
         normed_img = self.cam.normalise(img).flatten()
         self.last_strehl_est = self.estimator.metric(normed_img)
 
-        # print(self.wants_to_close, self.is_closed, self.last_strehl_est, self.estimator.open_threshold, self.estimator.close_threshold)
-
         if self.wants_to_close:
             if self.is_closed:
                 if self.last_strehl_est < self.estimator.open_threshold:
-                    print(
-                        f"Estimator is {self.last_strehl_est:.2e} (less than open thresh of {self.estimator.open_threshold})"
+                    logger.info(
+                        "Estimator is %.2e (less than open thresh of %s)",
+                        self.last_strehl_est,
+                        self.estimator.open_threshold,
                     )
                     self.is_closed = False
                     self.dm.flatten()
                     self.controller.reset()
             else:
                 if self.last_strehl_est > self.estimator.close_threshold:
-                    print(
-                        f"Estimator is {self.last_strehl_est:.2e} (greater than close thresh of {self.estimator.close_threshold})"
+                    logger.info(
+                        "Estimator is %.2e (greater than close thresh of %s)",
+                        self.last_strehl_est,
+                        self.estimator.close_threshold,
                     )
                     self.is_closed = True
                 else:
                     self.is_closed = False
-                    print(
-                        f"Estimator is {self.last_strehl_est:.2e} (less than close thresh of {self.estimator.close_threshold})"
+                    logger.info(
+                        "Estimator is %.2e (less than close thresh of %s)",
+                        self.last_strehl_est,
+                        self.estimator.close_threshold,
                     )
 
         if self.is_closed:
             # AO time
             error = self.recon.reconstruct(normed_img)
             command = self.controller.compute_command(error)
-            # print(f"error {error[0:2]}, cmd: {command[0:2]}")
             self.dm.set_data(command)
 
     def set_open_threshold(self, new_thresh):
@@ -116,7 +121,7 @@ class BaldrAO:
         self.estimator.close_threshold = float(new_thresh)
 
     def servo(self, new_state: str):
-        print(f"in servo fn, {new_state}")
+        logger.info("in servo fn, %s", new_state)
         if new_state == "on":
             self.wants_to_close = True
             self.save_state("closing_loop")
@@ -195,7 +200,7 @@ class BaldrAO:
         n_discard=1,
     ):
         ref = self.take_ref(ref_stack_nframes).flatten()
-        print(f"\n making new recon...")
+        logger.info("making new recon...")
         im = self.take_interaction_matrix(
             amp=amp,
             sleep=sleep,
@@ -203,7 +208,7 @@ class BaldrAO:
             n_discard=n_discard,
             n_pokes=n_pokes,
         )
-        print(f"\n IM has shape {im.shape}")
+        logger.info("IM has shape %s", im.shape)
 
         if kind == "Linear":
             self.recon = AO.LinearReconstructor(im, ref, rcond=rcond)
@@ -211,7 +216,7 @@ class BaldrAO:
             pupil_img = self.take_pupil_img()
             self.recon = AO.PupilAwareLinearReconstructor(im, pupil_img, rcond=rcond)
 
-        print(f"\n made new recon {self.recon}")
+        logger.info("made new recon %s", self.recon)
 
     def update_reconstructor_pupil(self):
         if self.recon is None:
@@ -239,7 +244,7 @@ class BaldrAO:
                 leaks=np.full(self.dm.n_acts, 0.99, dtype=float),
                 L_max=L_max,
             )
-        print(f"\n made new controller {self.controller}")
+        logger.info("made new controller %s", self.controller)
 
     def _parse_indices(self, idxs):
         if isinstance(idxs, str):
@@ -285,8 +290,7 @@ class BaldrAO:
 
         for idx, value in zip(idxs, values):
             gains[idx] = value
-
-            print(f"\n set gain of mode {idx} to {value}")
+            logger.info("set gain of mode %s to %s", idx, value)
 
     def set_leaks(self, idxs, values):
         """
@@ -302,8 +306,7 @@ class BaldrAO:
 
         for idx, value in zip(idxs, values):
             leaks[idx] = value
-
-            print(f"\n set leak of mode {idx} to {value}")
+            logger.info("set leak of mode %s to %s", idx, value)
 
     def take_interaction_matrix(
         self,
@@ -384,8 +387,8 @@ class BaldrAO:
         with open(filename_with_time, "rb") as f:
             state = pickle.load(f)
 
-        print(f"\nread from {filename_with_time}")
-        print(state)
+        logger.info("read from %s", filename_with_time)
+        logger.debug("loaded state: %s", state)
 
         self.recon = state["recon"]
         self.controller = state["controller"]

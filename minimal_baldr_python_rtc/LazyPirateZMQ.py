@@ -1,8 +1,12 @@
 import zmq
 import sys
+import logging
 
 REQUEST_TIMEOUT_MS = 1000  # Time to wait for a reply before retrying
 REQUEST_RETRIES = 3  # Number of times to retry before giving up
+
+
+logger = logging.getLogger(__name__)
 
 
 class ZmqLazyPirateClient:
@@ -24,15 +28,19 @@ class ZmqLazyPirateClient:
             if self.socket.poll(self.timeout_ms, zmq.POLLIN):
                 return self.socket.recv_string().strip()
 
-            print(
-                f"WARN: Timeout waiting for reply to '{message}' "
-                f"(attempt {attempt}/{retries})."
+            logger.warning(
+                "Timeout waiting for reply to '%s' (attempt %s/%s).",
+                message,
+                attempt,
+                retries,
             )
             self.socket.close()
             self.socket = self._create_socket()
 
-        print(
-            f"ERROR: No reply from ADC server after {retries} attempts for '{message}'."
+        logger.error(
+            "No reply from ADC server after %s attempts for '%s'.",
+            retries,
+            message,
         )
         sys.exit(1)
 

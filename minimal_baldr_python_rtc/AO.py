@@ -8,6 +8,7 @@ import datetime
 import glob
 import hcipy
 import abc
+import logging
 
 import pathlib
 import scipy.optimize as opt
@@ -20,6 +21,8 @@ import utils
 import basis_funcs
 import model
 import consts
+
+logger = logging.getLogger(__name__)
 
 
 class Reconstructor:
@@ -89,7 +92,13 @@ class PupilAwareLinearReconstructor(Reconstructor):
         pth = pathlib.Path(
             f"~/tmp/baldr_minimal_py/arr_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.npz"
         ).expanduser()
-        np.savez(pth, IM=IM, ref=ref, lab_pupil_img=lab_pupil_img, sky_pupil_img=sky_pupil_img)
+        np.savez(
+            pth,
+            IM=IM,
+            ref=ref,
+            lab_pupil_img=lab_pupil_img,
+            sky_pupil_img=sky_pupil_img,
+        )
 
 
 class Controller(abc.ABC):
@@ -225,8 +234,8 @@ class StrehlEstimator:
 
     def set_open_threshold(self, new_threshold):
         self.open_threshold = new_threshold
-        print(f"Close: {self.close_threshold}, open: {self.open_threshold}")
+        logger.info("Close: %s, open: %s", self.close_threshold, self.open_threshold)
 
     def set_close_threshold(self, new_threshold):
         self.close_threshold = new_threshold
-        print(f"Close: {self.close_threshold}, open: {self.open_threshold}")
+        logger.info("Close: %s, open: %s", self.close_threshold, self.open_threshold)

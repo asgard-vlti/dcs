@@ -6,6 +6,7 @@ import os
 import argparse
 import datetime
 import glob
+import logging
 
 from xaosim.shmlib import shm
 from asgard_alignment.DM_shm_ctrl import dmclass
@@ -14,6 +15,8 @@ import matplotlib.pyplot as plt
 
 import basis_funcs
 import consts
+
+logger = logging.getLogger(__name__)
 
 
 class DM:
@@ -38,12 +41,12 @@ class DM:
         self.shms = []
         for ii in range(self.nch):
             self.shms.append(shm(self.shmfs[ii], nosem=False))
-            print(f"added: {self.shmfs[ii]}")
+            logger.info("added: %s", self.shmfs[ii])
         # actual combined shared memory
         if self.nch != 0:
             self.shm0 = shm(self.shmf0, nosem=False)
         else:
-            print("Shared memory structures unavailable. DM server started?")
+            logger.warning("Shared memory structures unavailable. DM server started?")
 
         if basis is not None:
             self.basis = basis

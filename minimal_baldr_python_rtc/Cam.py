@@ -6,6 +6,7 @@ import os
 import argparse
 import datetime
 import glob
+import logging
 
 from xaosim.shmlib import shm
 from asgard_alignment.DM_shm_ctrl import dmclass
@@ -13,6 +14,8 @@ from asgard_alignment import FLI_Cameras as FLI
 import matplotlib.pyplot as plt
 
 import basis_funcs
+
+logger = logging.getLogger(__name__)
 
 
 class Cam:
@@ -96,10 +99,14 @@ class Cam:
         stddev_pix = dark_stack.std(axis=0) > stddev_threshold
 
         self.bad_pixels = np.argwhere(hot_pix | stddev_pix)
-        print(f"Identified {len(self.bad_pixels)} bad pixels")
+        logger.info("Identified %s bad pixels", len(self.bad_pixels))
         for x, y in self.bad_pixels:
-            print(
-                f"  ({x}, {y}) with dark value {self.dark[x,y]:.1f} and stddev {dark_stack[:,x,y].std():.1f}"
+            logger.debug(
+                "  (%s, %s) with dark value %.1f and stddev %.1f",
+                x,
+                y,
+                self.dark[x, y],
+                dark_stack[:, x, y].std(),
             )
 
     def normalise(self, stack):
