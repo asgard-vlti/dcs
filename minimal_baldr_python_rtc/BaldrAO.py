@@ -145,6 +145,7 @@ class BaldrAO:
         time.sleep(3)
         pupil = self.cam.take_stack(256).mean(0)
         self.MDS.send_and_recv(f"movrel BMX{self.beam} 200.0")
+        time.sleep(1)
         return pupil
 
     def update_estimator_mask(
