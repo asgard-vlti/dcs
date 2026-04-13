@@ -41,6 +41,7 @@ class LinearReconstructor(Reconstructor):
 
 
 class PupilAwareLinearReconstructor(Reconstructor):
+
     def __init__(
         self,
         labIM,
@@ -52,6 +53,9 @@ class PupilAwareLinearReconstructor(Reconstructor):
         """
         note that all images are assumed to be normed already!!
         """
+        if isinstance(lab_pupil_img, np.ndarray):
+            lab_pupil_img = self.img_to_hcfield(lab_pupil_img)
+
         self.ref = model.create_model_reference(phasemask_diam, lab_pupil_img, wavels)
 
         self.model_phasemask_diam = phasemask_diam
@@ -70,7 +74,14 @@ class PupilAwareLinearReconstructor(Reconstructor):
 
         self.recon_matrix = hcipy.inverse_tikhonov(self.labIM.T, rcond=rcond)
 
+    def img_to_hcfield(self, img):
+        # convert a 2D image to an hcipy Field, using the same grid as the model reference
+        return hcipy.Field(img.flatten(), model.detector_grid)
+
     def update_reference(self, sky_pupil_img):
+        if isinstance(sky_pupil_img, np.ndarray):
+            sky_pupil_img = self.img_to_hcfield(sky_pupil_img)
+
         self.ref = model.create_model_reference(
             self.model_phasemask_diam, sky_pupil_img, self.model_wavels
         )

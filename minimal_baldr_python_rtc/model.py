@@ -3,7 +3,9 @@ import numpy as np
 
 num_pupil_pixels = 256
 lab_diam = 12e-3
-pupil_grid_lab = hcipy.make_pupil_grid(num_pupil_pixels, 2 * lab_diam)
+pupil_grid_diameter = 2 * lab_diam
+pupil_grid_lab = hcipy.make_pupil_grid(num_pupil_pixels, pupil_grid_diameter)
+detector_grid = hcipy.make_pupil_grid(32, diameter=pupil_grid_diameter)
 
 
 def pupil_img_to_supersample(pupil_img):
