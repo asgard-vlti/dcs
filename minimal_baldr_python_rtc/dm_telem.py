@@ -16,6 +16,7 @@ import astropy.io.fits as pf
 from xaosim.shmlib import shm
 import argparse
 import sys
+import time
 import datetime
 import os
 
@@ -61,24 +62,35 @@ def main():
 
 def _save_cube(target, nbframes, beam, cube_count):
     now = datetime.datetime.utcnow()
+    start=time.time()
 
     # --------
     stream = shm(target, nosem=False)
     ys, xs = stream.mtdata["y"], stream.mtdata["x"]
     dcube = np.zeros((nbframes, ys, xs))
 
+    print("starting saving cube")
+
     semid = 5
     stream.catch_up_with_sem(semid)
+
+    counter = stream.get_counter()
 
     if stream.mtdata["naxis"] == 3:
         for ii in range(nbframes):
             dcube[ii] = stream.get_latest_data_slice(semid)
     else:
+        print("Case naxis neq 3")
         for ii in range(nbframes):
-            dcube[ii] = stream.get_latest_data(semid)
+            print(ii)
+            # dcube[ii] = stream.get_latest_data(semid)
+            dcube[ii] = stream.get_data(check=counter)
+            counter = stream.get_counter()
+
+    print(f"Saving FPS: {nbframes/(time.time()-start)}")
 
     # --------
-    sdir = f"/home/asg/data/{now.year}{now.month:02d}{now.day:02d}/dm_telem/"
+    sdir = f"/data/{now.year}{now.month:02d}{now.day:02d}/dm_telem/"
     if not os.path.exists(sdir):
         os.makedirs(sdir)
 
