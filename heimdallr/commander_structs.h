@@ -31,10 +31,6 @@ template <> struct adl_serializer<Status> {
         j["v2_K2"] = p.v2_K2;
         j["dl_offload"] = p.dl_offload;
         j["dm_piston"] = p.dm_piston;
-        j["pd_av"] = p.pd_av;
-        j["pd_av_filtered"] = p.pd_av_filtered;
-        j["gd_phasor_real"] = p.gd_phasor_real;
-        j["gd_phasor_imag"] = p.gd_phasor_imag;
         j["test_ix"] = p.test_ix;
         j["test_n"] = p.test_n;
         j["cnt"] = p.cnt;
@@ -56,10 +52,6 @@ template <> struct adl_serializer<Status> {
         j.at("v2_K2").get_to(p.v2_K2);
         j.at("dl_offload").get_to(p.dl_offload);
         j.at("dm_piston").get_to(p.dm_piston);
-        j.at("pd_av").get_to(p.pd_av);
-        j.at("pd_av_filtered").get_to(p.pd_av_filtered);
-        j.at("gd_phasor_real").get_to(p.gd_phasor_real);
-        j.at("gd_phasor_imag").get_to(p.gd_phasor_imag);
         j.at("test_ix").get_to(p.test_ix);
         j.at("test_n").get_to(p.test_n);
         j.at("cnt").get_to(p.cnt);

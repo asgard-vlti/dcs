@@ -8,8 +8,8 @@
 // Group delay is in wavelengths at 2.05 microns. Need 0.5 waves to be 2.5 sigma.
 #define GD_MAX_VAR_FOR_JUMP 0.2*0.2
 #define GD_MIN_REAL_VAR 1E-6
-#define N_MOD 14
-#define MODULATION_AMPLITUDE 30.0 
+#define N_MOD 6 //14
+#define MODULATION_AMPLITUDE 25.0 
 
 using namespace std::complex_literals;
 
@@ -33,11 +33,18 @@ Eigen::Matrix<double, N_TEL, N_TEL> singularDiag = Eigen::Matrix<double, N_TEL, 
 Eigen::Matrix4d I4 = Eigen::Matrix4d::Identity();
 
 // A constant N_TEL x N_MOD matrix for modulation, and an equivalent for baselines.
-Eigen::Matrix<double, N_TEL, N_MOD> modulation_matrix = (Eigen::Matrix<double, N_TEL, N_MOD>() <<
+/*Eigen::Matrix<double, N_TEL, N_MOD> modulation_matrix = (Eigen::Matrix<double, N_TEL, N_MOD>() <<
     1,0,0,1,1,0,0,0,1,0,1,1,1,0,
     0,1,0,1,1,0,0,1,0,1,0,1,0,1,
     0,0,1,0,1,0,1,0,0,1,1,0,1,1,    
-    1,1,1,1,0,1,0,0,0,1,1,0,0,0).finished();
+    1,1,1,1,0,1,0,0,0,1,1,0,0,0).finished();*/
+Eigen::Matrix<double, N_TEL, N_MOD> modulation_matrix = (Eigen::Matrix<double, N_TEL, N_MOD>() <<
+    1,0,0,1,0,1,
+    0,1,1,0,0,1,
+    0,1,0,1,0,1,   
+    0,1,0,1,1,0).finished();
+double bmodn[6] = {2,1,2,1,2,1};
+double bzn[6] = {2,4,2,4,2,4}; 
 
 Eigen::Matrix<double, N_BL, N_MOD> bl_modulation_matrix = M_lacour * modulation_matrix;
 // Saving SNR during the modulation.
@@ -101,15 +108,19 @@ double sinc_normalized(double x) {
 
 void start_modulation() {
     // This function starts the modulation by setting the first modulation pattern.
+    while(gd_ix != 0){
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
+    }
     mod_ix = 0;
-    gd_ix = 0;
     set_mod(MODULATION_AMPLITUDE * modulation_matrix.col(mod_ix));
+    sem_post(&sem_offload);
 }
 
 void end_modulation() {
     // This function starts the modulation by setting the first modulation pattern.
     mod_ix = 0;
     set_mod(Eigen::Vector4d::Zero());
+    sem_post(&sem_offload);
 }
 
 void set_dm_piston(Eigen::Vector4d dm_piston){
@@ -134,6 +145,7 @@ void set_dm_piston(Eigen::Vector4d dm_piston){
 // Initialise variables assocated with baselines, including 
 // bispectra.
 void initialise_baselines(){
+    debug("BL Modulation matrix:\n%s", log_stringify(bl_modulation_matrix).c_str());
     cnt_since_init = 0;
     Wpd.setZero();
     Wgd.setZero();
@@ -145,17 +157,13 @@ void initialise_baselines(){
     baselines.pd.setZero();
     baselines.gd_snr.setZero();
     baselines.pd_snr.setZero();
+    // This also sets to zero.
     baselines.set_gd_boxcar(INIT_N_GD_BOXCAR);
     baselines.n_pd_boxcar=MAX_N_PD_BOXCAR;
     baselines.pd_phasor.setZero();
     baselines.pd_phasor_boxcar_avg.setZero();
     baselines.pd_av_filtered.setZero();
     baselines.pd_av.setZero();
-
-    // Reset the boxcar averages
-    //for (int i=0; i<baselines.n_gd_boxcar; i++){
-    //    baselines.gd_phasor_boxcar[i].setZero();
-    //}
 
     for (unsigned int i=0; i<baselines.n_pd_boxcar; i++){
         baselines.pd_phasor_boxcar[i].setZero();
@@ -344,7 +352,7 @@ void fringe_tracker(){
         }
         // Check for missed frames
         if (K1ft->cnt > ft_cnt+2 || K2ft->cnt > ft_cnt+2){
-            info("Missed FT frames! K1: %lu K2: %lu FT: %lu",
+            warn("Missed FT frames! K1: %lu K2: %lu FT: %lu",
                 K1ft->cnt, K2ft->cnt, ft_cnt);
             // Catch up!
             while (sem_trywait(&K1ft->sem_new_frame)==0);
@@ -390,6 +398,8 @@ void fringe_tracker(){
 
             // Compute the group delay - units of wavelengths at K1
             baselines.gd_phasor(bl) -= baselines.gd_phasor_boxcar[gd_ix](bl);
+            baselines.gd_phasor_boxcar[gd_ix](bl) = 
+                    K1_phasor[bl] * std::conj(K2_phasor[bl]);
             if (settings.s.offload_mode == OFFLOAD_MOD){
                 // In mod mode, we skip the first frames of the boxcar.
                 int dit_per_offload = 0.001 * settings.s.offload_time_ms / control_u.dit;
@@ -398,10 +408,7 @@ void fringe_tracker(){
                 if (gd_ix < dit_per_offload){
                     baselines.gd_phasor_boxcar[gd_ix](bl) = 0;
                 }
-            } else {
-                baselines.gd_phasor_boxcar[gd_ix](bl) = 
-                    K1_phasor[bl] * std::conj(K2_phasor[bl]);
-            }
+            } 
             baselines.gd_phasor(bl) += baselines.gd_phasor_boxcar[gd_ix](bl);  
             baselines.gd(bl) = std::arg(baselines.gd_phasor(bl)*baselines.gd_phasor_offset(bl)) * gd_to_K1;
 
@@ -429,10 +436,10 @@ void fringe_tracker(){
             // The GD_phasor has a variance sqrt(baselines[bl].n_gd_boxcar) larger than a
             // single phasor, so we need to divide by that. 
             baselines.gd_snr(bl) = std::fabs(baselines.gd_phasor(bl))/
-                std::sqrt(K1ft->power_spectrum_bias * K2ft->power_spectrum_bias + 
-                (K1ft->power_spectrum[y_px*stride + x_px] - K1ft->power_spectrum_bias)*K2ft->power_spectrum_bias +
-                (K2ft->power_spectrum[y_px*stride + x_px] - K2ft->power_spectrum_bias)*K1ft->power_spectrum_bias)/
-                std::sqrt(baselines.n_gd_boxcar);    
+                std::sqrt(K1ft->power_spectrum_bias * K2ft->power_spectrum_bias)// + 
+                //(K1ft->power_spectrum[y_px*stride + x_px] - K1ft->power_spectrum_bias)*K2ft->power_spectrum_bias +
+                //(K2ft->power_spectrum[y_px*stride + x_px] - K2ft->power_spectrum_bias)*K1ft->power_spectrum_bias)
+                /std::sqrt(baselines.n_gd_boxcar);    
                 
             // Set the weight matriix (bl,bl) to the square of the SNR, unless 
             // the SNR is too low, in which case we set it to zero.
@@ -618,12 +625,11 @@ void fringe_tracker(){
         if ((settings.s.offload_mode == OFFLOAD_MOD) && (gd_ix == (int)baselines.n_gd_boxcar-1)){
             // In mod mode, we fill the group delay SNR matrix.
             gd_snr_during_mod.col(mod_ix) = baselines.gd_snr;
-            info("%s", log_stringify(baselines.gd_snr.transpose()).c_str());
             mod_ix = (mod_ix + 1) % N_MOD;
             set_mod(MODULATION_AMPLITUDE * modulation_matrix.col(mod_ix));
-            // DEBUG
-            info("Modulating: %s", log_stringify(modulation_matrix.col(mod_ix).transpose()).c_str());
             if (mod_ix==0){
+                // Print out the full saved gd_snr.
+                debug("GD SNR during mod:\n%s", log_stringify(gd_snr_during_mod).c_str());
                 // Now find the fringe peak. We iterate over baselines, 
                 // and accumulate the SNR for zero, plus and minus modulation.
                 Eigen::Matrix<double, N_BL, 1> delays;
@@ -639,29 +645,28 @@ void fringe_tracker(){
                         else if (bl_modulation_matrix(bl,ix) == 1) snr_plus += gd_snr_during_mod(bl,ix);
                         else if (bl_modulation_matrix(bl,ix) == -1) snr_minus += gd_snr_during_mod(bl,ix);
                     }
-                    snr_zero /= 6; //!!! Hardwired.
-                    snr_plus /= 4;
-                    snr_minus /= 4;
+                    snr_zero /= bzn[bl]; //!!! 6 for N_MOD=14
+                    snr_plus /= bmodn[bl]; //!!! 4 for N_MOD=14
+                    snr_minus /= bmodn[bl]; //!!! 4 for N_MOD=14
                     // DEBUG
-                    info("%.1f %.1f %.1f", snr_minus, snr_zero, snr_plus);
+                    debug("%.1f %.1f %.1f", snr_minus, snr_zero, snr_plus);
                     // Find max SNR and corresponding delay.
                     double max_snr = std::max({snr_zero, snr_plus, snr_minus});
                     if (max_snr > settings.s.gd_threshold){
                         valid(bl) = 1;
-                        if (max_snr == snr_plus) delays(bl) = MODULATION_AMPLITUDE;
-                        else if (max_snr == snr_minus) delays(bl) = -MODULATION_AMPLITUDE;
+                        if (max_snr == snr_plus) delays(bl) = -MODULATION_AMPLITUDE;
+                        else if (max_snr == snr_minus) delays(bl) = MODULATION_AMPLITUDE;
                     }
                 }
                 // Create a new pseudo-inverse matrix, and multiply the group delay 
                 // by this to find the new control signal. There is regularisation just like
                 // the normal fringe tracking above.
-                //DEBUG 
-                info("Delays: %s", log_stringify(delays.transpose()).c_str());
-                info("Valid: %s", log_stringify(valid.transpose()).c_str());
+                debug("Delays: %s", log_stringify(delays.transpose()).c_str());
+                debug("Valid: %s", log_stringify(valid.transpose()).c_str());
                 I6gd = M_lacour * make_pinv(valid, 0) * M_lacour.transpose() * valid.asDiagonal();
                 control_u.dl_offload = M_lacour_dag * I6gd * delays;
-                info("Regularised: %s", log_stringify((I6gd * delays).transpose()).c_str());
-                info("Telescope Space: %s", log_stringify(control_u.dl_offload.transpose()).c_str());
+                debug("Regularised: %s", log_stringify((I6gd * delays).transpose()).c_str());
+                debug("Telescope Space: %s", log_stringify(control_u.dl_offload.transpose()).c_str());
                 add_to_delay_lines(control_u.search - control_u.dl_offload);
             }
         } else if (time_since_last_offload_ms > settings.s.offload_time_ms) {
