@@ -439,6 +439,28 @@ class BaldrAO:
         if "cam_dark" in state:
             self.cam.dark = np.asarray(state["cam_dark"])
 
+    def save_img_vs_ref(self):
+        if self.recon is None:
+            raise ValueError("Reconstructor not created yet")
+
+        img = self.cam.get_img()
+        normed_img = self.cam.normalise(img).flatten()
+        ref = self.recon.ref
+
+        diff = normed_img - ref
+
+        save_dir = savepth / f"beam_{self.beam}" / "img_vs_ref"
+        save_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat(
+            timespec="seconds"
+        )
+        np.savez(
+            save_dir / f"img_vs_ref_{timestamp}.npz",
+            img=normed_img,
+            ref=ref,
+            diff=diff,
+        )
+
     def get_status(self):
         status = {
             "servo": "on" if self.is_closed else "off",

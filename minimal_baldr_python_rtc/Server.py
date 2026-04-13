@@ -164,6 +164,11 @@ class BAOServer:
                 func=self.BAO.get_settings,
                 is_short=True,
             ),
+            "save_img_vs_ref": Command(
+                info="Save the current image, reference and their difference for debugging purposes",
+                func=self.BAO.save_img_vs_ref,
+                is_short=True,
+            ),
             "command_names": Command(
                 info="command_names - list all available commands",
                 func=lambda: json.dumps(
