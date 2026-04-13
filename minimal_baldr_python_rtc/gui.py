@@ -324,7 +324,10 @@ class GainLeakWindow(QMainWindow):
 
         display_text = self._format_threshold(value, scientific_notation)
         edit.setText(display_text)
-        self._send_command(f"{command_name} {value:.3f}")
+        if scientific_notation:
+            self._send_command(f"{command_name} {value:.3e}")
+        else:
+            self._send_command(f"{command_name} {value:.3f}")
 
     def _on_servo_toggled(self, state: int):
         servo_state = "on" if state == Qt.Checked else "off"
