@@ -153,10 +153,10 @@ std::string set_offload_mode(std::string mode) {
     if (mode == "off") {
         settings.s.offload_mode = OFFLOAD_OFF;
     } else if (settings.s.delay_line_type == "off"){
+        settings.mutex.unlock();
         return 
             "ERROR: Can not offload when dl_type is ""off"".";
-    } 
-    if ((mode == "nested") || (mode == "nest")) {
+    } else if ((mode == "nested") || (mode == "nest")) {
         settings.s.offload_mode = OFFLOAD_NESTED;
         // Reset the offload to zero.
         control_u.dl_offload.setZero();
@@ -690,7 +690,7 @@ int main(int argc, char* argv[]) {
     settings.s.offload_gd_gain = 1.0;
     settings.s.servo_mode=SERVO_OFF;
     settings.s.offload_mode=OFFLOAD_OFF;
-    settings.s.delay_line_type="rmn";
+    settings.s.delay_line_type="off";
     settings.s.offload_time_ms=10;
     settings.s.fixed_dl=3;
     settings.s.search_offset = {0.0, 0.0, 0.0, 0.0};

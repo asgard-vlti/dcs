@@ -333,7 +333,7 @@ void move_main_dl()
     std::string msg = j.dump(); // No newlines
     //fmt::print("Sent to wag: {} \n", j.dump());
 #else
-    std::string msg = fmt::format("simrmn [{:.2f}, {:.2f}, {:.2f}, {:.2f}]", -next_offload(0), -next_offload(1), -next_offload(2), -next_offload(3));
+    std::string msg = fmt::format("simrmn [{:.2f}, {:.2f}, {:.2f}, {:.2f}]", -next_offload(0)-search_offset(0)-mod_offload(0), -next_offload(1)-search_offset(1)-mod_offload(1), -next_offload(2)-search_offset(2)-mod_offload(2), -next_offload(3)-search_offset(3)-mod_offload(3));
 #endif
 
     wag_rmn_socket.send(zmq::buffer(msg), zmq::send_flags::none);
