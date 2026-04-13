@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QPushButton,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -116,13 +117,18 @@ class GuiConfig:
 class CommandSender:
     def __init__(self, beam: int, simulation: bool):
         self.simulation = simulation
+        self.beam = beam
         self.client: Optional[ZmqLazyPirateClient] = None
         self.context: Optional[zmq.Context] = None
 
         if not self.simulation:
-            endpoint = f"tcp://mimir:{BEAM_TO_PORT[beam]}"
-            self.context = zmq.Context.instance()
-            self.client = ZmqLazyPirateClient(self.context, endpoint)
+            self._init_client()
+
+    def _init_client(self):
+        """Initialize or reinitialize the ZMQ client."""
+        endpoint = f"tcp://mimir:{BEAM_TO_PORT[self.beam]}"
+        self.context = zmq.Context.instance()
+        self.client = ZmqLazyPirateClient(self.context, endpoint)
 
     def send(self, command: str) -> str:
         if self.simulation:
@@ -131,6 +137,12 @@ class CommandSender:
         if self.client is None:
             raise RuntimeError("Command client is not initialised")
         return self.client.send_and_recv(command)
+
+    def reconnect(self):
+        """Attempt to reconnect to the server."""
+        if not self.simulation:
+            self.close()
+            self._init_client()
 
     def close(self):
         if self.client is not None:
@@ -150,6 +162,9 @@ class GainLeakWindow(QMainWindow):
         self.blocks = blocks
         self.defaults = defaults
         self.cmd_sender = sender
+        self.connected = True
+        self.control_widgets: list[QWidget] = []  # Track widgets to enable/disable
+
         if title:
             self.setWindowTitle(title)
         else:
@@ -159,11 +174,27 @@ class GainLeakWindow(QMainWindow):
 
         main_layout = QVBoxLayout()
 
+        # Top connection control bar
+        conn_layout = QHBoxLayout()
+        self.reconnect_button = self._create_button(
+            "Reconnect", self._on_reconnect, enabled=False
+        )
+        conn_layout.addWidget(self.reconnect_button)
+
+        self.push_all_button = self._create_button("Push All", self._on_push_all)
+        conn_layout.addWidget(self.push_all_button)
+        conn_layout.addStretch(1)
+
+        self.connection_status = QLabel("Connected")
+        conn_layout.addWidget(self.connection_status)
+        main_layout.addLayout(conn_layout)
+
         controls_layout = QHBoxLayout()
         self.servo_checkbox = QCheckBox("Servo")
         self.servo_checkbox.setChecked(self.defaults.servo_on)
         self.servo_checkbox.stateChanged.connect(self._on_servo_toggled)
         controls_layout.addWidget(self.servo_checkbox)
+        self.control_widgets.append(self.servo_checkbox)
 
         self.close_thresh_edit = self._create_numeric_command_edit(
             command_name="set_close_threshold",
@@ -173,6 +204,7 @@ class GainLeakWindow(QMainWindow):
         )
         controls_layout.addWidget(QLabel("Close"))
         controls_layout.addWidget(self.close_thresh_edit)
+        self.control_widgets.append(self.close_thresh_edit)
 
         self.open_thresh_edit = self._create_numeric_command_edit(
             command_name="set_open_threshold",
@@ -182,6 +214,7 @@ class GainLeakWindow(QMainWindow):
         )
         controls_layout.addWidget(QLabel("Open"))
         controls_layout.addWidget(self.open_thresh_edit)
+        self.control_widgets.append(self.open_thresh_edit)
         controls_layout.addStretch(1)
         main_layout.addLayout(controls_layout)
 
@@ -194,10 +227,19 @@ class GainLeakWindow(QMainWindow):
         for block in self.blocks:
             block_widget = self._create_block_widget(block)
             sliders_layout.addWidget(block_widget)
+            self.control_widgets.append(block_widget)
 
         self._initialise_system_defaults()
 
         central.setLayout(main_layout)
+
+    @staticmethod
+    def _create_button(text: str, callback, enabled: bool = True):
+        """Create a styled button."""
+        button = QPushButton(text)
+        button.clicked.connect(callback)
+        button.setEnabled(enabled)
+        return button
 
     def _create_block_widget(self, block: ModeBlock) -> QWidget:
         widget = QWidget(self)
@@ -327,8 +369,50 @@ class GainLeakWindow(QMainWindow):
         try:
             response = self.cmd_sender.send(command)
             self.status_label.setText(f"{command} -> {response}")
+            # If we were disconnected and send succeeds, reconnect
+            if not self.connected:
+                self._set_connected(True)
         except Exception as exc:
             self.status_label.setText(f"Command failed: {exc}")
+            if self.connected:
+                self._set_connected(False)
+
+    def _set_connected(self, connected: bool):
+        """Update the connection state and UI."""
+        self.connected = connected
+
+        if connected:
+            self.connection_status.setText("Connected")
+            self.reconnect_button.setEnabled(False)
+            self._set_controls_enabled(True)
+        else:
+            self.connection_status.setText("Disconnected")
+            self.reconnect_button.setEnabled(True)
+            self._set_controls_enabled(False)
+
+    def _set_controls_enabled(self, enabled: bool):
+        """Enable or disable all control widgets."""
+        for widget in self.control_widgets:
+            widget.setEnabled(enabled)
+        self.close_thresh_edit.setEnabled(enabled)
+        self.open_thresh_edit.setEnabled(enabled)
+        self.push_all_button.setEnabled(enabled)
+
+    def _on_reconnect(self):
+        """Handle reconnect button press."""
+        try:
+            self.cmd_sender.reconnect()
+            self.status_label.setText("Attempting to reconnect...")
+            self._initialise_system_defaults()
+            self._set_connected(True)
+            self.status_label.setText("Reconnected and state pushed")
+        except Exception as exc:
+            self.status_label.setText(f"Reconnect failed: {exc}")
+
+    def _on_push_all(self):
+        """Push the complete current state to the server."""
+        self.status_label.setText("Pushing all state to server...")
+        self._initialise_system_defaults()
 
 
 def _parse_float_default(defaults: dict, key: str, fallback: float) -> float:
