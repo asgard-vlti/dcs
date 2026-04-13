@@ -373,9 +373,8 @@ int main(int argc, char* argv[]) {
         if (ifs.is_open()) {
             int px_file, py_file;
             if (ifs >> px_file >> py_file) {
-                settings.s.px = px_file;
-                settings.s.py = py_file;
                 info("Loaded px=%d py=%d from %s", px_file, py_file, tt_file.c_str());
+                set_pxy(px_file, py_file);
             }
         }
     }
