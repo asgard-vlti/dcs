@@ -186,6 +186,7 @@ class BaldrAO:
         gains = getattr(self.controller, "gains")
         leaks = getattr(self.controller, "leaks")
         return {
+            "controller_type": type(self.controller).__name__,
             "gains": self.parse_block(gains),
             "leaks": self.parse_block(leaks),
         }
@@ -376,15 +377,33 @@ class BaldrAO:
         except ValueError:
             pass
 
+        state_dir = savepth / f"beam_{self.beam}"
+
         if isinstance(filename, int):
             files = sorted(
-                (savepth / f"beam_{self.beam}").glob("bao_state_*.pkl"), reverse=True
+                state_dir.glob("bao_state_*.pkl"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
             )
             if not files:
                 raise FileNotFoundError(f"No saved states found for beam {self.beam}")
             filename_with_time = files[filename]
         else:
-            filename_with_time = savepth / f"beam_{self.beam}" / filename
+            # Support either a full filename or a base description used by save_state.
+            candidate = state_dir / filename
+            if candidate.exists():
+                filename_with_time = candidate
+            else:
+                matches = sorted(
+                    state_dir.glob(f"bao_state_{filename}_*.pkl"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+                if not matches:
+                    raise FileNotFoundError(
+                        f"No saved state found for beam {self.beam} matching '{filename}'"
+                    )
+                filename_with_time = matches[0]
 
         with open(filename_with_time, "rb") as f:
             state = pickle.load(f)
