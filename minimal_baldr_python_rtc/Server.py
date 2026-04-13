@@ -159,6 +159,11 @@ class BAOServer:
                 func=self.BAO.get_controller_params,
                 is_short=True,
             ),
+            "settings": Command(
+                info="Get current settings of the system (gains, thresholds, etc.)",
+                func=self.BAO.get_settings,
+                is_short=True,
+            ),
             "command_names": Command(
                 info="command_names - list all available commands",
                 func=lambda: json.dumps(

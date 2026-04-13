@@ -446,3 +446,20 @@ class BaldrAO:
             ),
         }
         return status
+
+    def get_settings(self):
+        settings = {
+            "open_threshold": self.estimator.open_threshold if self.estimator else None,
+            "close_threshold": (
+                self.estimator.close_threshold if self.estimator else None
+            ),
+            "L_max": self.L_max,
+            "controller_type": (
+                type(self.controller).__name__ if self.controller else None
+            ),
+            "controller_settings": (
+                self.get_controller_params() if self.controller else None
+            ),
+            "reconstructor_type": type(self.recon).__name__ if self.recon else None,
+        }
+        return settings
