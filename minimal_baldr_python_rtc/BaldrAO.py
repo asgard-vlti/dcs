@@ -112,6 +112,7 @@ class BaldrAO:
             # AO time
             error = self.recon.reconstruct(normed_img)
             command = self.controller.compute_command(error)
+            print("sending:", command)
             self.dm.set_data(command)
 
     def set_open_threshold(self, new_thresh):
