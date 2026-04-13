@@ -458,8 +458,8 @@ class BaldrAO:
             save_dir / f"img_vs_ref_{timestamp}.npz",
             img=normed_img,
             ref=ref,
-            diff=diff,
         )
+        logging.info("Saved img vs ref to %s", save_dir / f"img_vs_ref_{timestamp}.npz")
 
     def get_status(self):
         status = {
