@@ -71,8 +71,8 @@ class BaldrAO:
                 msg += " ... no dark"
 
             msg += (
-                f" Close thresh: {self.estimator.close_threshold}, "
-                f"open thresh: {self.estimator.open_threshold}"
+                f" Close thresh: {self.estimator.close_threshold:.2e}, "
+                f"open thresh: {self.estimator.open_threshold:.2e}"
             )
             logger.info(msg)
 
