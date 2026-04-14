@@ -13,10 +13,10 @@ import time
 from dcs.ZMQutils import ZmqReq
 
 BEAM_TO_PORT = {
-    1: 6673,
-    2: 6674,
-    3: 6675,
-    4: 6676,
+    1: 6671,
+    2: 6672,
+    3: 6673,
+    4: 6671,
 }
 
 DEFAULT_BEAM = 1
