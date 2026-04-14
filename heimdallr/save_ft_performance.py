@@ -13,9 +13,14 @@ import time
 import argparse
 from typing import Optional
 import os
+import sys
+import fcntl
 from dcs.ZMQutils import ZmqReq
 
 import threading
+
+
+LOCK_FILE_PATH = "/tmp/asg.heim_telem.lock"
 
 keys_of_interest = [
     "gd_snr",
@@ -152,7 +157,29 @@ def log_ft_settings(h_z, lock, shared_state, log_path="ft_settings_log.txt", rat
             time.sleep(max(0, (1.0 / rate_hz) - (time.time() - t0)))
 
 
+def acquire_process_lock(lock_path=LOCK_FILE_PATH):
+    """Acquire a non-blocking process lock and record current PID in the lock file."""
+    lock_file = open(lock_path, "a+")
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock_file.close()
+        raise RuntimeError(f"lock file is already locked: {lock_path}")
+
+    lock_file.seek(0)
+    lock_file.truncate()
+    lock_file.write(f"{os.getpid()}\n")
+    lock_file.flush()
+    return lock_file
+
+
 def main():
+    try:
+        _instance_lock = acquire_process_lock()
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
     parser = argparse.ArgumentParser(description="FT performance data logging script")
     parser.add_argument(
         "--gdrate",
