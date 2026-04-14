@@ -59,9 +59,9 @@ class PupilAwareLinearReconstructor(Reconstructor):
             lab_pupil_img = self.img_to_hcfield(lab_pupil_img)
 
         self.ref = model.create_model_reference(phasemask_diam, lab_pupil_img, wavels)
+        self.ref = np.array(self.ref.shaped)
 
-        self.cam = cam
-        self.ref = cam.normalise(self.ref)
+        self.ref = cam.normalise(self.ref).flatten()
 
         self.model_phasemask_diam = phasemask_diam
         self.model_wavels = wavels
@@ -86,13 +86,15 @@ class PupilAwareLinearReconstructor(Reconstructor):
         # convert a 2D image to an hcipy Field, using the same grid as the model reference
         return hcipy.Field(img.flatten(), model.detector_grid)
 
-    def update_reference(self, sky_pupil_img):
+    def update_reference(self, sky_pupil_img, cam):
         if isinstance(sky_pupil_img, np.ndarray):
             sky_pupil_img = self.img_to_hcfield(sky_pupil_img)
 
         self.ref = model.create_model_reference(
             self.model_phasemask_diam, sky_pupil_img, self.model_wavels
         )
+        self.ref = np.array(self.ref.shaped)
+        self.ref = self.cam.normalise(self.ref).flatten()
 
         scaling_mask = np.sqrt(sky_pupil_img / self.lab_pupil_img)
         scaling_mask[self.pupil_soft_mask < 0.5] = 0.0
