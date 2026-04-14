@@ -43,6 +43,7 @@ def run_ramp_single(
 
         cam.take_dark(256)
 
+        cam_dark = cam.dark.copy()
         dark = cam.take_stack(1000)
 
         utils.mds_send(sock, f"moveabs BMY{beam} {bmy_pos}")
@@ -53,17 +54,19 @@ def run_ramp_single(
         utils.mds_send(sock, f"moverel BMY{beam} {-offset}")
         time.sleep(1)
 
-        pupil_only = cam.take_stack(1000)
+        pupil_only = cam.take_stack(2000)
 
         utils.mds_send(sock, f"moverel BMY{beam} {offset}")
         time.sleep(1)
 
-        ref = cam.take_stack(1000)
+        ref = cam.take_stack(2000)
 
         # apply ramp
         # ims = []
         im_shape = (dm.n_acts, n_steps, n_im) + ref.shape[-2:]
         ims = np.zeros(im_shape, dtype=ref.dtype)
+
+        print(f"created array with shape {im_shape}")
 
         total_steps = dm.n_acts * len(ramp_amps)
         with tqdm(
@@ -98,16 +101,17 @@ def run_ramp_single(
 
 
 def run_and_save_single(beam, cam, dm, out_root, beam_position):
-    ims, pupil_only, ramp_amps, dark, ref = run_ramp_single(
+    beam_dir = out_root / f"beam{beam}"
+    beam_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    ims, pupil_only, ramp_amps, dark, ref, cam_dark = run_ramp_single(
         beam=beam,
         cam=cam,
         dm=dm,
         beam_position=beam_position,
     )
 
-    beam_dir = out_root / f"beam{beam}"
-    beam_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_file = beam_dir / f"{timestamp}.npz"
 
     np.savez_compressed(
@@ -118,12 +122,13 @@ def run_and_save_single(beam, cam, dm, out_root, beam_position):
         ramp_amps=ramp_amps,
         dark=dark,
         ref=ref,
+        cam_dark=cam_dark,
     )
     return out_file
 
 
 def main():
-    out_root = Path.home() / "tmp" / "minimal_baldr_rtc" / "fourier_ramps"
+    out_root =  Path("/data") / "AT" / "minimal_baldr_rtc" / "fourier_ramps"
 
     futures = {}
     with ThreadPoolExecutor(max_workers=len(beams)) as executor:
