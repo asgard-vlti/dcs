@@ -420,8 +420,8 @@ void set_search_params(double delta, uint turnaround){
          info("Search delta out of range (0.0 to 10.0 microns)");
         return;
     }
-    if (turnaround < 1 || turnaround > 100){
-         info("Search turnaround out of range (1 to 100 steps)");
+    if (turnaround < 1 || turnaround > 1000){
+         info("Search turnaround out of range (1 to 1000 steps)");
         return;
     }
     beam_mutex.lock();
