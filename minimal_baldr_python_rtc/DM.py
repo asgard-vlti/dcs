@@ -51,7 +51,7 @@ class DM:
 
         self.L_max = 0.11
 
-    def set_data(self, cmd):
+    def set_data(self, cmd, chn=None):
         """
         convention to apply any user specific commands on channel 2!
         """
@@ -65,12 +65,15 @@ class DM:
                 cmd.reshape(consts.act_shape), self.L_max
             ).flatten()
 
-        self.shms[self.main_chn].set_data(cmd)
+        if chn is None:
+            chn = self.main_chn
+        self.shms[chn].set_data(cmd)
         ##
         self.shm0.post_sems(1)
 
     def flatten(self):
-        self.set_data(np.zeros(self.n_acts))
+        for ii in range(1, self.nch):  # start at 1 since ch0 holds the flat
+            self.set_data(np.zeros_like(self.shms[ii].get_data()), chn=ii)
 
     @staticmethod
     def laplacian_limiter(surface, L_max, return_L=False):
