@@ -703,20 +703,20 @@ class Watchdog:
                 "tcp://mimir:6674", timeout_ms=self.watchdog_fast_timeout_ms
             ),
             "BAO1": ZmqReq(
-                "tcp://mimir:6661", timeout_ms=self.watchdog_fast_timeout_ms
-            ),
-            "BAO2": ZmqReq(
                 "tcp://mimir:6662", timeout_ms=self.watchdog_fast_timeout_ms
             ),
-            "BAO3": ZmqReq(
+            "BAO2": ZmqReq(
                 "tcp://mimir:6663", timeout_ms=self.watchdog_fast_timeout_ms
             ),
-            "BAO4": ZmqReq(
+            "BAO3": ZmqReq(
                 "tcp://mimir:6664", timeout_ms=self.watchdog_fast_timeout_ms
+            ),
+            "BAO4": ZmqReq(
+                "tcp://mimir:6665", timeout_ms=self.watchdog_fast_timeout_ms
             ),
             "HDLR": hdlr_zmq,
             "back_end": ZmqReq(
-                "tcp://mimir:7001", timeout_ms=self.watchdog_fast_timeout_ms
+                "tcp://mimir:7002", timeout_ms=self.watchdog_fast_timeout_ms
             ),
         }
 

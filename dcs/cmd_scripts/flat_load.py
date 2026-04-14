@@ -11,6 +11,7 @@ categories = [
     "night-standard",
     "night-faint",
     "factory",
+    "test",
 ]
 
 flat_pth = pathlib.Path("/usr/local/etc/DMShapes/")

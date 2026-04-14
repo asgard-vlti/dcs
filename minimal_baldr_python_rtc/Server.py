@@ -1,6 +1,9 @@
 from typing import Any, Callable, Optional
 from dataclasses import dataclass, field
 import inspect
+import logging
+import pathlib
+from datetime import datetime
 
 import numpy as np
 import zmq
@@ -15,6 +18,36 @@ import json
 import argparse
 
 import consts
+
+logger = logging.getLogger(__name__)
+
+
+def setup_logging_for_beam(beam: int) -> pathlib.Path:
+    log_dir = pathlib.Path(f"~/logs/minimal_baldr/beam_{beam}").expanduser()
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = log_dir / f"BAO_log_{timestamp}.log"
+
+    formatter = logging.Formatter(
+        "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.handlers.clear()
+
+    file_handler = logging.FileHandler(log_path)
+    file_handler.setFormatter(formatter)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(stream_handler)
+
+    return log_path
 
 
 @dataclass
@@ -101,6 +134,11 @@ class BAOServer:
                 func=self.BAO.set_leaks,
                 is_short=True,
             ),
+            "set_Lmax": Command(
+                info="Set the L_max parameter for the DM Laplacian limiter. ",
+                func=self.BAO.set_L_max,
+                is_short=True,
+            ),
             "update_estimator_mask": Command(
                 info="Update the mask used by the Strehl estimator based on current pupil image",
                 func=self.BAO.update_estimator_mask,
@@ -119,6 +157,16 @@ class BAOServer:
             "get_controller_params": Command(
                 info="Get current integrator gains (ki) and leakage for all modes. ",
                 func=self.BAO.get_controller_params,
+                is_short=True,
+            ),
+            "settings": Command(
+                info="Get current settings of the system (gains, thresholds, etc.)",
+                func=self.BAO.get_settings,
+                is_short=True,
+            ),
+            "save_img_vs_ref": Command(
+                info="Save the current image, reference and their difference for debugging purposes",
+                func=self.BAO.save_img_vs_ref,
                 is_short=True,
             ),
             "command_names": Command(
@@ -160,10 +208,7 @@ class BAOServer:
                             self.sock.send_string(self._format_result(result))
                     except Exception as exc:
                         self.sock.send_string(f"Error: {exc}")
-                        print()
-                        print(f"Error while executing command '{cmd_name}':")
-                        print(exc)
-                        print()
+                        logger.exception("Error while executing command '%s'", cmd_name)
 
             self.BAO.run_iteration()
 
@@ -250,17 +295,20 @@ class BAOServer:
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser(description="BAO ZMQ Server")
-    parser.add_argument("--beam", type=int, help="Beam number to control")
+    parser.add_argument(
+        "--beam", type=int, required=True, help="Beam number to control"
+    )
     args = parser.parse_args()
 
-    if args.beam is None:
-        print("Error: --beam argument is required")
-        parser.print_help()
-        exit(1)
+    log_path = setup_logging_for_beam(args.beam)
+    logger.info("Logging to %s", log_path)
 
     bao = BaldrAO(args.beam)
     server = BAOServer(bao, port=consts.BEAM_TO_PORT[args.beam])
-    print("Starting BAO server...")
+    logger.info(
+        "Starting BAO server for beam %s on port %s",
+        args.beam,
+        consts.BEAM_TO_PORT[args.beam],
+    )
     server.run()

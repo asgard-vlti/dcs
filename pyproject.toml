@@ -22,9 +22,10 @@ flat-save = "dcs.cmd_scripts.flat_save:main"
 flat-load = "dcs.cmd_scripts.flat_load:main"
 dmview = "dcs.cmd_scripts.dmview:main"
 h-tilts = "heimdallr.slow_hdlr_tt_offload:main_loop"
+fringe-monitor = "pyeng_heimdallr.fringe_monitor:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["dcs"]
+packages = ["dcs", "minimal_baldr_python_rtc"]
 
 [build-system]
 requires = ["hatchling"]

@@ -148,12 +148,14 @@ bool initialize_delay_line(std::string type){
 Eigen::Vector4d center_dls(Eigen::Vector4d dl) {
     if (settings.s.fixed_dl == 0) {
         double mean = dl.mean();
-        return dl - Eigen::Vector4d::Constant(mean);
+        return control_u.beams_active.asDiagonal() * (dl - Eigen::Vector4d::Constant(mean));
     } else if (settings.s.fixed_dl > 0 && settings.s.fixed_dl <= N_TEL) {
         double value = dl(settings.s.fixed_dl - 1);
-        return dl - Eigen::Vector4d::Constant(value);
-    } else {    
-        return dl;
+        return control_u.beams_active.asDiagonal() * (dl - Eigen::Vector4d::Constant(value));
+    } else {   
+        // Not really implemented, but in principle we could have 
+        // no zero mean or a fixed DL. 
+        return control_u.beams_active.asDiagonal() * dl;
     }
 }
 
@@ -164,6 +166,7 @@ void set_delay_lines(Eigen::Vector4d dl) {
 }
 
 void set_mod(Eigen::Vector4d dl) {
+    debug("Setting modulation offload to %s", log_stringify(dl.transpose()).c_str());
     mod_offload = dl; // Nothing else" 
 }
 
@@ -336,7 +339,7 @@ void move_main_dl()
     std::string msg = j.dump(); // No newlines
     //fmt::print("Sent to wag: {} \n", j.dump());
 #else
-    std::string msg = fmt::format("simrmn [{:.2f}, {:.2f}, {:.2f}, {:.2f}]", -next_offload(0), -next_offload(1), -next_offload(2), -next_offload(3));
+    std::string msg = fmt::format("simrmn [{:.2f}, {:.2f}, {:.2f}, {:.2f}]", -next_offload(0)-search_offset(0)-mod_offload(0), -next_offload(1)-search_offset(1)-mod_offload(1), -next_offload(2)-search_offset(2)-mod_offload(2), -next_offload(3)-search_offset(3)-mod_offload(3));
 #endif
 
     wag_rmn_socket.send(zmq::buffer(msg), zmq::send_flags::none);
@@ -412,40 +415,39 @@ void dl_offload(){
         } 
         // Has the offload changed? If so, consider doing it and log to file.
         bool offload_changed=false;
-        for (int i=0;i<N_TEL;i++){
-    	  if (last_offload(i) != next_offload(i) + search_offset(i) + mod_offload(i)) {
-    		  offload_changed=true;
-    	  }
-          if ((offload_changed) || (settings.s.offload_mode != last_offload_mode)){
-		    // Do the offload! It is up to the specific function to check if the offload
-		    // is significant enough to do - only if so, it will move and 
-		    // update last_offload. The "last offload mode" here refers
+        for (int i=0;i<N_TEL;i++)
+    	    if (last_offload(i) != next_offload(i) + search_offset(i) + mod_offload(i)) 
+    		    offload_changed=true;
+    
+        if ((offload_changed) || (settings.s.offload_mode != last_offload_mode)){
+            // Do the offload! It is up to the specific function to check if the offload
+            // is significant enough to do - only if so, it will move and 
+            // update last_offload. The "last offload mode" here refers
             // to the last mode actually used to offload.
             last_offload_mode = settings.s.offload_mode;
-		    if (settings.s.delay_line_type == "piezo") {
-		        // Move the piezo delay line to the next position
-		        move_piezos();
-		    } else if (settings.s.delay_line_type == "hfo") {
-		        // Move the delay line to the next position
-		        move_hfo();
-		    } else if (settings.s.delay_line_type == "rmn") {
-		        move_main_dl();
+            if (settings.s.delay_line_type == "piezo") {
+                // Move the piezo delay line to the next position
+                move_piezos();
+            } else if (settings.s.delay_line_type == "hfo") {
+                // Move the delay line to the next position
+                move_hfo();
+            } else if (settings.s.delay_line_type == "rmn") {
+                move_main_dl();
             } else if (settings.s.delay_line_type == "off") {
                 // Do nothing, but update last_offload to avoid repeated logging.
                 last_offload = next_offload + search_offset + mod_offload;
-		    } else {
+            } else {
                 info("Delay line type not recognised");
-		    }
-		    // Log delay line type and values to file with timestamp
-		    std::ofstream log_file("/data/dl_offload.log", std::ios::app);
-		    auto lnow = std::chrono::system_clock::now();
-		    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(lnow.time_since_epoch()).count();
-		    double timestamp = ms / 1000.0;
-		    log_file << fmt::format("{:.3f} {} {:.6f} {:.6f} {:.6f} {:.6f}\n",
-		        timestamp,
-		        settings.s.delay_line_type,
-		        next_offload(0), next_offload(1), next_offload(2), next_offload(3));  
-		 }      
+            }
+            // Log delay line type and values to file with timestamp
+            std::ofstream log_file("/data/dl_offload.log", std::ios::app);
+            auto lnow = std::chrono::system_clock::now();
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(lnow.time_since_epoch()).count();
+            double timestamp = ms / 1000.0;
+            log_file << fmt::format("{:.3f} {} {:.6f} {:.6f} {:.6f} {:.6f}\n",
+                timestamp,
+                settings.s.delay_line_type,
+                next_offload(0), next_offload(1), next_offload(2), next_offload(3));       
         }
     }
     if (controllinoSocket != -1) {

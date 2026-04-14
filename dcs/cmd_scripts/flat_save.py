@@ -11,6 +11,7 @@ categories = [
     "lab",
     "night-standard",
     "night-faint",
+    "test",
 ]
 
 file_naming_format = "{category}_{timestamp}.npy"

@@ -155,6 +155,9 @@ std::string set_offload_mode(std::string mode) {
         error("Can not set offload mode when delay line type is ""off"".");
         return "ERROR: Can not set offload mode when delay line type is ""off"".";
     }
+    // Irrespective of the offload mode, we want to zero 
+    // the modulation offload as a starting point.
+    mod_offload.setZero();
     settings.mutex.lock();
     if (settings.s.offload_mode == OFFLOAD_MOD) {
         // If we are currently in modulation mode, zero 
@@ -171,9 +174,9 @@ std::string set_offload_mode(std::string mode) {
         settings.s.offload_mode = OFFLOAD_GD;
         settings.s.servo_mode = SERVO_OFF;
     } else if (mode == "mod") {
-        settings.s.offload_mode = OFFLOAD_MOD;
         settings.s.servo_mode = SERVO_OFF;
         start_modulation();
+        settings.s.offload_mode = OFFLOAD_MOD;
     } else if ((mode == "man") || (mode =="manual")) {
         settings.s.offload_mode = OFFLOAD_MANUAL;
     } else {
@@ -182,9 +185,6 @@ std::string set_offload_mode(std::string mode) {
         return "ERROR: Offload mode not recognised";
     }
     settings.mutex.unlock();
-    // Irrespective of the offload mode, we want to zero 
-    // the modulation offload.
-    mod_offload.setZero();
     control_u.search_Nsteps=0;
     return "OK";
 }
@@ -331,10 +331,8 @@ Status get_status() {
     status.closure_phase_K2 = std::vector<double>(N_CP);
     status.dl_offload = std::vector<double>(N_TEL);
     status.dm_piston = std::vector<double>(N_TEL);
-    status.pd_av = std::vector<double>(N_BL);
-    status.pd_av_filtered = std::vector<double>(N_BL);
-    status.gd_phasor_real = std::vector<double>(N_BL);
-    status.gd_phasor_imag = std::vector<double>(N_BL);
+    //status.gd_phasor_real = std::vector<double>(N_BL);
+    //status.gd_phasor_imag = std::vector<double>(N_BL);
     status.test_ix = control_u.test_ix;
     status.test_n = control_u.test_n;
     status.itime = control_u.itime;
@@ -347,10 +345,10 @@ Status get_status() {
         status.pd_snr[i] = std::round(baselines.pd_snr(i)* 100.0)/100.0;
         status.v2_K1[i] = std::round(baselines.v2_K1(i)* 10000.0)/10000.0;
         status.v2_K2[i] = std::round(baselines.v2_K2(i) * 10000.0)/10000.0;
-        status.pd_av[i] = std::round(baselines.pd_av(i)* 1000.0)/1000.0; //Not needed anymore !!!
-        status.pd_av_filtered[i] = std::round(baselines.pd_av_filtered(i)* 1000.0)/1000.0; //Not needed anymore !!!
-        status.gd_phasor_real[i] = std::round(std::real(baselines.gd_phasor(i))* 10.0)/10.0;
-        status.gd_phasor_imag[i] = std::round(std::imag(baselines.gd_phasor(i))* 10.0)/10.0;
+        //status.pd_av[i] = std::round(baselines.pd_av(i)* 1000.0)/1000.0; //Not needed anymore !!!
+        //status.pd_av_filtered[i] = std::round(baselines.pd_av_filtered(i)* 1000.0)/1000.0; //Not needed anymore !!!
+        //status.gd_phasor_real[i] = std::round(std::real(baselines.gd_phasor(i))* 10.0)/10.0;
+        //status.gd_phasor_imag[i] = std::round(std::imag(baselines.gd_phasor(i))* 10.0)/10.0;
     }
     for (int i = 0; i < N_TEL; i++) {
         status.gd_tel[i] = std::round(control_a.gd(i)* 1000.0)/1000.0;
@@ -688,18 +686,6 @@ int quit(int error) {
 int main(int argc, char* argv[]) {
     IMAGE K1, K2;
 
-    // The loglevel is the first thing to set up!
-    settings.s.loglevel=3; // Default to INFO
-    if (config.contains("loglevel")) {
-        settings.s.loglevel = config["loglevel"].value_or(3);
-        set_log_level(settings.s.loglevel);
-    }
-
-    // Exit immediately if another instance of this server is running.
-    if (!acquire_single_instance_lock("/tmp/asg.heimdallr.lock")) {
-        return 1;
-    }
- 
     // Read in the configuration file
     if (argc < 2) {
          info("Usage: %s <config file>.toml [options]", argv[0]);
@@ -709,6 +695,19 @@ int main(int argc, char* argv[]) {
          info("Configuration file read: %s", log_stringify(config["name"]).c_str());
     }
 
+    // The loglevel is the first thing to set up!
+    settings.s.loglevel=3; // Default to INFO
+    if (config.contains("loglevel")) {
+        settings.s.loglevel = config["loglevel"].value_or(3);
+        set_log_level(settings.s.loglevel);
+        info("Log level set to %d", settings.s.loglevel);
+    }
+
+    // Exit immediately if another instance of this server is running.
+    if (!acquire_single_instance_lock("/tmp/asg.heimdallr.lock")) 
+        return 1;
+    
+
     // Fill in default settings (ideally from config file!)
     // Thresholds for fringe tracking (now variables)
     settings.s.gd_threshold = 8.0;
@@ -716,10 +715,10 @@ int main(int argc, char* argv[]) {
     settings.s.gd_search_reset = 6.0;
     settings.s.kp = 0.5;
     settings.s.gd_gain = settings.s.kp / INIT_N_GD_BOXCAR;
-    settings.s.offload_gd_gain = 1.0;
+    settings.s.offload_gd_gain = 0.1;
     settings.s.servo_mode=SERVO_OFF;
     settings.s.offload_mode=OFFLOAD_OFF;
-    settings.s.delay_line_type="rmn";
+    settings.s.delay_line_type="off";
     settings.s.offload_time_ms=10;
     settings.s.fixed_dl=3;
     settings.s.search_offset = {0.0, 0.0, 0.0, 0.0};
