@@ -1,4 +1,5 @@
 name = "Default Configuration"
+loglevel = 3
 
 #All units are in radians and microns
 [geometry] 

@@ -44,10 +44,11 @@ def create_model_reference(phasemask_diam, pupil_img, wavels, phase_shift_deg=90
     )
 
     pupil_img_supersampled = pupil_img_to_supersample(pupil_img)
+    pupil_img_supersampled[pupil_img_supersampled<0.0] = 0.0
 
     img_total = 0.0
     for wavel in wavels:
-        wf = hcipy.Wavefront(pupil_img_supersampled, wavel)
+        wf = hcipy.Wavefront(np.sqrt(pupil_img_supersampled), wavel)
         wf.total_power = 1
         wf = field_stop_ideal.forward(wf)
 

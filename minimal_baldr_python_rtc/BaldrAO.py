@@ -242,7 +242,7 @@ class BaldrAO:
             )
 
         sky_pupil_img = self.take_pupil_img()
-        self.recon.update_reference(sky_pupil_img)
+        self.recon.update_reference(sky_pupil_img, self.cam)
 
     def create_controller(self, type="leaky_integrator"):
         if type == "leaky_integrator":
@@ -447,7 +447,15 @@ class BaldrAO:
         normed_img = self.cam.normalise(img).flatten()
         ref = self.recon.ref
 
-        diff = normed_img - ref
+        to_save = {
+            "img":normed_img,
+            "ref":ref,
+        }
+
+        if isinstance(self.recon, AO.PupilAwareLinearReconstructor):
+            to_save["lab_pup"] = self.recon.lab_pupil_img
+
+
 
         save_dir = savepth / f"beam_{self.beam}" / "img_vs_ref"
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -455,9 +463,7 @@ class BaldrAO:
             timespec="seconds"
         )
         np.savez(
-            save_dir / f"img_vs_ref_{timestamp}.npz",
-            img=normed_img,
-            ref=ref,
+            save_dir / f"img_vs_ref_{timestamp}.npz", **to_save
         )
         logging.info("Saved img vs ref to %s", save_dir / f"img_vs_ref_{timestamp}.npz")
 

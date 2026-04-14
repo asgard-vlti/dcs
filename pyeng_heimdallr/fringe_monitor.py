@@ -9,7 +9,10 @@ from PyQt5.QtCore import QRect
 
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
 
-from wfs import Heimdallr, log
+try:
+    from wfs import Heimdallr, log
+except:
+    from pyeng_heimdallr.wfs import Heimdallr, log
 
 import threading
 
