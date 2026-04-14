@@ -62,7 +62,7 @@ def run_ramp_single(
 
         # apply ramp
         # ims = []
-        im_shape = (n_steps, n_im) + ref.shape
+        im_shape = (dm.n_acts, n_steps, n_im) + ref.shape[-2:]
         ims = np.zeros(im_shape, dtype=ref.dtype)
 
         total_steps = dm.n_acts * len(ramp_amps)
