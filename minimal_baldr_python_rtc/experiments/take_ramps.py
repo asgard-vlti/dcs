@@ -94,7 +94,7 @@ def run_ramp_single(
 
         dm.flatten()
 
-        return ims, pupil_only, ramp_amps, dark, ref
+        return ims, pupil_only, ramp_amps, dark, ref, cam_dark
     finally:
         sock.close()
         ctx.term()
@@ -128,7 +128,7 @@ def run_and_save_single(beam, cam, dm, out_root, beam_position):
 
 
 def main():
-    out_root =  Path("/data") / "AT" / "minimal_baldr_rtc" / "fourier_ramps"
+    out_root = Path("/data") / "AT" / "minimal_baldr_rtc" / "fourier_ramps"
 
     futures = {}
     with ThreadPoolExecutor(max_workers=len(beams)) as executor:
