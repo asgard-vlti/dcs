@@ -18,13 +18,13 @@ def run_ramp_single(
     beam,
     cam,
     dm,
-    max_amp=0.2,
-    n_steps=30,
+    max_amp=0.5,
+    n_steps=100,
     sleep=0.01,
     n_discard=1,
-    n_im=5,
+    n_im=30,
 ):
-    ctx, sock = utils.mds_connect("localhost", 5555)
+    ctx, sock = utils.mds_connect("mimir", 5555)
     ramp_amps = np.linspace(-max_amp, max_amp, n_steps)
 
     try:
@@ -73,6 +73,8 @@ def run_ramp_single(
                 im_mode.append(im)
             ims.append(im_mode)
 
+        dm.flatten()
+
         return np.array(ims), pupil_only, ramp_amps, dark, ref
     finally:
         sock.close()
@@ -84,7 +86,7 @@ def run_and_save_single(beam, cam, dm, out_root):
 
     beam_dir = out_root / f"beam{beam}"
     beam_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_file = beam_dir / f"{timestamp}.npz"
 
     np.savez_compressed(
