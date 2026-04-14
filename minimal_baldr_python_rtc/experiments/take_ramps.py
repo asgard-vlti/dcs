@@ -36,6 +36,8 @@ def run_ramp_single(
 
         cam.take_dark(256)
 
+        dark = cam.take_stack(1000)
+
         utils.mds_send(sock, f"moveabs BMY{beam} {bmy_pos}")
         time.sleep(3)
 
@@ -44,10 +46,13 @@ def run_ramp_single(
         utils.mds_send(sock, f"moverel BMY{beam} {-offset}")
         time.sleep(1)
 
-        pupil_only = cam.take_stack(1000).mean(0)
+        pupil_only = cam.take_stack(1000)
 
         utils.mds_send(sock, f"moverel BMY{beam} {offset}")
         time.sleep(1)
+
+
+        ref = cam.take_stack(1000)
 
         # apply ramp
         ims = []
@@ -68,14 +73,14 @@ def run_ramp_single(
                 im_mode.append(im)
             ims.append(im_mode)
 
-        return np.array(ims), pupil_only, ramp_amps
+        return np.array(ims), pupil_only, ramp_amps, dark, ref
     finally:
         sock.close()
         ctx.term()
 
 
 def run_and_save_single(beam, cam, dm, out_root):
-    ims, pupil_only, ramp_amps = run_ramp_single(beam=beam, cam=cam, dm=dm)
+    ims, pupil_only, ramp_amps, dark, ref = run_ramp_single(beam=beam, cam=cam, dm=dm)
 
     beam_dir = out_root / f"beam{beam}"
     beam_dir.mkdir(parents=True, exist_ok=True)
@@ -88,6 +93,8 @@ def run_and_save_single(beam, cam, dm, out_root):
         ims=ims,
         pupil_only=pupil_only,
         ramp_amps=ramp_amps,
+        dark=dark,
+        ref=ref,
     )
     return out_file
 
@@ -99,6 +106,7 @@ def main():
     with ThreadPoolExecutor(max_workers=len(beams)) as executor:
         for beam, cam, dm in zip(beams, cams, DMs):
             future = executor.submit(run_and_save_single, beam, cam, dm, out_root)
+            print(f"submitted beam {beam} to start")
             futures[future] = beam
 
         for future in as_completed(futures):
