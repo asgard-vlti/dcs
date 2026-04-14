@@ -113,24 +113,21 @@ def parse_args():
     parser.add_argument(
         "--beam", type=int, required=True, choices=[-1] + sorted(BEAM_TO_PORT)
     )
-    parser.add_argument("--host", type=str, default=DEFAULT_HOST)
     parser.add_argument("--n-iter", type=int, default=1)
     parser.add_argument("--amp", type=float, default=0.04)
     parser.add_argument("--n-modes", type=int, default=11)
     parser.add_argument("--settle-sec", type=float, default=1.0)
-    parser.add_argument("--output-root", type=str, default=DEFAULT_OUTPUT_ROOT)
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
 
-    DEFAULT_HOST = args.host
     _AMP = args.amp
     _N_MODES = args.n_modes
     _SETTLE_SEC = args.settle_sec
     _N_ITER = args.n_iter
-    _OUTPUT_ROOT = args.output_root
+    
     _RUN_TIMESTAMP = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
 
     if args.beam == -1:
