@@ -73,7 +73,7 @@ class DM:
 
     def flatten(self):
         for ii in range(1, self.nch):  # start at 1 since ch0 holds the flat
-            self.set_data(np.zeros_like(self.shms[ii].get_data()), chn=ii)
+            self.set_data(np.zeros(self.n_acts), chn=ii)
 
     @staticmethod
     def laplacian_limiter(surface, L_max, return_L=False):
