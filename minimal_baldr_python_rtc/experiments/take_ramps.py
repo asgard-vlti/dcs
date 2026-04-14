@@ -62,7 +62,10 @@ def run_ramp_single(
         ref = cam.take_stack(2000)
 
         # apply ramp
-        ims = []
+        # ims = []
+        im_shape = (n_steps, n_im) + ref.shape
+        ims = np.zeros(im_shape, dtype=ref.dtype)
+
         total_steps = dm.n_acts * len(ramp_amps)
         with tqdm(
             total=total_steps,
@@ -71,8 +74,8 @@ def run_ramp_single(
             leave=True,
         ) as pbar:
             for mode_idx in range(dm.n_acts):
-                im_mode = []
-                for amp in ramp_amps:
+
+                for amp_idx, amp in enumerate(ramp_amps):
                     cmd = np.zeros(dm.n_acts)
                     cmd[mode_idx] = amp
                     dm.set_data(cmd)
@@ -84,13 +87,12 @@ def run_ramp_single(
 
                     im = cam.take_stack(n_im)
 
-                    im_mode.append(im)
+                    ims[mode_idx, amp_idx] = im
                     pbar.update(1)
-                ims.append(im_mode)
 
         dm.flatten()
 
-        return np.array(ims), pupil_only, ramp_amps, dark, ref, cam_dark
+        return ims, pupil_only, ramp_amps, dark, ref
     finally:
         sock.close()
         ctx.term()
@@ -100,7 +102,7 @@ def run_and_save_single(beam, cam, dm, out_root, beam_position):
     beam_dir = out_root / f"beam{beam}"
     beam_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
+
     ims, pupil_only, ramp_amps, dark, ref, cam_dark = run_ramp_single(
         beam=beam,
         cam=cam,
