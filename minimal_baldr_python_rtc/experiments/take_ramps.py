@@ -18,11 +18,11 @@ def run_ramp_single(
     beam,
     cam,
     dm,
-    max_amp=0.5,
-    n_steps=100,
+    max_amp=0.7,
+    n_steps=50,
     sleep=0.01,
     n_discard=1,
-    n_im=30,
+    n_im=100,
 ):
     ctx, sock = utils.mds_connect("mimir", 5555)
     ramp_amps = np.linspace(-max_amp, max_amp, n_steps)
