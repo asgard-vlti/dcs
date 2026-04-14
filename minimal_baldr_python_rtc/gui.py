@@ -136,7 +136,7 @@ class CommandSender:
             return "SIM"
         if self.client is None:
             raise RuntimeError("Command client is not initialised")
-        return self.client.send_and_recv(command)
+        return self.client.send_and_recv(command, exit_on_failure=False)
 
     def reconnect(self):
         """Attempt to reconnect to the server."""
@@ -411,6 +411,12 @@ class GainLeakWindow(QMainWindow):
             # If we were disconnected and send succeeds, reconnect
             if not self.connected:
                 self._set_connected(True)
+
+            if response is None:
+                self.status_label.setText(
+                    f"Command sent but no response received: '{command}'"
+                )
+                self._set_connected(False)
         except Exception as exc:
             self.status_label.setText(f"Command failed: {exc}")
             if self.connected:
