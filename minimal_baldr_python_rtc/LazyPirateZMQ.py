@@ -22,7 +22,7 @@ class ZmqLazyPirateClient:
         socket.connect(self.endpoint)
         return socket
 
-    def send_and_recv(self, message, retries=REQUEST_RETRIES):
+    def send_and_recv(self, message, retries=REQUEST_RETRIES, exit_on_failure=True):
         for attempt in range(1, retries + 1):
             self.socket.send_string(message)
             if self.socket.poll(self.timeout_ms, zmq.POLLIN):
@@ -42,7 +42,10 @@ class ZmqLazyPirateClient:
             retries,
             message,
         )
-        sys.exit(1)
+        if exit_on_failure:
+            sys.exit(1)
+        else:
+            return None
 
     def close(self):
         self.socket.close()
