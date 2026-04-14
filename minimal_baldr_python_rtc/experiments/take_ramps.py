@@ -128,7 +128,7 @@ def run_and_save_single(beam, cam, dm, out_root, beam_position):
 
 
 def main():
-    out_root = Path("/data") / "AT" / "minimal_baldr_rtc" / "fourier_ramps"
+    out_root = Path("/data_oca") / "AT" / "minimal_baldr_rtc" / "fourier_ramps"
 
     futures = {}
     with ThreadPoolExecutor(max_workers=len(beams)) as executor:

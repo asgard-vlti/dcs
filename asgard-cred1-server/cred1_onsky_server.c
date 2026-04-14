@@ -1126,7 +1126,7 @@ float query_fps() {
   float val = camera_query_float(ed, "fps raw");
   camconf->fps = val;
   if (wasrunning)
-  	keepgoing=1;
+  	fetch();
   return val;
 }
 
@@ -1320,7 +1320,7 @@ void set_ndmr_mode(unsigned int _mode) {
     sprintf(cmd_cli, "set rawimages off");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
-    usleep(100000);
+    usleep(500000);
 
     sprintf(camconf->readmode, "GCDS");
   }
@@ -1329,7 +1329,7 @@ void set_ndmr_mode(unsigned int _mode) {
     sprintf(cmd_cli, "set rawimages on");
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
-    usleep(100000);
+    usleep(500000);
 
     sprintf(cmd_cli, "set mode globalresetbursts");
     camera_command(ed, cmd_cli);
@@ -1340,7 +1340,7 @@ void set_ndmr_mode(unsigned int _mode) {
     sprintf(cmd_cli, "set nbreadworeset %d", _mode); // _mode + 1 ??
     camera_command(ed, cmd_cli);
     read_pdv_cli(ed, out_cli);
-    usleep(200000);
+    usleep(500000);
 
     sprintf(camconf->readmode, "NDMR");
     camconf->nfr_reset = 9; // to be made more adaptive !!!
@@ -1353,7 +1353,7 @@ void set_ndmr_mode(unsigned int _mode) {
   update_dark();
   // back to prior business
   if (wasrunning == 1) {
-    usleep(100000); // sleep for 100ms
+    usleep(500000); // sleep for 100ms
     fetch();
   }
 }
