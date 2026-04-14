@@ -66,6 +66,8 @@ def run_ramp_single(
         im_shape = (n_steps, n_im) + ref.shape
         ims = np.zeros(im_shape, dtype=ref.dtype)
 
+        print(f"created array with shape {im_shape}")
+
         total_steps = dm.n_acts * len(ramp_amps)
         with tqdm(
             total=total_steps,
