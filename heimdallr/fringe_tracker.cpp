@@ -436,7 +436,7 @@ void fringe_tracker(){
             // The GD_phasor has a variance sqrt(baselines[bl].n_gd_boxcar) larger than a
             // single phasor, so we need to divide by that. 
             baselines.gd_snr(bl) = std::fabs(baselines.gd_phasor(bl))/
-                std::sqrt(K1ft->power_spectrum_bias * K2ft->power_spectrum_bias) + 
+                std::sqrt(K1ft->power_spectrum_bias * K2ft->power_spectrum_bias + 
                 (K1ft->power_spectrum[y_px*stride + x_px] - K1ft->power_spectrum_bias)*K2ft->power_spectrum_bias +
                 (K2ft->power_spectrum[y_px*stride + x_px] - K2ft->power_spectrum_bias)*K1ft->power_spectrum_bias)
                 /std::sqrt(baselines.n_gd_boxcar);    
