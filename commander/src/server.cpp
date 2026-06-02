@@ -17,6 +17,8 @@
 
 namespace po = boost::program_options;
 
+template <> struct fmt::formatter<boost::program_options::options_description> : ostream_formatter {};
+
 namespace commander
 {
     

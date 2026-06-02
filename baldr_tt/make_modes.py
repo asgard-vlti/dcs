@@ -1,3 +1,10 @@
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+#     "astropy>=7.2.0",
+#     "numpy>=2.4.6",
+# ]
+# ///
 """
 Create the zernike modes as a fits file. Skip tip/tilt and piston.
 

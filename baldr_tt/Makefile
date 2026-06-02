@@ -1,7 +1,7 @@
 CC=g++
 
-CFLAGS  = -std=c++17 -Wall -Wextra -ggdb -O1
-LDFLAGS = -lcommander -lm -lzmq -lImageStreamIO -lb64 -lpthread -lboost_program_options -lfmt -lfftw3 -lcfitsio
+CFLAGS  = -std=c++17 -Wall -Wextra -ggdb -O1 -I../libImageStreamIO -I../commander/include
+LDFLAGS = -L../libImageStreamIO -L../lib -lcommander -lm -lzmq -lImageStreamIO -lb64 -lpthread -lboost_program_options -lfmt -lfftw3 -lcfitsio
 EXEC    = baldr_tt
 OBJECTS = baldr_tt.o servo_loop.o
 
