@@ -1,7 +1,7 @@
 name = "Default Configuration"
 
 # Beam. This should be over-written as an input.
-beam = 1
+beam = 3
 
 # DM Rotations in radians
 dm_rotation = [-20,0,0,50]
@@ -29,7 +29,7 @@ hol = 0.01
 # Flux threshold
 flux_threshold = 1000
 
-modefile = "./modes.fits"
+modefile = "/usr/local/etc/modes.fits"
 
 #All units are in radians and microns
 [geometry] 

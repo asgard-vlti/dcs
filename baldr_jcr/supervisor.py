@@ -1,0 +1,142 @@
+import argparse
+import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+import numpy as np
+from astropy.io import fits  # type: ignore
+import time
+from typing import Tuple, Optional
+from tqdm import tqdm  # type: ignore
+from dcs.ZMQutils import ZmqReq  # type: ignore
+
+BEAM_TO_PORT = {
+    1: 6671,
+    2: 6672,
+    3: 6673,
+    4: 6671,  # <- should this be 6674?
+}
+
+DEFAULT_BEAM = 1
+# DEFAULT_HOST = "mimir"
+DEFAULT_HOST = "localhost"
+DEFAULT_OUTPUT_ROOT = "/tmp"
+
+_SOCKET = None
+_AMP = 0.04
+_N_MODES = 11
+_SETTLE_SEC = 1.0
+_N_ITER = 1
+_OUTPUT_ROOT = DEFAULT_OUTPUT_ROOT
+_RUN_TIMESTAMP = None
+
+
+def get_zmq_socket(beam: int, host: str = DEFAULT_HOST) -> ZmqReq:
+    if beam not in BEAM_TO_PORT:
+        raise ValueError(f"Invalid beam {beam}. Expected one of {sorted(BEAM_TO_PORT)}")
+    port = BEAM_TO_PORT[beam]
+    endpoint = f"tcp://{host}:{port}"
+    print(f"Connecting to beam {beam} on {endpoint}")
+    return ZmqReq(endpoint)
+
+
+def get_im_plus_minus(
+    socket: ZmqReq, mode: int, amp: float
+) -> Tuple[np.ndarray, np.ndarray]:
+    command = f"poke {mode},{amp}"
+    resp = socket.send_payload(command, is_str=True, decode_ascii=False)  # type: ignore
+    if not isinstance(resp, dict):
+        raise RuntimeError(f"No valid response for command '{command}': {resp}")
+    if resp["status_code"] != 0:
+        raise RuntimeError(resp["data"])
+    data = resp["data"]
+    width = data["width"]
+    imp = np.frombuffer(base64.b64decode(data["im_plus_sum_encoded"]), dtype=np.float32)
+    imp = imp.reshape((width, width))
+    imm = np.frombuffer(
+        base64.b64decode(data["im_minus_sum_encoded"]), dtype=np.float32
+    )
+    imm = imm.reshape((width, width))
+    return imp, imm
+
+
+def run_fpdr_pokes_single(
+    n_iter: int,
+    socket: Optional[ZmqReq] = _SOCKET,
+    amp: float = _AMP,
+    n_modes: int = _N_MODES,
+    settle_sec: float = _SETTLE_SEC,
+) -> np.ndarray:
+    if socket is None:
+        raise RuntimeError("Socket not initialized. Set _SOCKET or pass socket=.")
+
+    all_iters = []
+    for _ in tqdm(range(n_iter),desc="iteration"):
+        iter_ims = []
+        _ = get_im_plus_minus(socket, 0, 0.0)
+        time.sleep(settle_sec)
+        for mode in tqdm(range(n_modes), desc="mode", leave=False):
+            iter_ims.append(get_im_plus_minus(socket, mode, amp))
+            time.sleep(settle_sec)
+            iter_ims.append(get_im_plus_minus(socket, mode, -amp))
+            time.sleep(settle_sec)
+        iter_ims.append(get_im_plus_minus(socket, 0, 0.0))
+        all_iters.append(np.array(iter_ims, dtype=np.float32))
+
+    return np.array(all_iters, dtype=np.float32)
+
+
+def run_pokes_and_save(beam: int) -> str:
+    socket = get_zmq_socket(beam, host=DEFAULT_HOST)
+    ims = run_fpdr_pokes_single(_N_ITER, socket=socket)
+    if _N_ITER == 1:
+        ims = ims[0]
+
+    beam_dir = Path(_OUTPUT_ROOT).joinpath(f"beam{beam}")
+    beam_dir.mkdir(parents=True, exist_ok=True)
+    output_path = beam_dir.joinpath(f"{_RUN_TIMESTAMP}.fits")
+
+    hdu = fits.PrimaryHDU(data=ims)
+    hdu.writeto(output_path, overwrite=True)
+    print(f"Saved beam {beam} data to {output_path}")
+    return output_path.as_posix()
+
+
+# def parse_args():
+#     parser = argparse.ArgumentParser(
+#         description="Save Baldr TT interaction matrix data"
+#     )
+#     parser.add_argument(
+#         "--beam", type=int, required=True, choices=[-1] + sorted(BEAM_TO_PORT)
+#     )
+#     parser.add_argument("--n-iter", type=int, default=1)
+#     parser.add_argument("--amp", type=float, default=0.04)
+#     parser.add_argument("--n-modes", type=int, default=11)
+#     parser.add_argument("--settle-sec", type=float, default=1.0)
+#     return parser.parse_args()
+
+
+if __name__ == "__main__":
+    # args = parse_args()
+
+    # _AMP = args.amp
+    # _N_MODES = args.n_modes
+    # _SETTLE_SEC = args.settle_sec
+    # _N_ITER = args.n_iter
+
+    _RUN_TIMESTAMP = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
+    run_pokes_and_save(beam = 1)
+    # if args.beam == -1:
+    #     beams = sorted(BEAM_TO_PORT)
+    #     with ThreadPoolExecutor(max_workers=len(beams)) as executor:
+    #         futures = {
+    #             executor.submit(run_pokes_and_save, beam_id): beam_id
+    #             for beam_id in beams
+    #         }
+    #         for future in as_completed(futures):
+    #             beam_id = futures[future]
+    #             try:
+    #                 future.result()
+    #             except (RuntimeError, ValueError, OSError) as exc:
+    #                 print(f"Beam {beam_id} failed: {exc}")
+    # else:
+    #     run_pokes_and_save(args.beam)

@@ -29,7 +29,7 @@ hol = 0.01
 # Flux threshold
 flux_threshold = 1000
 
-modefile = "./modes.fits"
+modefile = "./baldr_jcr/modes.fits"
 
 #All units are in radians and microns
 [geometry] 
