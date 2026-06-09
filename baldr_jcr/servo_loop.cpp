@@ -22,25 +22,6 @@ float *im_plus_sum, *im_minus_sum;
 std::mutex im_mutex;
 TTMet_save ttmet_save;
 
-void set_dm_tilt_foc(double tx_in, double ty_in, double focus) {
-    double r2 = 0.0;
-    // Rotate the input tip/tilt by the current rotation matrix.
-    // This allows us to correct for any rotation between the DM and the image.
-    double tx = control_u.R(0, 0) * tx_in + control_u.R(0, 1) * ty_in;
-    double ty = control_u.R(1, 0) * tx_in + control_u.R(1, 1) * ty_in;
-    // Set DM tip/tilt and focus terms.
-    for (size_t j = 0; j < 12; j++)
-        for (size_t i = 0; i < 12; i++) {
-            r2 = (i - 5.5) * (i - 5.5) + (j - 5.5) * (j - 5.5);
-            if (r2 > DM_MAX_R * DM_MAX_R)
-                r2 = DM_MAX_R * DM_MAX_R;
-            DM_low.array.D[12 * j + i] =
-                ty * (i - 5.5) / DM_MAX_R +
-                tx * (5.5 - j) / DM_MAX_R +
-                focus * (1.0 - 2 * r2 / DM_MAX_R / DM_MAX_R);
-        }
-    ImageStreamIO_sempost(&master_DM, 1);
-}
 
 // Initialise variables and arrays on startup
 void initialise_servo() {
@@ -56,10 +37,11 @@ void initialise_servo() {
     }
     // Now we know the image size, allocate memory!
     im_av = reinterpret_cast<double *>(malloc(sizeof(double) * sz * sz));
-    im_plus = (double *)malloc(sizeof(double) * width * width);
-    im_minus = (double *)malloc(sizeof(double) * width * width);
+    im_plus = (double *)malloc(sizeof(double) * width * width * (HO_CYCLE-1));  // JCR: changing these to buffers
+    im_minus = (double *)malloc(sizeof(double) * width * width * (HO_CYCLE-1));
     im_plus_sum = (float *)malloc(sizeof(float) * width * width);
     im_minus_sum = (float *)malloc(sizeof(float) * width * width);
+    // TODO: test with singles here, double seems unnecessary
     window = (double *)malloc(sizeof(double) * width * width);
     subim = (double *)malloc(sizeof(double) * width * width);
     norm_imsub = (double *)malloc(sizeof(double) * width * width);
@@ -123,18 +105,23 @@ static inline void catch_up_with_sem(IMAGE *img, int semid)
 // The main AO servo loop
 void servo_loop()
 {
-    double add_tx, add_ty;
-#ifdef DEBUG_ALL
-    timespec now_all, then_all;
-#endif
+    // initialise servo loop
     initialise_servo();
+
+    // global cnt variable initialised to subarray cnt0 
     cnt = subarray.md->cnt0;
+
+    // TODO: why semid 2, where is that defined?
     catch_up_with_sem(&subarray, 2);
+
+    // infinite loop while servo is running (not necessarily closed loop)
     while (settings.s.servo_mode != SERVO_STOP)
     {
         cnt_since_init++; // This should "never" wrap around, as a long int is big.
+        
         // See if there was a semaphore signalled for the next frame to be ready in K1 and K2
         ImageStreamIO_semwait(&subarray, 2);
+        
         // If we are here, then a new frame is available in both K1 and K2.
         // Check that there has not been a counting error.
         if (subarray.md->cnt0 == cnt)
@@ -144,6 +131,7 @@ void servo_loop()
             continue;
         }
         // Check for missed frames
+        // TODO: shouldnt this be >= ? otherwise we are assuming 2 missed frames
         if (subarray.md->cnt0 > cnt + 2)
         {
             info("Missed frames! Image: %llu Servo: %lu", (unsigned long long)subarray.md->cnt0, cnt);
@@ -153,10 +141,7 @@ void servo_loop()
             nerrors++;
         }
         cnt++;
-#ifdef PRINT_TIMING
-        timespec then;
-        clock_gettime(CLOCK_REALTIME, &then);
-#endif
+
         // Copy the data from the IMAGE subarray to the subimage.
         for (size_t ii = 0; ii < width; ii++)
         {
@@ -167,144 +152,144 @@ void servo_loop()
                 subim[ii * width + jj] = (double)(subarray.array.SI32[y * sz + x] - DARK_OFFSET);
             }
         }
-        // Compute the weighted flux within +/- width/2 of the current (px, py) position.
+
+        
+        
+        //// Compute the weighted flux within +/- width/2 of the current (px, py) position.
+        // lock the status mutex to be able to read/write real time variables
         rt_status.mutex.lock();
+
+        // zero flux and tip/tilt
         rt_status.s.flux = 0;
         rt_status.s.tx = 0;
         rt_status.s.ty = 0;
+
+        double x, y, weighted_intensity;
         for (size_t ii = 0; ii < width; ii++)
         {
+            y = ii - width/2;
             for (size_t jj = 0; jj < width; jj++)
             {
-                double y = ii - width / 2;
-                double x = jj - width / 2;
-                rt_status.s.flux += window[ii * width + jj] * subim[ii * width + jj];
-                rt_status.s.tx += window[ii * width + jj] * subim[ii * width + jj] * x;
-                rt_status.s.ty += window[ii * width + jj] * subim[ii * width + jj] * y;
+                x = jj - width/2;
+                weighted_intensity = window[ii*width + jj] * subim[ii*width + jj];
+                rt_status.s.tx += weighted_intensity * x;
+                rt_status.s.ty += weighted_intensity * y;
+                rt_status.s.flux += weighted_intensity;
             }
         }
-        rt_status.s.tx /= rt_status.s.flux;
-        rt_status.s.ty /= rt_status.s.flux;
+        rt_status.mutex.unlock();
+        
+        // Here's the logic with the HO_CYCLE / ho_ix idea. Note that always HO_CYCLE>=2
+        // First, we compute the ho_ix, which is between 0..2*HO_CYCLE.
+        // The value of this index determines what we do with the current image:
+        //       0      -> We've just applied a positive defocus, so ignore this frame
+        //                 while the DM settles.
+        //       1      -> The 1st valid positively defocussed image
+        //       2      -> The 2nd valid ... 
+        //      ...     ->      ...
+        //   HO_CYCLE-1 -> The HO_CYCLE'th positively defocussed image
+        //    HO_CYCLE  -> We've just applied a negative defocus, so ignore this frame
+        //                 while the DM settles.
+        //   HO_CYCLE+1 -> The 1st valid negative defocussed image
+        //   HO_CYCLE+2 -> The 2nd valid ... 
+        //      ...     ->      ...
+        // 2*HO_CYCLE-1 -> The HO_CYCLE'th negative defocussed image
+        // 2*HO_CYCLE == 0, so repeat the loop.
+
+        control_u.ho_ix = (control_u.ho_ix + 1) % (2 * HO_CYCLE);
         // If the flux is above the threshold, compute the new DM settings and update the DM image.
         // Otherwise, skip the DM update and just wait for the next frame.
         if (rt_status.s.flux > settings.s.flux_threshold)
         {
-            // Compute the new DM settings. For now, just a simple proportional controller on the tip/tilt, and a focus term that is proportional to the flux (this is just to test that the focus term is working).
-            add_tx = settings.s.ttg * rt_status.s.tx;
-            add_ty = settings.s.ttg * rt_status.s.ty;
-        }
-        else
-        {
-            add_tx = 0.0;
-            add_ty = 0.0;
-        }
-        rt_status.mutex.unlock();
-        control_u.tx = (1 - settings.s.ttl) * (control_u.tx - settings.s.ttxo) + add_tx;
-        control_u.ty = (1 - settings.s.ttl) * (control_u.ty - settings.s.ttyo) + add_ty;
-
-        // Based on where we are in the modulation, set the high-order modes to be
-        // either positive or negative - relevant for the next image.
-        control_u.ho_ix = (control_u.ho_ix + 1) % HO_CYCLE;
-        int last_ho_sign = control_u.ho_sign;
-        if (control_u.ho_ix == HO_CYCLE - 1)
-        {
-            control_u.ho_sign *= -1;
-        }
-
-        // Set the DM if we are in the appropriate mode.
-        if ((settings.s.servo_mode == SERVO_HO) || (settings.s.servo_mode == SERVO_TT))
-            set_dm_tilt_foc(control_u.tx, control_u.ty, settings.s.focus_offset + settings.s.focus_amp * control_u.ho_sign);
-        else
-            set_dm_tilt_foc(settings.s.ttxo, settings.s.ttyo, settings.s.focus_offset);
-
-        // Update the saved tip/tilt metrology.
-        ttmet_save.mx[ttmet_save.cnt] = control_u.tx;
-        ttmet_save.my[ttmet_save.cnt] = control_u.ty;
-        ttmet_save.ty[ttmet_save.cnt] = rt_status.s.ty;
-        ttmet_save.tx[ttmet_save.cnt] = rt_status.s.tx;
-        ttmet_save.cnt = (ttmet_save.cnt + 1) % N_TTMET;
-
-        // Accumulate the im_plus and im_minus images for the high-order modulation.
-        // ho_ix=0 : last frame invalid.
-        // ho_ix=1 : last frame valid
-        // ho_ix=2 : last frame valid
-        // ...
-        // ho_ix = (HO_CYCLE-1) : last frame valid. Just sent changed focus.
-
-        im_mutex.lock();
-        if (control_u.ho_ix > 0)
-        {
-            if (last_ho_sign > 0)
-            {
-                // Clear the plus image at the start of the plus phase.
-                if (control_u.ho_ix == 1)
-                    for (size_t j = 0; j < width * width; j++)
-                        im_plus[j] = 0;
-                for (size_t j = 0; j < width * width; j++)
-                {
-                    im_plus[j] += subim[j];
+            // ALWAYS compute the measurement signal, even if no loops are closed.
+            
+            // First, we update the appropriate image buffer.
+            if (control_u.ho_ix == 0 || control_u.ho_ix == HO_CYCLE) {
+                // skip this frame since the focus offset hasn't settled yet
+            } else if (control_u.ho_ix < HO_CYCLE) {
+                // positive defocus is applied, copy im to appropriate buffer
+                size_t offset = (control_u.ho_ix-1) * width * width;
+                for (size_t i = 0; i < width*width; i++) {
+                    im_plus[i+offset] = subim[i];
                 }
-                // Save if at the end of cycle
-                if (control_u.ho_ix == (HO_CYCLE - 1))
-                {
-                    for (size_t j = 0; j < width * width; j++)
-                        im_plus_sum[j] += im_plus[j];
+            } else {
+                size_t offset = (control_u.ho_ix-1-HO_CYCLE) * width * width;
+                for (size_t i = 0; i < width*width; i++) {
+                    im_minus[i+offset] = subim[i];
                 }
             }
-            else
-            {
-                // Clear the minus image at the start of the minus phase.
-                if (control_u.ho_ix == 1)
-                    for (size_t j = 0; j < width * width; j++)
-                        im_minus[j] = 0;
-                for (size_t j = 0; j < width * width; j++)
-                {
-                    im_minus[j] += subim[j];
-                }
-                // Save if at the end of cycle
-                if (control_u.ho_ix == (HO_CYCLE - 1))
-                {
-                    for (size_t j = 0; j < width * width; j++)
-                        im_minus_sum[j] += im_minus[j];
+            
+            // Second, we use all images in both buffers to compute the latest
+            // command
+            double sum_flux = 0.0;
+            for (size_t i = 0; i < width*width; i++){
+                for (size_t k = 0; k < HO_CYCLE; k++){
+                    sum_flux += im_plus[k*width*width+i] + im_minus[(k+1)*width*width - i - 1];
+                    norm_imsub[i] = im_plus[k*width*width+i] - im_minus[(k+1)*width*width - i - 1];
                 }
             }
-        }
-        im_mutex.unlock();
+            for (size_t i = 0; i<width*width; i++) {
+                norm_imsub[i] /= sum_flux;
+            }
 
-        // Are we ready for the high order loop? If so, subtract
-        // the inverted im_minus from im_plus.
-        if (control_u.ho_ix == (HO_CYCLE - 1))
-        {
+            // Third, if we are at least in TT mode, then apply a TT correction
+            if (settings.s.servo_mode >= SERVO_TT) {
+                // update LO modes based on measurement
+                for (size_t i = 0; i < N_MODES; i++) {
+                    control_a.modes[i] = 0.0;
+                    for (size_t j = 0; j < width*width; j++) {
+                        control_a.modes[i] += control_a.reconstructor[i*N_MODES+j] * norm_imsub[j];
+                    }
+                }
+
+
+                // Command the LO DM if we are in the appropriate mode.
+                //   DM_low.array.D_i = influence_ij * command_j
+                for (size_t i = 0; i < N_ACTUATORS; i++) {
+                    double command = 0.0;
+                    for (size_t j = 0; j < N_MODES; j++) {
+                        command += control_a.influence_functions(i, j) * control_a.modes(j);
+                    }
+                    DM_low.array.D[i] = command;
+                }
+
+
+                // update the master DM semaphore, I guess to trigger the recalculation of the sum
+                // of DM images
+                // TODO: why master dm semaphore and not the one we wrote to?
+                ImageStreamIO_sempost(&master_DM, 1);
+            }
+            // Update the saved LO metrology.    
+
+            // lock sensor image mutex
             im_mutex.lock();
-            double sum_both = 0;
-            for (size_t j = 0; j < width * width; j++)
-                sum_both += im_plus_sum[j] + im_minus_sum[j];
-            for (size_t j = 0; j < width * width; j++)
-            {
-                norm_imsub[j] = (im_plus_sum[j] - im_minus_sum[width * width - 1 - j]) / sum_both;
+            
+            for (size_t i = 0; i<width*width; i++){
+                im_plus_sum[i] = subarray.array.F[i];
             }
-            im_mutex.unlock();
-            // Here we could compute the high-order modes based on norm_imsub
-            //!!! needs a reconstrutor.
 
-            if (settings.s.servo_mode != SERVO_OFF)
-            {
-                // Multiply the high-order modes by the influence functions to get the DM shape.
-                control_u.DM = control_a.influence_functions * control_a.modes;
-                // Update the DM image with the new high-order shape.
-                for (size_t i = 0; i < N_ACTUATORS; i++)
-                    DM_high.array.D[i] = control_u.DM(i);
+            // do measurement calculations
+            
+            // unlock sensor image mutex
+            im_mutex.unlock();
+            
+            if (settings.s.servo_mode >= SERVO_HO) {
+                // update HO DM signal based on measurement
+                
+                
+
+
+
+
+                // post semaphore on master DM image
                 ImageStreamIO_sempost(&master_DM, 1);
             }
         }
+        // -- done with critical parts
+        
+        // update statistics
 
-        // Done with critical parts. Update the boxcar average
-        int ix = cnt % N_BOXCAR;
-        for (size_t i = 0; i < sz * sz; i++)
-        {
-            im_av[i] -= (double)im_boxcar[ix][i];
-            im_boxcar[ix][i] = subarray.array.SI32[i] - DARK_OFFSET;
-            im_av[i] += im_boxcar[ix][i];
-        }
     }
+
+    // servomode set to stop, clean up anything on exit here.
 }

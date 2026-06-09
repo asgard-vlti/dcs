@@ -29,6 +29,8 @@
 //#define SIMULATE
 
 #define N_MODES 11
+#define WIDTH 15
+#define N_PIXELS WIDTH*WIDTH
 #define N_ACTUATORS 144 // Including corners.
 #define N_BOXCAR 16
 #define N_TTMET 1000
@@ -37,11 +39,6 @@
 #define FT_STARTING 0
 #define FT_RUNNING 1
 #define FT_STOPPING 2
-
-#define SERVO_OFF 0
-#define SERVO_TT 1
-#define SERVO_HO 2
-#define SERVO_STOP -1
 
 //----- Structures and typedefs------
 typedef std::complex<double> dcomp;
@@ -52,13 +49,13 @@ struct ControlU{
     int ho_sign;
     int ho_ix;
     Eigen::Matrix<double, N_ACTUATORS, 1> DM;
-    Eigen::Matrix<double, 2,2> R; //Rotation matrix.
 };
 
 // This is our knowledge of the DM modes
 struct ControlA{
     Eigen::Matrix<double, N_MODES, 1> modes;
     Eigen::Matrix<double, N_ACTUATORS, N_MODES> influence_functions;
+    double reconstructor[N_MODES*N_PIXELS];
 };
 
 struct TTMet_save{
@@ -91,7 +88,15 @@ struct Settings
     double gauss_hwidth;
     double ttxo, ttyo, focus_offset;
     int px, py;
+    int32_t dark_offset;
     int servo_mode;
+};
+
+enum ServoMode {
+    SERVO_STOP=-1,
+    SERVO_OFF,
+    SERVO_TT,
+    SERVO_HO,
 };
 
 struct TTMet

@@ -38,9 +38,11 @@
             pkg-config
             libb64
           ];
-           shellHook = ''
-             export CPATH=$CPATH:${pkgs.eigen}/include/eigen3:${pkgs.tomlplusplus}/include/toml++
-           '';
+          shellHook = ''
+            source .venv/bin/activate
+            export CPATH=$CPATH:${pkgs.eigen}/include/eigen3:${pkgs.tomlplusplus}/include/toml++
+            alias makecomstructs="uv run $(pwd)/make_commander_structs.py $(pwd)/baldr_jcr/baldr.h $(pwd)/baldr_jcr/commander_structs.h";
+          '';
         };
       };
     };

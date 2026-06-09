@@ -18,16 +18,28 @@ extern "C"
 // The input configuration
 toml::table config;
 
-// Servo parameters. These are the parameters that will be adjusted by the commander
+///////  Servo parameters:
+
+// Configured at launch via config
 size_t beam = 1, width = 21;
+
+// Configured at launch via config and updated by commander during runtime
 CtrlSettings settings;
+
+// Written to by servo_loop and read via commander interface
 RTStatus rt_status;
+
+// Mix of configurable values initialsed at launch and internal variables read/written
+// by servo_loop.
 ControlU control_u;
 ControlA control_a;
+
+// Image streams used by servo_loop
 IMAGE DM_low;
 IMAGE DM_high;
 IMAGE master_DM;
 IMAGE subarray;
+
 
 // Utility functions
 
@@ -132,6 +144,13 @@ Result load_reconstructor(std::string filename)
   // which is not yet defined. For now, we will just print a message and return true.
   warn("load_reconstructor unimplemented!");
   info("Loading reconstructor from file: %s", filename.c_str());
+  fitsfile *fptr;
+  int status = 0, nkeys, ii;
+  long fpixel[2] = {1, 1};
+  info("opening file");
+  fits_open_file(&fptr, filename.c_str(), READONLY, &status);
+  info("reading pixels");
+  fits_read_pix(fptr, TDOUBLE, fpixel, N_PIXELS, NULL, control_a.reconstructor, NULL, &status);
   return SUCCESS(true);
 }
 
@@ -151,6 +170,10 @@ Result set_servo_mode(std::string mode)
   {
     new_mode = SERVO_HO;
   }
+  // TODO fix unimplemented:
+  // else if (mode == "stop") {
+  //   new_mode = SERVO_STOP;
+  // }
   else
   {
     const char *msg = "Servo mode not recognised";
@@ -461,18 +484,43 @@ int main(int argc, char *argv[])
 
   // Compute the rotation matrix R based on the rotation angle in the config file.
   double angle = config["dm_rotation"][beam - 1].value_or(0.0);
-  double cos_angle = std::cos(angle * M_PI / 180.0);
-  double sin_angle = std::sin(angle * M_PI / 180.0);
-  control_u.R << cos_angle, -sin_angle, sin_angle, cos_angle;
-  info("R matrix: %f %f %f %f", control_u.R(0, 0), control_u.R(0, 1), control_u.R(1, 0), control_u.R(1, 1));
 
-  ImageStreamIO_openIm(&DM_low, ("dm" + std::to_string(beam) + "disp01").c_str());
-  ImageStreamIO_openIm(&DM_high, ("dm" + std::to_string(beam) + "disp02").c_str());
-  ImageStreamIO_openIm(&master_DM, ("dm" + std::to_string(beam)).c_str());
+  errno_t err;
+  bool anyerrors = false;
+  
+  const char* name = ("dm" + std::to_string(beam) + "disp01").c_str();
+  err = ImageStreamIO_openIm(&DM_low, name);
+  if (err!=0) { 
+    anyerrors = true;
+    warn("failed to open shm: %s", name);
+  }
 
-  // Initialise the two forward Fourier transform objects
-  ImageStreamIO_openIm(&subarray, ("baldr" + std::to_string(beam)).c_str());
+  name = ("dm" + std::to_string(beam) + "disp02").c_str();
+  err = ImageStreamIO_openIm(&DM_high, name);
+  if (err!=0) { 
+    anyerrors = true;
+    warn("failed to open shm: %s", name);
+  }
 
+  name = ("dm" + std::to_string(beam)).c_str();
+  err = ImageStreamIO_openIm(&master_DM, name);
+  if (err!=0) { 
+    anyerrors = true;
+    warn("failed to open shm: %s", name);
+  }
+  
+  name = ("baldr" + std::to_string(beam)).c_str();
+  err = ImageStreamIO_openIm(&subarray, name);
+  if (err!=0) { 
+    anyerrors = true;
+    warn("failed to open shm: %s", name);
+  }
+  
+  if (anyerrors) {
+    error("Failed to open required shm files, exiting");
+    return err;
+  }
+  
   // Start the main servo thread.
   std::thread servo_thread(servo_loop);
 
@@ -490,7 +538,9 @@ int main(int argc, char *argv[])
   commander::Server s(argc, argv);
   s.run();
 
-  // this code is typically unreachable, except when in "single-command" mode:
+  // this code is typically uncreached, except when in "single-command" mode
+  // or if the user changes the servo mode to servo stop via commander
+
   // join the servo thread
   settings.s.servo_mode = SERVO_STOP;
   servo_thread.join();
