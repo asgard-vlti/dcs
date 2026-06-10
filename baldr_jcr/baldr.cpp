@@ -21,7 +21,7 @@ toml::table config;
 ///////  Servo parameters:
 
 // Configured at launch via config
-size_t beam = 1, width = 21;
+size_t beam = 1;
 
 // Configured at launch via config and updated by commander during runtime
 CtrlSettings settings;
@@ -31,15 +31,13 @@ RTStatus rt_status;
 
 // Mix of configurable values initialsed at launch and internal variables read/written
 // by servo_loop.
-ControlU control_u;
-ControlA control_a;
+ControlVariables ctrl;
 
 // Image streams used by servo_loop
 IMAGE DM_low;
 IMAGE DM_high;
 IMAGE master_DM;
 IMAGE subarray;
-
 
 // Utility functions
 
@@ -139,19 +137,19 @@ bool read_modes(std::string filename, Eigen::Matrix<double, N_ACTUATORS, N_MODES
 
 Result load_reconstructor(std::string filename)
 {
-  // This is a placeholder function for loading a reconstructor from a fits file.
-  // The actual implementation will depend on the format of the reconstructor file,
-  // which is not yet defined. For now, we will just print a message and return true.
-  warn("load_reconstructor unimplemented!");
-  info("Loading reconstructor from file: %s", filename.c_str());
-  fitsfile *fptr;
-  int status = 0, nkeys, ii;
-  long fpixel[2] = {1, 1};
-  info("opening file");
-  fits_open_file(&fptr, filename.c_str(), READONLY, &status);
-  info("reading pixels");
-  fits_read_pix(fptr, TDOUBLE, fpixel, N_PIXELS, NULL, control_a.reconstructor, NULL, &status);
-  return SUCCESS(true);
+  // // This is a placeholder function for loading a reconstructor from a fits file.
+  // // The actual implementation will depend on the format of the reconstructor file,
+  // // which is not yet defined. For now, we will just print a message and return true.
+  // warn("load_reconstructor unimplemented!");
+  // info("Loading reconstructor from file: %s", filename.c_str());
+  // fitsfile *fptr;
+  // int status = 0, nkeys, ii;
+  // long fpixel[2] = {1, 1};
+  // info("opening file");
+  // fits_open_file(&fptr, filename.c_str(), READONLY, &status);
+  // info("reading pixels");
+  // fits_read_pix(fptr, TDOUBLE, fpixel, N_PIXELS, NULL, ctrl.reconstructor.data(), NULL, &status);
+  // return SUCCESS(true);
 }
 
 // Set the servo mode
@@ -160,15 +158,11 @@ Result set_servo_mode(std::string mode)
   int new_mode;
   if (mode == "off")
   {
-    new_mode = SERVO_OFF;
+    new_mode = SERVO_OPEN;
   }
-  else if (mode == "tt")
+  else if (mode == "lo")
   {
-    new_mode = SERVO_TT;
-  }
-  else if (mode == "ho")
-  {
-    new_mode = SERVO_HO;
+    new_mode = SERVO_CLOSED;
   }
   // TODO fix unimplemented:
   // else if (mode == "stop") {
@@ -181,7 +175,7 @@ Result set_servo_mode(std::string mode)
     return FAILURE(msg);
   }
   settings.mutex.lock();
-  settings.s.servo_mode = new_mode;
+  settings.settings.servo_mode = new_mode;
   settings.mutex.unlock();
   // Reset the control_u parameters !!! TODO
   std::string msg = fmt::format("Servo mode updated to {}", new_mode);
@@ -190,103 +184,75 @@ Result set_servo_mode(std::string mode)
 }
 
 // Set the tt gain.
-Result set_ttg(double gain)
+Result set_log(double gain)
 {
   settings.mutex.lock();
-  settings.s.ttg = gain;
+  settings.settings.log = gain;
   settings.mutex.unlock();
-  return SUCCESS(settings.s.ttg);
+  return SUCCESS(settings.settings.log);
 }
 
 // Set the high order gain
 Result set_hog(double gain)
 {
   settings.mutex.lock();
-  settings.s.hog = gain;
+  settings.settings.hog = gain;
   settings.mutex.unlock();
-  return SUCCESS(settings.s.hog);
+  return SUCCESS(settings.settings.hog);
 }
 
 // Set the high order leaky integrator term
 Result set_hol(double leak)
 {
   settings.mutex.lock();
-  settings.s.hol = leak;
+  settings.settings.hol = leak;
   settings.mutex.unlock();
-  return SUCCESS(settings.s.hol);
+  return SUCCESS(settings.settings.hol);
 }
 
 // Set the tip/tilt leaky integrator term
-Result set_ttl(double leak)
+Result set_lol(double leak)
 {
   settings.mutex.lock();
-  settings.s.ttl = leak;
+  settings.settings.lol = leak;
   settings.mutex.unlock();
-  return SUCCESS(settings.s.ttl);
-}
-
-// Set the amplitude of the focus term
-Result set_focus_amp(double focus)
-{
-  settings.mutex.lock();
-  settings.s.focus_amp = focus;
-  settings.mutex.unlock();
-  return SUCCESS(settings.s.focus_amp);
+  return SUCCESS(settings.settings.lol);
 }
 
 // Setter functions for thresholds.
 Result set_flux_threshold(double val)
 {
   settings.mutex.lock();
-  settings.s.flux_threshold = val;
+  settings.settings.flux_threshold = val;
   settings.mutex.unlock();
-  return SUCCESS(settings.s.flux_threshold);
+  return SUCCESS(settings.settings.flux_threshold);
 }
 
 Result set_pxy(size_t px_new, size_t py_new)
 {
-  // Check that the new px and py are more than width/2 from the edge,
+  // Check that the new px and py are more than WIDTH/2 from the edge,
   // otherwise we might have problems with the Gaussian window.
-  if (px_new < width / 2 || px_new > sz - width / 2 || py_new < width / 2 || py_new > sz - width / 2)
+  if (px_new < WIDTH / 2 || px_new > sz - WIDTH / 2 || py_new < WIDTH / 2 || py_new > sz - WIDTH / 2)
   {
-    std::string msg = fmt::format("px and py must be between {} and {}", width / 2, sz - width / 2);
+    std::string msg = fmt::format("px and py must be between {} and {}", WIDTH / 2, sz - WIDTH / 2);
     info(msg.c_str());
     return FAILURE(msg);
   }
   // Set px and py!
   settings.mutex.lock();
-  settings.s.px = px_new;
-  settings.s.py = py_new;
+  settings.settings.px = px_new;
+  settings.settings.py = py_new;
   settings.mutex.unlock();
   // For debugging, print the new px and py.
   info("px and py updated to %d %d", px_new, py_new);
-  return SUCCESS(std::vector({settings.s.px, settings.s.py}));
-}
-
-Result set_tto(double x, double y)
-{
-  settings.mutex.lock();
-  settings.s.ttxo = x;
-  settings.s.ttyo = y;
-  settings.mutex.unlock();
-  return SUCCESS(std::vector({settings.s.ttxo, settings.s.ttyo}));
-}
-
-Result set_focus_offset(double offset)
-{
-  settings.mutex.lock();
-  settings.s.focus_offset = offset;
-  settings.mutex.unlock();
-  return SUCCESS(settings.s.focus_offset);
+  return SUCCESS(std::vector({settings.settings.px, settings.settings.py}));
 }
 
 Result get_status()
 {
   rt_status.mutex.lock();
-  Status s = rt_status.s;
+  Status s = rt_status.status;
   rt_status.mutex.unlock();
-  s.tx = std::round(s.tx * 1000) / 1000.0;
-  s.ty = std::round(s.ty * 1000) / 1000.0;
   s.flux = std::round(s.flux * 10) / 10.0;
   s.cnt = cnt % 10000;
   return SUCCESS(s);
@@ -295,110 +261,43 @@ Result get_status()
 Result get_settings()
 {
   settings.mutex.lock();
-  Settings s = settings.s;
+  Settings s = settings.settings;
   settings.mutex.unlock();
   return SUCCESS(s);
 }
 
-// std::string set_bad_pixels(std::vector<int> x, std::vector<int> y)
-// {
-//   // Set the bad pixels are valid
-//   // Set the bad pixels
-//   return "OK";
-// }
-
-Result zero_tt()
-{
-  // Based on the curent average subarr, find the maximum pixel and set
-  // (px, py) to this.
-  int px_new = 0;
-  int py_new = 0;
-  double max = 0.0;
-  for (size_t i = 0; i < sz; i++)
-  {
-    for (size_t j = 0; j < sz; j++)
-    {
-      if (im_av[i * sz + j] > max)
-      {
-        max = im_av[i * sz + j];
-        px_new = j;
-        py_new = i;
-      }
-    }
-  }
-  // Set the new px and py. Error checking is done in set_pxy.
-  set_pxy(px_new, py_new);
-  // Log the new px and py to /usr/local/etc/ttN.txt
-  std::string tt_file = "/usr/local/etc/tt" + std::to_string(beam) + ".txt";
-  std::ofstream ofs(tt_file, std::ofstream::trunc);
-  if (ofs.is_open()) {
-    ofs << px_new << " " << py_new << std::endl;
-    return SUCCESS({});
-  }
-  info("Warning: could not write to %s", tt_file.c_str());
-  return FAILURE(fmt::format("Warning: could not write to %s", tt_file.c_str()));
-}
-
-Result get_ttmet(unsigned int last_cnt)
-{
-  TTMet ttmet_vec;
-  // Number of new ttmet values since last_cnt. Max is N_TTMET.
-  size_t num_ttmet = (ttmet_save.cnt - last_cnt + N_TTMET) % N_TTMET;
-  // Fix the size of the returned vectors with ttmet_vec to num_ttmet.
-  ttmet_vec.tx.resize(num_ttmet);
-  ttmet_vec.ty.resize(num_ttmet);
-  ttmet_vec.mx.resize(num_ttmet);
-  ttmet_vec.my.resize(num_ttmet);
-  // Fill the returned vectors with the most recent num_ttmet values.
-  for (size_t i = 0; i < num_ttmet; i++)
-  {
-    int ix = (ttmet_save.cnt - num_ttmet + i) % N_TTMET;
-    ttmet_vec.tx[i] = std::round(ttmet_save.tx[ix] * 1000) / 1000.0;
-    ttmet_vec.ty[i] = std::round(ttmet_save.ty[ix] * 1000) / 1000.0;
-    ttmet_vec.mx[i] = std::round(ttmet_save.mx[ix] * 1000) / 1000.0;
-    ttmet_vec.my[i] = std::round(ttmet_save.my[ix] * 1000) / 1000.0;
-  }
-  ttmet_vec.cnt = ttmet_save.cnt;
-  return SUCCESS(ttmet_vec);
-}
-
 Result poke_mode(int mode_ix, double amplitude)
 {
-  ImAvgs im_avgs;
-  im_avgs.width = 0;
-  im_avgs.im_plus_sum_encoded = "";
-  im_avgs.im_minus_sum_encoded = "";
-  if (mode_ix < 0 || mode_ix >= N_MODES)
-  {
-    std::string msg = fmt::format("Invalid mode index. Must be between 0 and %d", N_MODES - 1);
-    info(msg.c_str());
-    return FAILURE(msg);
-  }
-  // Encode the current im_plus_sum and im_minus_sum as base64 strings.
-  im_mutex.lock();
-  im_avgs.im_plus_sum_encoded = encode((char *)im_plus_sum, sizeof(float) * width * width);
-  im_avgs.im_minus_sum_encoded = encode((char *)im_minus_sum, sizeof(float) * width * width);
-  im_mutex.unlock();
+  // ImAvgs im_avgs;
+  // im_avgs.width = 0;
+  // im_avgs.im_plus_sum_encoded = "";
+  // im_avgs.im_minus_sum_encoded = "";
+  // if (mode_ix < 0 || mode_ix >= N_MODES)
+  // {
+  //   std::string msg = fmt::format("Invalid mode index. Must be between 0 and %d", N_MODES - 1);
+  //   info(msg.c_str());
+  //   return FAILURE(msg);
+  // }
+  // // Encode the current im_plus_sum and im_minus_sum as base64 strings.
+  // im_avgs.width = WIDTH;
 
-  im_avgs.width = width;
+  // // Set the control_u DM command to be the poke of the given mode and amplitude.
+  // ctrl.modes.setZero();
+  // ctrl.modes(mode_ix) = amplitude;
+  // info("Poking mode %d with amplitude %f", mode_ix, amplitude);
 
-  // Set the control_u DM command to be the poke of the given mode and amplitude.
-  control_a.modes.setZero();
-  control_a.modes(mode_ix) = amplitude;
-  info("Poking mode %d with amplitude %f", mode_ix, amplitude);
+  // // Wait 10ms for DM to settle, then set the im_plus_sum
+  // // and im_minus_sum to zero.
+  // usleep(10000);
+  // im_mutex.lock();
+  // for (size_t j = 0; j < WIDTH * WIDTH; j++)
+  // {
+  //   im_plus_sum[j] = 0;
+  //   im_minus_sum[j] = 0;
+  // }
+  // im_mutex.unlock();
 
-  // Wait 10ms for DM to settle, then set the im_plus_sum
-  // and im_minus_sum to zero.
-  usleep(10000);
-  im_mutex.lock();
-  for (size_t j = 0; j < width * width; j++)
-  {
-    im_plus_sum[j] = 0;
-    im_minus_sum[j] = 0;
-  }
-  im_mutex.unlock();
-
-  return SUCCESS(im_avgs);
+  // return SUCCESS(im_avgs);
 }
 
 COMMANDER_REGISTER(m)
@@ -409,17 +308,13 @@ COMMANDER_REGISTER(m)
   m.def("servo", set_servo_mode, "Set the servo mode", "mode"_arg = "off");
   m.def("status", get_status, "Get the status of the system");
   m.def("settings", get_settings, "Get current system settings");
-  m.def("ttg", set_ttg, "Set the tip/tilt gain for the servo loop", "gain"_arg = 0.0);
-  m.def("ttl", set_ttl, "Set the tip/tilt leak term", "gain"_arg = 0.01);
+  m.def("log", set_log, "Set the low-order gain for the servo loop", "gain"_arg = 0.0);
+  m.def("lol", set_lol, "Set the low-order leak term", "gain"_arg = 0.01);
   m.def("hog", set_hog, "Set the high-order gain for the servo loop", "gain"_arg = 0.0);
   m.def("hol", set_hol, "Set the high-order leak term", "gain"_arg = 0.01);
-  m.def("focamp", set_focus_amp, "Set the amplitude of the focus term", "focus"_arg = 0.0);
   m.def("focoff", set_focus_offset, "Set the focus offset", "offset"_arg = 0.0);
   m.def("pxy", set_pxy, "Set the origin pixels for tip/tilt", "px"_arg = 15, "py"_arg = 15);
-  m.def("tto", set_tto, "Set tip/tilt offsets", "tx"_arg = 0, "ty"_arg = 0);
   m.def("flux_threshold", set_flux_threshold, "Set flux threshold", "value"_arg = 100.0);
-  m.def("zero_tt", zero_tt, "Zero tip/tilt based on current image position");
-  m.def("ttmet", get_ttmet, "Get the saved tip/tilt metrology", "last_cnt"_arg = 0);
   m.def("poke", poke_mode, "Poke the DM with a given mode and amplitude", "mode_ix"_arg = 0, "amplitude"_arg = 0.1);
   m.def("recon", load_reconstructor, "Load a reconstructor from a fits file", "filename"_arg = "recon.fits");
 }
@@ -448,8 +343,8 @@ int main(int argc, char *argv[])
     return 1;
   }
 
-  settings.s.px = config["px"].value_or(15);
-  settings.s.py = config["py"].value_or(15);
+  settings.settings.px = config["px"].value_or(15);
+  settings.settings.py = config["py"].value_or(15);
   // If /usr/local/etc/ttN.txt exists, override px and py with its values.
   {
     std::string tt_file = "/usr/local/etc/tt" + std::to_string(beam) + ".txt";
@@ -464,63 +359,64 @@ int main(int argc, char *argv[])
       }
     }
   }
-  width = config["width"].value_or(15);
-  settings.s.gauss_hwidth = config["gauss_hwidth"].value_or(3.0);
-  settings.s.ttg = config["ttg"].value_or(0.01);
-  settings.s.ttl = config["ttl"].value_or(0.01);
-  settings.s.hog = config["hog"].value_or(0.2);
-  settings.s.hol = config["hol"].value_or(0.01);
-  settings.s.focus_amp = config["focus_amp"].value_or(0.02);
-  settings.s.focus_offset = config["focus_offset"].value_or(0.0);
-  settings.s.flux_threshold = config["flux_threshold"].value_or(10000.0);
-  settings.s.servo_mode = SERVO_OFF;
+  settings.settings.log = config["log"].value_or(0.01);
+  settings.settings.lol = config["lol"].value_or(0.01);
+  settings.settings.hog = config["hog"].value_or(0.2);
+  settings.settings.hol = config["hol"].value_or(0.01);
+  settings.settings.flux_threshold = config["flux_threshold"].value_or(10000.0);
+  settings.settings.servo_mode = SERVO_OPEN;
   // Read in the influence functions from the "modefile" fits file.
   std::string modefile = config["modefile"].value_or("modes.fits");
-  if (!read_modes(modefile, control_a.influence_functions))
-  {
-    error("Error reading modes file. Exiting.");
-    return 1;
-  }
+  // if (!read_modes(modefile, ctrl.projector))
+  // {
+  //   error("Error reading modes file. Exiting.");
+  //   return 1;
+  // }
 
   // Compute the rotation matrix R based on the rotation angle in the config file.
   double angle = config["dm_rotation"][beam - 1].value_or(0.0);
 
   errno_t err;
   bool anyerrors = false;
-  
-  const char* name = ("dm" + std::to_string(beam) + "disp01").c_str();
+
+  const char *name = ("dm" + std::to_string(beam) + "disp01").c_str();
   err = ImageStreamIO_openIm(&DM_low, name);
-  if (err!=0) { 
+  if (err != 0)
+  {
     anyerrors = true;
     warn("failed to open shm: %s", name);
   }
 
   name = ("dm" + std::to_string(beam) + "disp02").c_str();
   err = ImageStreamIO_openIm(&DM_high, name);
-  if (err!=0) { 
+  if (err != 0)
+  {
     anyerrors = true;
     warn("failed to open shm: %s", name);
   }
 
   name = ("dm" + std::to_string(beam)).c_str();
   err = ImageStreamIO_openIm(&master_DM, name);
-  if (err!=0) { 
+  if (err != 0)
+  {
     anyerrors = true;
     warn("failed to open shm: %s", name);
   }
-  
+
   name = ("baldr" + std::to_string(beam)).c_str();
   err = ImageStreamIO_openIm(&subarray, name);
-  if (err!=0) { 
+  if (err != 0)
+  {
     anyerrors = true;
     warn("failed to open shm: %s", name);
   }
-  
-  if (anyerrors) {
+
+  if (anyerrors)
+  {
     error("Failed to open required shm files, exiting");
     return err;
   }
-  
+
   // Start the main servo thread.
   std::thread servo_thread(servo_loop);
 
@@ -542,7 +438,7 @@ int main(int argc, char *argv[])
   // or if the user changes the servo mode to servo stop via commander
 
   // join the servo thread
-  settings.s.servo_mode = SERVO_STOP;
+  settings.settings.servo_mode = SERVO_STOP;
   servo_thread.join();
 
   unacquire_single_instance_lock();

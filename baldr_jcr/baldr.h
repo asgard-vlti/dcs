@@ -3,6 +3,7 @@
 //
 // /home/asg/.conda/envs/asgard/lib/python3.10/site-packages/asgard_lab_DM_tools/asgard_lab_MDM_controller.py 
 // 
+
 #include <complex> 
 #include <fftw3.h>
 #include <ImageStreamIO.h>
@@ -28,40 +29,37 @@
 //----------Defines-----------
 //#define SIMULATE
 
-#define N_MODES 11
-#define WIDTH 15
-#define N_PIXELS WIDTH*WIDTH
-#define N_ACTUATORS 144 // Including corners.
-#define N_BOXCAR 16
-#define N_TTMET 1000
-#define HO_CYCLE 3 // A high-order cycle. 
-
-#define FT_STARTING 0
-#define FT_RUNNING 1
-#define FT_STOPPING 2
+#define N_MODES 11  // Number of modes to control
+#define WIDTH 15  // Number of pixels across subim
+#define N_PIXELS WIDTH*WIDTH  // Total number of pixels in subim
+#define FILTER_LEN 2  // Max number of taps in IIR filter
+#define N_ACTUATORS 144 // Including corners
+#define DIST_LEN 10 // Length of disturbance sequence (periodic)
 
 //----- Structures and typedefs------
-typedef std::complex<double> dcomp;
 
-// Variables for actuation.
-struct ControlU{
-    double tx, ty;
-    int ho_sign;
-    int ho_ix;
-    Eigen::Matrix<double, N_ACTUATORS, 1> DM;
-};
+// Variables for controller.
+struct ControlVariables {
+    // real-time variables
+    Eigen::Matrix<double, N_PIXELS, 1> meas_raw;
+    Eigen::Matrix<double, N_PIXELS, 1> meas_cl;
+    Eigen::Matrix<double, N_PIXELS, 1> meas_dm;
+    Eigen::Matrix<double, N_PIXELS, 1> meas_pol;
+    Eigen::Matrix<double, N_MODES, 1> modes_pol;
+    Eigen::Matrix<double, N_MODES, 1> modes_filt;
+    Eigen::Matrix<double, N_ACTUATORS, 1> com_ctrl;
+    Eigen::Matrix<double, N_ACTUATORS, 1> com_raw;
 
-// This is our knowledge of the DM modes
-struct ControlA{
-    Eigen::Matrix<double, N_MODES, 1> modes;
-    Eigen::Matrix<double, N_ACTUATORS, N_MODES> influence_functions;
-    double reconstructor[N_MODES*N_PIXELS];
-};
-
-struct TTMet_save{
-    std::mutex mutex;
-    double tx[N_TTMET], ty[N_TTMET], mx[N_TTMET], my[N_TTMET];
-    unsigned int cnt;
+    // dynamically configurable variables
+    Eigen::Matrix<double, N_PIXELS, 1> meas_ref;
+    double delay;
+    Eigen::Matrix<double, N_MODES, N_PIXELS> meas_to_modes;
+    Eigen::Matrix<double, N_MODES, FILTER_LEN> filter_coeff_in;
+    Eigen::Matrix<double, N_MODES, FILTER_LEN> filter_coeff_out;
+    Eigen::Matrix<double, N_ACTUATORS, N_MODES> modes_to_com;
+    Eigen::Matrix<double, N_ACTUATORS, 1> com_offset;
+    Eigen::Matrix<double, N_ACTUATORS, DIST_LEN> com_dist_buffer;
+    Eigen::Matrix<double, N_PIXELS, N_ACTUATORS> com_to_meas;
 };
 
 //-------Commander structs-------------
@@ -77,44 +75,30 @@ struct EncodedImage
 // key variables.
 struct Status
 {
-    double flux, tx, ty;
+    double flux;
+    int64_t nerrors;
+    int64_t nlowflux;
     int cnt;
 };
 
 // Settings struct for commander
 struct Settings
 {
-    double ttg, ttl, hog, hol, focus_amp, flux_threshold;
-    double gauss_hwidth;
-    double ttxo, ttyo, focus_offset;
+    double log, lol, hog, hol, flux_threshold;
+    size_t num_lomodes;
     int px, py;
-    int32_t dark_offset;
     int servo_mode;
 };
 
 enum ServoMode {
     SERVO_STOP=-1,
-    SERVO_OFF,
-    SERVO_TT,
-    SERVO_HO,
-};
-
-struct TTMet
-{
-    std::vector<double> tx, ty, mx, my;
-    unsigned int cnt;
-};
-
-struct ImAvgs
-{
-    int width;
-    std::string im_plus_sum_encoded;
-    std::string im_minus_sum_encoded;
+    SERVO_OPEN,
+    SERVO_CLOSED,
 };
 
 // variants of commander call results
 enum ErrorCode {
-    success,
+    success=0,
     failure,
 };
 
@@ -133,13 +117,13 @@ struct Result
 // Settings including a mutex.
 struct CtrlSettings{
     std::mutex mutex;
-    Settings s;
+    Settings settings;
 };
 
 // Status including a mutex.
 struct RTStatus{
     std::mutex mutex;
-    Status s;
+    Status status;
 };
 
 // -------- Extern global definitions ------------
@@ -147,6 +131,7 @@ extern IMAGE DM_low;
 extern IMAGE DM_high;
 extern IMAGE master_DM;
 extern IMAGE subarray;
+
 // The statit initial input parameters
 extern toml::table config;
 
@@ -156,18 +141,16 @@ extern size_t beam, width, sz;
 // Servo parameters. These are the parameters that will be adjusted by the commander
 extern CtrlSettings settings;
 extern RTStatus rt_status;
-extern ControlU control_u;
-extern ControlA control_a;
+extern ControlVariables ctrl;
 extern uint64_t cnt;
 
 // Images - plus, minus and average
-extern double *im_av, *im_plus, *im_minus;
-extern float *im_plus_sum, *im_minus_sum;
 extern std::mutex im_mutex;
-extern TTMet_save ttmet_save;
 
 // ----- methods to be implemented for servo loop -----
 void servo_loop(void);
+
+void read_shm(int &retFlag);
 
 // ----- commander methods -----
 
@@ -216,3 +199,13 @@ Result get_ttmet(unsigned int last_cnt);
 
 // Poke a mode and get the average image back
 Result poke_mode(int mode_ix, double amplitude);
+
+void read_shm();
+void calibrate_frame();
+void compute_pol_meas();
+void reconstruct_modes();
+void filter_modes();
+void project_com();
+void inject_disturb();
+void shm_write();
+void inject_dm_signal();
