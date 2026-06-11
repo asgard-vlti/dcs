@@ -80,76 +80,29 @@ std::string encode(const char *input, unsigned int size)
   return output_str;
 }
 
-// Read the fits file containing the modes and store it in the provided Eigen matrix.
-// The file should have N_MODES rows and N_ACTUATORS columns, but can have
-// fewer than N_MODES rows, in which case the remaining modes will be set to zero.
-bool read_modes(std::string filename, Eigen::Matrix<double, N_ACTUATORS, N_MODES> &modes)
-{
-  fitsfile *fptr; /* pointer to the FITS file, defined in fitsio.h */
-  int status = 0; /* CFITSIO status value MUST be initialized to zero! */
-  int nfound;
-  long naxes[2] = {1, 1};
-  double *data;
-
-  if (fits_open_file(&fptr, filename.c_str(), READONLY, &status))
-  {
-    error("Error opening file: %s", filename.c_str());
-    return false;
-  }
-  if (fits_read_keys_lng(fptr, "NAXIS", 1, 2, naxes, &nfound, &status))
-  {
-    error("Error reading NAXIS from file: %s", filename.c_str());
-    return false;
-  }
-  if ((naxes[0] != N_ACTUATORS) || (naxes[1] > N_MODES))
-  {
-    error("Error: modes file has wrong dimensions. Expected %dx%d, got %ldx%ld", N_ACTUATORS, N_MODES, naxes[0], naxes[1]);
-    return false;
-  }
-  data = new double[N_ACTUATORS * N_MODES];
-  if (fits_read_img(fptr, TDOUBLE, 1, N_ACTUATORS * N_MODES, NULL, data, NULL, &status))
-  {
-    error("Error reading image data from file: %s", filename.c_str());
-    delete[] data;
-    return false;
-  }
-  // Copy the data into the Eigen matrix.
-  for (long i = 0; i < N_MODES; i++)
-  {
-    for (long j = 0; j < N_ACTUATORS; j++)
-    {
-      if (naxes[1] > i)
-      {
-        modes(j, i) = data[i * N_MODES + j];
-      }
-      else
-      {
-        modes(j, i) = 0.0;
-      }
-    }
-  }
-  delete[] data;
-  fits_close_file(fptr, &status);
-  return true;
-}
-
 //----------commander functions from here---------------
 
-Result load_reconstructor(std::string filename)
-{
-  // // This is a placeholder function for loading a reconstructor from a fits file.
-  // // The actual implementation will depend on the format of the reconstructor file,
-  // // which is not yet defined. For now, we will just print a message and return true.
-  // warn("load_reconstructor unimplemented!");
-  // info("Loading reconstructor from file: %s", filename.c_str());
-  // fitsfile *fptr;
-  // int status = 0, nkeys, ii;
-  // long fpixel[2] = {1, 1};
-  // info("opening file");
-  // fits_open_file(&fptr, filename.c_str(), READONLY, &status);
-  // info("reading pixels");
-  // fits_read_pix(fptr, TDOUBLE, fpixel, N_PIXELS, NULL, ctrl.reconstructor.data(), NULL, &status);
-  // return SUCCESS(true);
+DEF_READ_CTRL_PARAM(meas_ref, measurement reference, N_PIXELS, 1, DOUBLE)
+DEF_READ_CTRL_PARAM(meas_to_modes, reconstructor matrix, N_MODES, N_PIXELS, DOUBLE)
+DEF_READ_CTRL_PARAM(filter_coeff_in, IIR input filter coefficients, N_MODES, FILTER_LEN, DOUBLE)
+DEF_READ_CTRL_PARAM(filter_coeff_out, IIR output filter coefficients, N_MODES, FILTER_LEN, DOUBLE)
+DEF_READ_CTRL_PARAM(modes_to_com, modal projection matrix, N_ACTUATORS, N_MODES, DOUBLE)
+DEF_READ_CTRL_PARAM(com_offset, command offset vector, N_ACTUATORS, 1, DOUBLE)
+DEF_READ_CTRL_PARAM(com_dist_buffer, command disturbance buffer, N_ACTUATORS, DIST_LEN, DOUBLE)
+DEF_READ_CTRL_PARAM(com_to_meas, interaction matrix, N_PIXELS, N_ACTUATORS, DOUBLE)
+
+Result reset_ctrl() {
+  ctrl.mutex.lock();
+  ctrl.meas_raw.setZero();
+  ctrl.meas_cl.setZero();
+  ctrl.meas_dm.setZero();
+  ctrl.meas_pol.setZero();
+  ctrl.modes_pol.setZero();
+  ctrl.modes_filt.setZero();
+  ctrl.com_ctrl.setZero();
+  ctrl.com_raw.setZero();
+  ctrl.mutex.unlock();
+  return SUCCESS();
 }
 
 // Set the servo mode
@@ -160,7 +113,7 @@ Result set_servo_mode(std::string mode)
   {
     new_mode = SERVO_OPEN;
   }
-  else if (mode == "lo")
+  else if (mode == "on")
   {
     new_mode = SERVO_CLOSED;
   }
@@ -266,39 +219,47 @@ Result get_settings()
   return SUCCESS(s);
 }
 
-Result poke_mode(int mode_ix, double amplitude)
-{
-  // ImAvgs im_avgs;
-  // im_avgs.width = 0;
-  // im_avgs.im_plus_sum_encoded = "";
-  // im_avgs.im_minus_sum_encoded = "";
-  // if (mode_ix < 0 || mode_ix >= N_MODES)
-  // {
-  //   std::string msg = fmt::format("Invalid mode index. Must be between 0 and %d", N_MODES - 1);
-  //   info(msg.c_str());
-  //   return FAILURE(msg);
-  // }
-  // // Encode the current im_plus_sum and im_minus_sum as base64 strings.
-  // im_avgs.width = WIDTH;
-
-  // // Set the control_u DM command to be the poke of the given mode and amplitude.
-  // ctrl.modes.setZero();
-  // ctrl.modes(mode_ix) = amplitude;
-  // info("Poking mode %d with amplitude %f", mode_ix, amplitude);
-
-  // // Wait 10ms for DM to settle, then set the im_plus_sum
-  // // and im_minus_sum to zero.
-  // usleep(10000);
-  // im_mutex.lock();
-  // for (size_t j = 0; j < WIDTH * WIDTH; j++)
-  // {
-  //   im_plus_sum[j] = 0;
-  //   im_minus_sum[j] = 0;
-  // }
-  // im_mutex.unlock();
-
-  // return SUCCESS(im_avgs);
+Result get_measurement_encoded() {
+  MeasBase64 meas;
+  ctrl.mutex.lock();
+  meas.meas = encode((char*) ctrl.meas_raw.data(), sizeof(double)*N_PIXELS);
+  ctrl.mutex.unlock();
+  return SUCCESS(meas);
 }
+
+// Result poke_mode(int mode_ix, double amplitude)
+// {
+//   // ImAvgs im_avgs;
+//   // im_avgs.width = 0;
+//   // im_avgs.im_plus_sum_encoded = "";
+//   // im_avgs.im_minus_sum_encoded = "";
+//   // if (mode_ix < 0 || mode_ix >= N_MODES)
+//   // {
+//   //   std::string msg = fmt::format("Invalid mode index. Must be between 0 and %d", N_MODES - 1);
+//   //   info(msg.c_str());
+//   //   return FAILURE(msg);
+//   // }
+//   // // Encode the current im_plus_sum and im_minus_sum as base64 strings.
+//   // im_avgs.width = WIDTH;
+
+//   // // Set the control_u DM command to be the poke of the given mode and amplitude.
+//   // ctrl.modes.setZero();
+//   // ctrl.modes(mode_ix) = amplitude;
+//   // info("Poking mode %d with amplitude %f", mode_ix, amplitude);
+
+//   // // Wait 10ms for DM to settle, then set the im_plus_sum
+//   // // and im_minus_sum to zero.
+//   // usleep(10000);
+//   // im_mutex.lock();
+//   // for (size_t j = 0; j < WIDTH * WIDTH; j++)
+//   // {
+//   //   im_plus_sum[j] = 0;
+//   //   im_minus_sum[j] = 0;
+//   // }
+//   // im_mutex.unlock();
+
+//   // return SUCCESS(im_avgs);
+// }
 
 COMMANDER_REGISTER(m)
 {
@@ -306,17 +267,22 @@ COMMANDER_REGISTER(m)
   // You can register a function or any other callable object as
   // long as the signature is deductible from the type.
   m.def("servo", set_servo_mode, "Set the servo mode", "mode"_arg = "off");
+  m.def("reset", reset_ctrl, "Reset the ctrl internal parameters");
   m.def("status", get_status, "Get the status of the system");
   m.def("settings", get_settings, "Get current system settings");
-  m.def("log", set_log, "Set the low-order gain for the servo loop", "gain"_arg = 0.0);
-  m.def("lol", set_lol, "Set the low-order leak term", "gain"_arg = 0.01);
-  m.def("hog", set_hog, "Set the high-order gain for the servo loop", "gain"_arg = 0.0);
-  m.def("hol", set_hol, "Set the high-order leak term", "gain"_arg = 0.01);
-  m.def("focoff", set_focus_offset, "Set the focus offset", "offset"_arg = 0.0);
-  m.def("pxy", set_pxy, "Set the origin pixels for tip/tilt", "px"_arg = 15, "py"_arg = 15);
+  // m.def("log", set_log, "Set the low-order gain for the servo loop", "gain"_arg = 0.0);
+  // m.def("lol", set_lol, "Set the low-order leak term", "gain"_arg = 0.01);
+  // m.def("hog", set_hog, "Set the high-order gain for the servo loop", "gain"_arg = 0.0);
+  // m.def("hol", set_hol, "Set the high-order leak term", "gain"_arg = 0.01);
+  m.def("pxy", set_pxy, "Set the origin pixels", "px"_arg = 15, "py"_arg = 15);
   m.def("flux_threshold", set_flux_threshold, "Set flux threshold", "value"_arg = 100.0);
-  m.def("poke", poke_mode, "Poke the DM with a given mode and amplitude", "mode_ix"_arg = 0, "amplitude"_arg = 0.1);
-  m.def("recon", load_reconstructor, "Load a reconstructor from a fits file", "filename"_arg = "recon.fits");
+  m.def("meas_ref", read_meas_ref, "Read reference measurement from file", "filename"_arg = "./baldr_jcr/meas_ref.fits");
+  m.def("filter_in", read_filter_coeff_in, "Read IIR filter input coefficients from file", "filename"_arg = "filter_coeff_in.fits");
+  m.def("filter_out", read_filter_coeff_out, "Read IIR filter output coefficients from file", "filename"_arg = "filter_coeff_out.fits");
+  m.def("meas", get_measurement_encoded, "Read meas_raw in Base64 encoding");
+
+  // m.def("poke", poke_mode, "Poke the DM with a given mode and amplitude", "mode_ix"_arg = 0, "amplitude"_arg = 0.1);
+  // m.def("recon", load_reconstructor, "Load a reconstructor from a fits file", "filename"_arg = "recon.fits");
 }
 
 int main(int argc, char *argv[])
@@ -365,20 +331,29 @@ int main(int argc, char *argv[])
   settings.settings.hol = config["hol"].value_or(0.01);
   settings.settings.flux_threshold = config["flux_threshold"].value_or(10000.0);
   settings.settings.servo_mode = SERVO_OPEN;
+
+
+  // Now we initialise the servo control matrices/parameters.
+  // We haven't spawned any other threads yet, so there is no need to
+  // lock the mutex.
+
+  // read all control matrices/vectors from fits files with same name.
+  LOAD_FROM_FILE(meas_ref, measurement reference)
+  LOAD_FROM_FILE(meas_to_modes, reconstructor matrix)
+  LOAD_FROM_FILE(filter_coeff_in, IIR input filter coefficients)
+  LOAD_FROM_FILE(filter_coeff_out, IIR output filter coefficients)
+  LOAD_FROM_FILE(modes_to_com, modal projection matrix)
+  LOAD_FROM_FILE(com_offset, command offset vector)
+  LOAD_FROM_FILE(com_dist_buffer, command disturbance buffer)
+  LOAD_FROM_FILE(com_to_meas, interaction matrix)
+  ctrl.delay = 1.8;
+
   // Read in the influence functions from the "modefile" fits file.
   std::string modefile = config["modefile"].value_or("modes.fits");
-  // if (!read_modes(modefile, ctrl.projector))
-  // {
-  //   error("Error reading modes file. Exiting.");
-  //   return 1;
-  // }
 
-  // Compute the rotation matrix R based on the rotation angle in the config file.
-  double angle = config["dm_rotation"][beam - 1].value_or(0.0);
 
   errno_t err;
   bool anyerrors = false;
-
   const char *name = ("dm" + std::to_string(beam) + "disp01").c_str();
   err = ImageStreamIO_openIm(&DM_low, name);
   if (err != 0)
@@ -416,6 +391,9 @@ int main(int argc, char *argv[])
     error("Failed to open required shm files, exiting");
     return err;
   }
+
+
+
 
   // Start the main servo thread.
   std::thread servo_thread(servo_loop);

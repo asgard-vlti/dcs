@@ -34,26 +34,9 @@ void initialise_servo()
     }
 
     // Initialise the control variables
-    ctrl.meas_raw.setZero();
-    ctrl.meas_cl.setZero();
-    ctrl.meas_dm.setZero();
-    ctrl.meas_pol.setZero();
-    ctrl.modes_pol.setZero();
-    ctrl.modes_filt.setZero();
-    ctrl.com_ctrl.setZero();
-    ctrl.com_raw.setZero();
-
-    // TODO: Each of these configuration parameters need to be set, both during
-    // initialisation and on demand.
-    ctrl.meas_ref.setZero();
-    ctrl.meas_to_modes.setZero();
-    ctrl.filter_coeff_in.setZero();
-    ctrl.filter_coeff_out.setZero();
-    ctrl.modes_to_com.setZero();
-    ctrl.com_offset.setZero();
-    ctrl.com_dist_buffer.setZero();
-    ctrl.com_to_meas.setZero();
-    ctrl.delay = 1.8; // this should be measured during calibration
+    reset_ctrl();
+    shm_write();
+    ImageStreamIO_sempost(&master_DM, 1);
 }
 
 //------------------------------------------------------------------------------
@@ -96,7 +79,7 @@ void servo_loop()
         rt_status.mutex.lock();
         rt_status.status.flux = ctrl.meas_raw.sum();
         rt_status.status.nerrors = nerrors;
-        if (rt_status.status.flux > settings.settings.flux_threshold)
+        if (rt_status.status.flux < settings.settings.flux_threshold)
         {
             rt_status.status.nlowflux++;
             rt_status.mutex.unlock();
@@ -156,6 +139,7 @@ void read_shm()
     }
     cnt++;
 
+    ctrl.mutex.lock();
     // Copy the data from the IMAGE subarray to the subimage.
     for (size_t ii = 0; ii < WIDTH; ii++)
     {
@@ -166,60 +150,77 @@ void read_shm()
             ctrl.meas_raw(ii * WIDTH + jj) = (double)(subarray.array.SI32[y * sz + x]);
         }
     }
+    ctrl.mutex.unlock();
 }
 
 void calibrate_frame()
 {
+    ctrl.mutex.lock();
     // the closed-loop calibrated measurement is the raw measurement minus
     // the reference frame
     ctrl.meas_cl = ctrl.meas_raw - ctrl.meas_ref;
+    ctrl.mutex.unlock();
 }
 
 void compute_pol_meas()
 {
+    ctrl.mutex.lock();
     // TODO this one requires some finessing with the delay
     ctrl.delay;
     // DO THE THINGS
     ctrl.meas_pol = ctrl.meas_cl - ctrl.meas_dm;
+    ctrl.mutex.unlock();
 }
 
 void reconstruct_modes()
 {
+    ctrl.mutex.lock();
     // the reconstructed modes are the matrix-vector product of the
     // reconstructor matrix (meas_to_modes) and the pseudo-open loop
     // measurements
     ctrl.modes_pol = ctrl.meas_to_modes * ctrl.meas_pol;
+    ctrl.mutex.unlock();
 }
 
 void filter_modes()
 {
+    ctrl.mutex.lock();
     // TODO this one requires some care
     // DO THE THINGS
     ctrl.modes_filt = -ctrl.modes_pol;
+    ctrl.mutex.unlock();
 }
 
 void project_com()
 {
+    ctrl.mutex.lock();
     // project the filtered modes to the command space and add the command offset
     ctrl.com_ctrl = (ctrl.modes_to_com * ctrl.modes_filt) + ctrl.com_offset;
+    ctrl.mutex.unlock();
 }
 
 void inject_disturb()
 {
+    ctrl.mutex.lock();
     // add the next disturbance buffer element to the command vector
     ctrl.com_raw = ctrl.com_ctrl + ctrl.com_dist_buffer.col(cnt % DIST_LEN);
+    ctrl.mutex.unlock();
 }
 
 void shm_write()
 {
+    ctrl.mutex.lock();
     // write to the dm shm
     for (size_t i = 0; i < N_ACTUATORS; i++)
     {
         DM_low.array.D[i] = ctrl.com_raw[i];
     }
+    ctrl.mutex.unlock();
 }
 
 void inject_dm_signal()
 {
+    ctrl.mutex.lock();
     ctrl.meas_dm = ctrl.com_to_meas * ctrl.com_ctrl;
+    ctrl.mutex.unlock();
 }

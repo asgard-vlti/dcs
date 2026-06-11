@@ -26,6 +26,9 @@
 #include <semaphore.h>
 #include <nlohmann/json.hpp>
 
+#define SUCCESS(json) Result{ErrorCode::success,json}
+#define FAILURE(json) Result{ErrorCode::failure,json}
+
 //----------Defines-----------
 //#define SIMULATE
 
@@ -40,6 +43,8 @@
 
 // Variables for controller.
 struct ControlVariables {
+    std::mutex mutex;
+
     // real-time variables
     Eigen::Matrix<double, N_PIXELS, 1> meas_raw;
     Eigen::Matrix<double, N_PIXELS, 1> meas_cl;
@@ -109,8 +114,10 @@ struct Result
     nlohmann::json data;
 };
 
-#define SUCCESS(json) Result{ErrorCode::success,json}
-#define FAILURE(json) Result{ErrorCode::failure,json}
+struct MeasBase64
+{
+    std::string meas;
+};
 
 //-------End of Commander structs------
 
@@ -150,55 +157,26 @@ extern std::mutex im_mutex;
 // ----- methods to be implemented for servo loop -----
 void servo_loop(void);
 
-void read_shm(int &retFlag);
-
 // ----- commander methods -----
 
 // load a reconstructor from filename
-Result load_reconstructor(std::string filename);
+// Result load_reconstructor(std::string filename);
 
 // Set the servo mode
+Result reset_ctrl();
+
 Result set_servo_mode(std::string mode);
-
-// Set the tip-tilt gain.
-Result set_ttg(double gain);
-
-// Set the tip/tilt leaky integrator term
-Result set_ttl(double leak);
-
-// Set the high order gain
-Result set_hog(double gain);
-
-// Set the high order leaky integrator term
-Result set_hol(double leak);
-
-// Set the amplitude of the focus term
-Result set_focus_amp(double focus);
 
 Result set_flux_threshold(double val);
 
-// Set the number of pixels in x and y
 Result set_pxy(size_t px_new, size_t py_new);
-
-Result set_tt_offset(double x, double y);
-
-Result set_focus_offset(double offset);
 
 Result get_status();
 
 Result get_settings();
 
-// Set the pixels to ignore in reconstruction
-Result set_bad_pixels(std::vector<int> x, std::vector<int> y);
-
-// ??
-Result zero_tt();
-
-// Get the saved tip-tilt metrology since the last counter value
-Result get_ttmet(unsigned int last_cnt);
-
 // Poke a mode and get the average image back
-Result poke_mode(int mode_ix, double amplitude);
+// Result poke_mode(int mode_ix, double amplitude);
 
 void read_shm();
 void calibrate_frame();
@@ -209,3 +187,39 @@ void project_com();
 void inject_disturb();
 void shm_write();
 void inject_dm_signal();
+
+#define DEF_READ_CTRL_PARAM(PARAM_NAME, DESCRIPTION, NROWS, NCOLS, DATATYPE) \
+Result read_##PARAM_NAME(std::string filename) { \
+  info("Loading " #DESCRIPTION); \
+  FITS_TO_MATRIX(filename, PARAM_NAME, NROWS, NCOLS, DATATYPE); \
+  info("Updated " #DESCRIPTION " in controller"); \
+  return SUCCESS(status); \
+}
+
+#define FITS_TO_MATRIX(FILENAME, PARAM_NAME, NROWS, NCOLS, DATATYPE) \
+  fitsfile *fptr; \
+  int status = 0; \
+  long fpixel[2] = {1, 1}; \
+  info("opening file %s", FILENAME.c_str()); \
+  fits_open_file(&fptr, FILENAME.c_str(), READONLY, &status); \
+  if (status != 0) { \
+    return FAILURE(status); \
+  } \
+  fits_read_pix(fptr, T##DATATYPE, fpixel, NROWS*NCOLS, NULL, ctrl.PARAM_NAME.data(), NULL, &status); \
+  if (status != 0) { \
+    return FAILURE(status); \
+  }
+
+#define LOAD_FROM_FILE(PARAM_NAME, DESCRIPTION) { \
+  if (config[#PARAM_NAME].is_string()) { \
+    int status = read_##PARAM_NAME(config[#PARAM_NAME].value_or("")).status_code; \
+    if (status != 0) { \
+        error("Failed to read file specified by config[" #PARAM_NAME "], code %d", status); \
+        return status;\
+    } \
+  } else { \
+    warn(#DESCRIPTION " (" #PARAM_NAME ") is not provided in config."); \
+    info("Setting " #PARAM_NAME " to zeros."); \
+    ctrl.PARAM_NAME.setZero(); \
+  } \
+}

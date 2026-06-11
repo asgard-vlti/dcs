@@ -3,9 +3,6 @@ name = "Default Configuration"
 # Beam. This should be over-written as an input.
 beam = 1
 
-# DM Rotations in radians
-dm_rotation = [-20,0,0,50]
-
 #Wavelength in microns
 wave = 1.65
 
@@ -14,22 +11,19 @@ px = 15
 py = 15
 
 #Width with respect to the central pixel. Must be odd!
-width = 21
 focus_amp = 0.00
 
-#Tip/tilt Gaussian weight 1/e^2 half width
-gauss_hwidth = 3.5
-
-# Tip/tilt gain in units of DM stroke per pixel.
-ttg = 0.01
-ttl = 0.01
-# High-order gain - normalised to unity 
-hog = 0.2
-hol = 0.01
 # Flux threshold
 flux_threshold = 1000
 
-modefile = "./baldr_jcr/modes.fits"
+# meas_ref = "./baldr_jcr/meas_ref.fits"
+# meas_to_modes = "./baldr_jcr/meas_to_modes.fits"
+filter_coeff_in = "./baldr_jcr/filter_coeff_in.fits"
+filter_coeff_out = "./baldr_jcr/filter_coeff_out.fits"
+# modes_to_com = "./baldr_jcr/modes_to_com.fits"
+# com_offset = "./baldr_jcr/com_offset.fits"
+# com_dist_buffer = "./baldr_jcr/com_dist_buffer.fits"
+# com_to_meas = "./baldr_jcr/com_to_meas.fits"
 
 #All units are in radians and microns
 [geometry] 

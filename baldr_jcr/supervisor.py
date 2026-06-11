@@ -8,6 +8,16 @@ import time
 from typing import Tuple, Optional
 from tqdm import tqdm  # type: ignore
 from dcs.ZMQutils import ZmqReq  # type: ignore
+from os import path
+
+# TODO: NOT REALLY SAFE: These parameters are defined both in baldr.h and here,
+# I should find a way to merge these into a single source of truth.
+N_MODES = 11
+WIDTH = 15
+N_PIXELS = WIDTH * WIDTH
+FILTER_LEN = 2
+N_ACTUATORS = 144
+DIST_LEN = 10
 
 BEAM_TO_PORT = {
     1: 6671,
@@ -29,6 +39,20 @@ _N_ITER = 1
 _OUTPUT_ROOT = DEFAULT_OUTPUT_ROOT
 _RUN_TIMESTAMP = None
 
+BALDR_ROOT = path.abspath(path.dirname(__file__))
+
+
+class Modes:
+    pass
+
+
+class InfluenceFunctions:
+    pass
+
+
+class Measurement:
+    pass
+
 
 def get_zmq_socket(beam: int, host: str = DEFAULT_HOST) -> ZmqReq:
     if beam not in BEAM_TO_PORT:
@@ -39,104 +63,275 @@ def get_zmq_socket(beam: int, host: str = DEFAULT_HOST) -> ZmqReq:
     return ZmqReq(endpoint)
 
 
-def get_im_plus_minus(
-    socket: ZmqReq, mode: int, amp: float
-) -> Tuple[np.ndarray, np.ndarray]:
-    command = f"poke {mode},{amp}"
-    resp = socket.send_payload(command, is_str=True, decode_ascii=False)  # type: ignore
+def request(socket: ZmqReq, message: str):
+    resp = socket.send_payload(message, is_str=True, decode_ascii=False)  # type: ignore
     if not isinstance(resp, dict):
-        raise RuntimeError(f"No valid response for command '{command}': {resp}")
+        raise RuntimeError(f"No valid response for command '{message}': {resp}")
+    print(resp)
     if resp["status_code"] != 0:
         raise RuntimeError(resp["data"])
-    data = resp["data"]
-    width = data["width"]
-    imp = np.frombuffer(base64.b64decode(data["im_plus_sum_encoded"]), dtype=np.float32)
-    imp = imp.reshape((width, width))
-    imm = np.frombuffer(
-        base64.b64decode(data["im_minus_sum_encoded"]), dtype=np.float32
+    return resp["data"]
+
+def get_meas(socket: ZmqReq) -> np.ndarray:
+    command = f"meas"
+    data = request(socket, command)
+    meas = np.frombuffer(base64.b64decode(data["meas"]), dtype=np.float64)
+    return meas
+
+
+def writefits_meas_ref(
+    array: np.ndarray, filename=path.join(BALDR_ROOT, "meas_ref.fits")
+):
+    TARGET_SHAPE = (N_PIXELS,)
+    if array.shape != TARGET_SHAPE:
+        raise IndexError(
+            f"meas_ref.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
+        )
+    fits.writeto(filename=filename, data=array, overwrite=True)
+
+
+def writefits_meas_to_modes(
+    array: np.ndarray, filename=path.join(BALDR_ROOT, "meas_to_modes.fits")
+):
+    TARGET_SHAPE = (N_MODES, N_PIXELS)
+    if array.shape != TARGET_SHAPE:
+        raise IndexError(
+            f"meas_to_modes.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
+        )
+    fits.writeto(filename=filename, data=array, overwrite=True)
+
+
+def writefits_filter_coeff_in(
+    array: np.ndarray, filename=path.join(BALDR_ROOT, "filter_coeff_in.fits")
+):
+    TARGET_SHAPE = (N_MODES, FILTER_LEN)
+    if array.shape != TARGET_SHAPE:
+        raise IndexError(
+            f"filter_coeff_in.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
+        )
+    print("baldr root: ", BALDR_ROOT)
+    fits.writeto(filename=filename, data=array, overwrite=True)
+
+
+def writefits_filter_coeff_out(
+    array: np.ndarray, filename=path.join(BALDR_ROOT, "filter_coeff_out.fits")
+):
+    TARGET_SHAPE = (N_MODES, FILTER_LEN)
+    if array.shape != TARGET_SHAPE:
+        raise IndexError(
+            f"filter_coeff_out.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
+        )
+    fits.writeto(filename=filename, data=array, overwrite=True)
+
+
+def writefits_modes_to_com(
+    array: np.ndarray, filename=path.join(BALDR_ROOT, "modes_to_com.fits")
+):
+    TARGET_SHAPE = (N_ACTUATORS, N_MODES)
+    if array.shape != TARGET_SHAPE:
+        raise IndexError(
+            f"modes_to_com.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
+        )
+    fits.writeto(filename=filename, data=array, overwrite=True)
+
+
+def writefits_com_offset(
+    array: np.ndarray, filename=path.join(BALDR_ROOT, "com_offset.fits")
+):
+    TARGET_SHAPE = (N_ACTUATORS,)
+    if array.shape != TARGET_SHAPE:
+        raise IndexError(
+            f"com_offset.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
+        )
+    fits.writeto(filename=filename, data=array, overwrite=True)
+
+
+def writefits_com_dist_buffer(
+    array: np.ndarray, filename=path.join(BALDR_ROOT, "com_dist_buffer.fits")
+):
+    TARGET_SHAPE = (N_ACTUATORS, DIST_LEN)
+    if array.shape != TARGET_SHAPE:
+        raise IndexError(
+            f"com_dist_buffer.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
+        )
+    fits.writeto(filename=filename, data=array, overwrite=True)
+
+
+def writefits_com_to_meas(
+    array: np.ndarray, filename=path.join(BALDR_ROOT, "com_to_meas.fits")
+):
+    TARGET_SHAPE = (N_PIXELS, N_ACTUATORS)
+    if array.shape != TARGET_SHAPE:
+        raise IndexError(
+            f"com_to_meas.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
+        )
+    fits.writeto(filename=filename, data=array, overwrite=True)
+
+
+def writefits_modes_to_meas(
+    array: np.ndarray, filename=path.join(BALDR_ROOT, "modes_to_meas.fits")
+):
+    TARGET_SHAPE = (N_PIXELS, N_MODES)
+    if array.shape != TARGET_SHAPE:
+        raise IndexError(
+            f"modes_to_meas.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
+        )
+    fits.writeto(filename=filename, data=array, overwrite=True)
+
+
+def update_meas_ref(socket: ZmqReq, send: bool = True):
+    """Save current image as reference measurement and load"""
+    # read image via commander
+    meas = get_meas(socket=socket)
+
+    # save image to fits file
+    writefits_meas_ref(meas)
+
+    # tell commander to load image as meas ref
+    if send:
+        request(socket, "meas_ref")
+
+
+def update_meas_to_modes(measurement: Measurement, modes: Modes, send: bool = True):
+    """Build a reconstructor"""
+    # build forward matrix from modes to measurements
+    # TODO
+
+    # invert forward matrix to get reconstructor
+    # TODO
+
+    # save reconstructor to default path
+    # TODO
+
+    # tell commander to load reconstructor as meas_to_modes
+    # TODO
+
+    pass
+
+
+def update_filter_coeff(
+    ewma_gain: float = 0.3,
+    send: bool = True,  # we usually will tell commander to update the controller
+):
+    # compute filter coeffs from Exponentially weighted moving average gain
+    filter_coeff_in = np.zeros([N_MODES, FILTER_LEN])
+    filter_coeff_out = np.zeros([N_MODES, FILTER_LEN])
+    filter_coeff_in[:, 0] = ewma_gain
+    filter_coeff_out[:, 0] = 1 - ewma_gain
+
+    # save coeffs to fits files
+    writefits_filter_coeff_in(filter_coeff_in)
+    writefits_filter_coeff_out(filter_coeff_out)
+
+    if send:
+        # tell commander to load filter coeffs
+        # TODO
+        pass
+
+
+def update_modes_to_com(
+    modes: Modes, influence_functions: InfluenceFunctions, send: bool = True
+):
+    """Update the modal projection matrix (from modes to DM command) using
+    some global modal definition and some global influence function definition.
+    """
+    # define some intermediate phase space
+    # TODO
+
+    # project modes to that phase space
+    # TODO
+
+    # project commands to that phase space
+    # TODO
+
+    # linear algebra trickery to build mode to command projector
+    # TODO
+
+    pass
+
+
+def update_modes(
+    modes: Modes,
+    influence_functions: InfluenceFunctions,
+    measurement: Measurement,
+    send: bool = True,
+):
+    """Update the defined modes and propagate to all dependencies"""
+    # update modes to com
+    update_modes_to_com(
+        modes=modes, influence_functions=influence_functions, send=False
     )
-    imm = imm.reshape((width, width))
-    return imp, imm
+
+    # update modes to com
+    update_modes_to_com(
+        modes=modes, influence_functions=influence_functions, send=False
+    )
+
+    # update meas to modes
+    update_meas_to_modes(measurement=measurement, modes=modes, send=False)
+
+    if send:
+        # send commander message to update all relevant matrices and reset controller
+        # TODO
+        pass
 
 
-def run_fpdr_pokes_single(
-    n_iter: int,
-    socket: Optional[ZmqReq] = _SOCKET,
-    amp: float = _AMP,
-    n_modes: int = _N_MODES,
-    settle_sec: float = _SETTLE_SEC,
-) -> np.ndarray:
-    if socket is None:
-        raise RuntimeError("Socket not initialized. Set _SOCKET or pass socket=.")
+def update_com_offset(
+    array: np.ndarray,
+    send: bool = True,
+):
+    """Update the command offset from a numpy array"""
+    writefits_com_offset(array)
 
-    all_iters = []
-    for _ in tqdm(range(n_iter),desc="iteration"):
-        iter_ims = []
-        _ = get_im_plus_minus(socket, 0, 0.0)
-        time.sleep(settle_sec)
-        for mode in tqdm(range(n_modes), desc="mode", leave=False):
-            iter_ims.append(get_im_plus_minus(socket, mode, amp))
-            time.sleep(settle_sec)
-            iter_ims.append(get_im_plus_minus(socket, mode, -amp))
-            time.sleep(settle_sec)
-        iter_ims.append(get_im_plus_minus(socket, 0, 0.0))
-        all_iters.append(np.array(iter_ims, dtype=np.float32))
-
-    return np.array(all_iters, dtype=np.float32)
+    if send:
+        # tell commander to load com offset
+        # TODO
+        pass
 
 
-def run_pokes_and_save(beam: int) -> str:
-    socket = get_zmq_socket(beam, host=DEFAULT_HOST)
-    ims = run_fpdr_pokes_single(_N_ITER, socket=socket)
-    if _N_ITER == 1:
-        ims = ims[0]
+def update_com_dist_buffer(
+    array: np.ndarray,
+    send: bool = True,
+):
+    """Update the command disturbance buffer from a numpy array"""
+    writefits_com_dist_buffer(array)
 
-    beam_dir = Path(_OUTPUT_ROOT).joinpath(f"beam{beam}")
-    beam_dir.mkdir(parents=True, exist_ok=True)
-    output_path = beam_dir.joinpath(f"{_RUN_TIMESTAMP}.fits")
-
-    hdu = fits.PrimaryHDU(data=ims)
-    hdu.writeto(output_path, overwrite=True)
-    print(f"Saved beam {beam} data to {output_path}")
-    return output_path.as_posix()
+    if send:
+        # tell commander to load com dist buffer
+        # TODO
+        pass
 
 
-# def parse_args():
-#     parser = argparse.ArgumentParser(
-#         description="Save Baldr TT interaction matrix data"
-#     )
-#     parser.add_argument(
-#         "--beam", type=int, required=True, choices=[-1] + sorted(BEAM_TO_PORT)
-#     )
-#     parser.add_argument("--n-iter", type=int, default=1)
-#     parser.add_argument("--amp", type=float, default=0.04)
-#     parser.add_argument("--n-modes", type=int, default=11)
-#     parser.add_argument("--settle-sec", type=float, default=1.0)
-#     return parser.parse_args()
+def update_com_to_meas(
+    influence_functions: InfluenceFunctions,
+    measurement: Measurement,
+    send: bool = True,
+):
+    """Build an interaction matrix from an influence function model"""
+    # measure interaction matrix via commander
+
+    # fit geometric parameters to build synthetic interaction matrix
+    # (this might involve )
+
+    # write synthetic interaction matrix to fits
+
+    if send:
+        # tell commander to load com_to_meas from file
+        # TODO
+        pass
 
 
 if __name__ == "__main__":
-    # args = parse_args()
-
-    # _AMP = args.amp
-    # _N_MODES = args.n_modes
-    # _SETTLE_SEC = args.settle_sec
-    # _N_ITER = args.n_iter
-
-    _RUN_TIMESTAMP = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
-    run_pokes_and_save(beam = 1)
-    # if args.beam == -1:
-    #     beams = sorted(BEAM_TO_PORT)
-    #     with ThreadPoolExecutor(max_workers=len(beams)) as executor:
-    #         futures = {
-    #             executor.submit(run_pokes_and_save, beam_id): beam_id
-    #             for beam_id in beams
-    #         }
-    #         for future in as_completed(futures):
-    #             beam_id = futures[future]
-    #             try:
-    #                 future.result()
-    #             except (RuntimeError, ValueError, OSError) as exc:
-    #                 print(f"Beam {beam_id} failed: {exc}")
-    # else:
-    #     run_pokes_and_save(args.beam)
+    socket = get_zmq_socket(beam=1, host=DEFAULT_HOST)
+    update_meas_ref(socket=socket, send=True)
+    
+    # update_filter_coeff(0.3, send=False)
+    # modes = Modes()
+    # measurement = Measurement()
+    # influence_functions = InfluenceFunctions()
+    # update_modes(
+    #     modes=modes,
+    #     influence_functions=influence_functions,
+    #     measurement=measurement,
+    #     send=True,
+    # )
