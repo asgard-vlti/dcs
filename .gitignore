@@ -2,6 +2,12 @@
 *.txt 
 !CMakeLists.txt
 
+# Nix outputs
+result
+
+# direnv
+.direnv
+
 # Prerequisites
 *.d
 
