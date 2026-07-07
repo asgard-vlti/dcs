@@ -162,6 +162,7 @@ void read_shm()
             ctrl.meas_raw(ii * WIDTH + jj) = (double)(subarray.array.SI32[y * sz + x]);
         }
     }
+    ctrl.cnt = cnt;
     ctrl.mutex.unlock();
 }
 
@@ -201,39 +202,47 @@ void filter_modes()
     // current output of the IIR filter to be applied this iteration
     // to the DM.
 
+    // CYCLE INPUT BUFFER
     // compose the mode_pol_buffer by shuffling the existing components
     // and setting the zeroth component to be the current mode_pol
     for (size_t i = FILTER_LEN - 1; i > 0; i--)
     {
-        ctrl.mode_pol_buffer.col(i).swap(ctrl.mode_pol_buffer.col(i - 1));
+        ctrl.mode_pol_buffer.row(i).swap(ctrl.mode_pol_buffer.row(i - 1));
     }
-    ctrl.mode_pol_buffer.col(0) = ctrl.mode_pol.col(0);
+    ctrl.mode_pol_buffer.row(0) = ctrl.mode_pol;
 
-    // shuffle the filter buffer and set the current output to zero.
-    for (size_t i = FILTER_LEN - 1; i > 0; i--)
-    {
-        ctrl.mode_filt_buffer.col(i).swap(ctrl.mode_filt_buffer.col(i - 1));
-    }
-    ctrl.mode_filt_buffer.col(0).setZero();
+    // INITIALLY ZERO THE OUTPUT COMING FROM THIS CALCULATION
+    ctrl.mode_filt.setZero();
 
+    // COMPUTE COMPONENT FROM INPUTS
     // add the input part of the IIR filter to the current output
     // NOTE: This can be done by matrix multiplication, this is just a first
     // pass to get the pipeline sound.
     for (size_t i = 0; i < FILTER_LEN; i++)
     {
-        ctrl.mode_filt_buffer.col(0) += (ctrl.mode_pol_buffer.col(i).array() * ctrl.filter_coeff_in.col(i).array()).matrix();
+        ctrl.mode_filt += (ctrl.mode_pol_buffer.row(i).array() * ctrl.filter_coeff_in.row(i).array()).matrix();
     }
+    
+    // COMPUTE COMPONENT FROM OUTPUTS
     // same for outputs, note there is one less coefficient on the output filter
-    for (size_t i = 0; i < FILTER_LEN - 1; i++)
+    for (size_t i = 0; i < FILTER_LEN; i++)
     {
-        ctrl.mode_filt_buffer.col(0) += (ctrl.mode_filt_buffer.col(i + 1).array() * ctrl.filter_coeff_out.col(i).array()).matrix();
+        ctrl.mode_filt += (ctrl.mode_filt_buffer.row(i).array() * ctrl.filter_coeff_out.row(i).array()).matrix();
     }
-
+        
     // apply anti-windup saturations:
-    ctrl.mode_filt_buffer.col(0) = (ctrl.mode_filt_buffer.col(0).array().min(ctrl.mode_max).max(ctrl.mode_min)).matrix();
+    ctrl.mode_filt = (ctrl.mode_filt.array().min(ctrl.mode_max).max(ctrl.mode_min)).matrix();
 
     // apply modal offset:
-    ctrl.mode_filt = ctrl.mode_filt_buffer.col(0) + ctrl.mode_offset;
+    ctrl.mode_filt = ctrl.mode_filt + ctrl.mode_offset;
+
+    // CYCLE OUTPUT BUFFER
+    // shuffle the filter buffer and set the current output to zero.
+    for (size_t i = FILTER_LEN - 1; i > 0; i--)
+    {
+        ctrl.mode_filt_buffer.row(i).swap(ctrl.mode_filt_buffer.row(i - 1));
+    }
+    ctrl.mode_filt_buffer.row(0) = ctrl.mode_filt;
 
     ctrl.mutex.unlock();
 }

@@ -1,10 +1,10 @@
 #pragma once
 
 //
-// /home/asg/.conda/envs/asgard/lib/python3.10/site-packages/asgard_lab_DM_tools/asgard_lab_MDM_controller.py 
-// 
+// /home/asg/.conda/envs/asgard/lib/python3.10/site-packages/asgard_lab_DM_tools/asgard_lab_MDM_controller.py
+//
 
-#include <complex> 
+#include <complex>
 #include <fftw3.h>
 #include <ImageStreamIO.h>
 #include <stdlib.h>
@@ -26,25 +26,35 @@
 #include <semaphore.h>
 #include <nlohmann/json.hpp>
 
-#define SUCCESS(json) Result{ErrorCode::success,json}
-#define FAILURE(json) Result{ErrorCode::failure,json}
+#define SUCCESS(json) \
+    Result { ErrorCode::success, json }
+#define FAILURE(json) \
+    Result { ErrorCode::failure, json }
 
 //----------Defines-----------
-//#define SIMULATE
+// #define SIMULATE
 
-#define N_MODES 11  // Number of modes to control
-#define WIDTH 15  // Number of pixels across subim
-#define N_PIXELS WIDTH*WIDTH  // Total number of pixels in subim
-#define FILTER_LEN 2  // Max number of taps in IIR filter
+#define N_MODES 11            // Number of modes to control
+#define WIDTH 15              // Number of pixels across subim
+#define N_PIXELS WIDTH *WIDTH // Total number of pixels in subim
+#define FILTER_LEN 1          // Max number of taps in IIR filter
+// NOTE ON FILTER LEN
+// In order to read the matrices in RowMajor (so that they have intuitive
+// parseing from numpy and fits) we need the matrices with filter_len for an
+// axis to have the filter_len as the first axis (number or rows), since 
+// otherwise we might set filter_len to 1 and then request a row-major matrix
+// with only 1 column which is a compile-time error in Eigen.
 #define N_ACTUATORS 144  // Including corners
-#define DIST_LEN 10  // Length of disturbance sequence (periodic)
-#define COM_BUFFER_LEN 4  // used for POLC computations, should be ceil(max_delay)+1
+#define DIST_LEN 20      // Length of disturbance sequence (periodic)
+#define COM_BUFFER_LEN 4 // used for POLC computations, should be ceil(max_delay)+1
 
 //----- Structures and typedefs------
 
 // Variables for controller.
-struct ControlVariables {
+struct ControlVariables
+{
     std::mutex mutex;
+    uint64_t cnt;  // controller iteration (increments even when controller is not running)
 
     // real-time variables
     // admittedly, this is a LOT of copying, so I might change this to a single
@@ -56,31 +66,30 @@ struct ControlVariables {
     Eigen::Matrix<double, N_PIXELS, 1> meas_pol;
     Eigen::Matrix<double, N_MODES, 1> mode_pol;
     Eigen::Matrix<double, N_MODES, 1> mode_filt;
-    Eigen::Matrix<double, N_MODES, FILTER_LEN> mode_pol_buffer;
-    Eigen::Matrix<double, N_MODES, FILTER_LEN> mode_filt_buffer;
+    Eigen::Matrix<double, FILTER_LEN, N_MODES, Eigen::RowMajor> mode_pol_buffer;
+    Eigen::Matrix<double, FILTER_LEN, N_MODES, Eigen::RowMajor> mode_filt_buffer;
     Eigen::Matrix<double, N_ACTUATORS, 1> com_raw;
     Eigen::Matrix<double, N_ACTUATORS, 1> com_clean;
     Eigen::Matrix<double, N_ACTUATORS, 1> com_feedback;
     Eigen::Matrix<double, N_ACTUATORS, 1> com_write;
-    Eigen::Matrix<double, N_ACTUATORS, COM_BUFFER_LEN > com_fb_buffer;
-    Eigen::Matrix<double, N_ACTUATORS, 1 > com_effective;
+    Eigen::Matrix<double, N_ACTUATORS, COM_BUFFER_LEN, Eigen::RowMajor> com_fb_buffer;
+    Eigen::Matrix<double, N_ACTUATORS, 1> com_effective;
 
     // dynamically configurable variables
     Eigen::Matrix<double, N_PIXELS, 1> meas_offset;
-    double delay;
-    Eigen::Matrix<double, N_MODES, N_PIXELS> meas_to_mode;
-    Eigen::Matrix<double, N_MODES, FILTER_LEN> filter_coeff_in;
-    Eigen::Matrix<double, N_MODES, FILTER_LEN - 1> filter_coeff_out;
-    Eigen::Array<double, N_MODES, 1> mode_min;
-    Eigen::Array<double, N_MODES, 1> mode_max;
+    Eigen::Matrix<double, N_MODES, N_PIXELS, Eigen::RowMajor> meas_to_mode;
+    Eigen::Matrix<double, FILTER_LEN, N_MODES, Eigen::RowMajor> filter_coeff_in;
+    Eigen::Matrix<double, FILTER_LEN, N_MODES, Eigen::RowMajor> filter_coeff_out;
     Eigen::Matrix<double, N_MODES, 1> mode_offset;
-    Eigen::Matrix<double, N_ACTUATORS, N_MODES> mode_to_com;
-    Eigen::Matrix<double, N_ACTUATORS, 1> com_offset;
-    Eigen::Array<double, N_ACTUATORS, 1> com_min;
+    Eigen::Array<double, N_MODES, 1> mode_max;
+    Eigen::Array<double, N_MODES, 1> mode_min;
+    Eigen::Matrix<double, N_ACTUATORS, N_MODES, Eigen::RowMajor> mode_to_com;
     Eigen::Array<double, N_ACTUATORS, 1> com_max;
-    Eigen::Matrix<double, N_ACTUATORS, DIST_LEN> com_dist_buffer;
-    Eigen::Matrix<double, N_PIXELS, N_ACTUATORS> com_to_meas;
-
+    Eigen::Array<double, N_ACTUATORS, 1> com_min;
+    Eigen::Matrix<double, N_ACTUATORS, DIST_LEN, Eigen::RowMajor> com_dist_buffer;
+    Eigen::Matrix<double, N_ACTUATORS, 1> com_offset;
+    double delay;
+    Eigen::Matrix<double, N_PIXELS, N_ACTUATORS, Eigen::RowMajor> com_to_meas;
 };
 
 //-------Commander structs-------------
@@ -92,7 +101,7 @@ struct EncodedImage
     std::string message;
 };
 
-// The status, encoded as std::vector<double> for 
+// The status, encoded as std::vector<double> for
 // key variables.
 struct Status
 {
@@ -111,15 +120,17 @@ struct Settings
     int servo_mode;
 };
 
-enum ServoMode {
-    SERVO_STOP=-1,
+enum ServoMode
+{
+    SERVO_STOP = -1,
     SERVO_OPEN,
     SERVO_CLOSED,
 };
 
 // variants of commander call results
-enum ErrorCode {
-    success=0,
+enum ErrorCode
+{
+    success = 0,
     failure,
 };
 
@@ -132,19 +143,22 @@ struct Result
 
 struct MeasBase64
 {
-    std::string meas;
+    std::string meas;  // measurement from the RTC
+    uint64_t cnt;  // iteration that the measurement corresponds to
 };
 
 //-------End of Commander structs------
 
 // Settings including a mutex.
-struct CtrlSettings{
+struct CtrlSettings
+{
     std::mutex mutex;
     Settings settings;
 };
 
 // Status including a mutex.
-struct RTStatus{
+struct RTStatus
+{
     std::mutex mutex;
     Status status;
 };
@@ -207,37 +221,45 @@ void write_shm();
 void remove_offset();
 
 #define DEF_READ_CTRL_PARAM(PARAM_NAME, DESCRIPTION, NROWS, NCOLS, DATATYPE) \
-Result read_##PARAM_NAME(std::string filename) { \
-  info("Loading " #DESCRIPTION); \
-  FITS_TO_MATRIX(filename, PARAM_NAME, NROWS, NCOLS, DATATYPE); \
-  info("Updated " #DESCRIPTION " in controller"); \
-  return SUCCESS(status); \
-}
+    Result read_##PARAM_NAME(std::string filename)                           \
+    {                                                                        \
+        info("Loading " #DESCRIPTION);                                       \
+        FITS_TO_MATRIX(filename, PARAM_NAME, NROWS, NCOLS, DATATYPE);        \
+        info("Updated " #DESCRIPTION " in controller");                      \
+        return SUCCESS(status);                                              \
+    }
 
-#define FITS_TO_MATRIX(FILENAME, PARAM_NAME, NROWS, NCOLS, DATATYPE) \
-  fitsfile *fptr; \
-  int status = 0; \
-  long fpixel[2] = {1, 1}; \
-  info("opening file %s", FILENAME.c_str()); \
-  fits_open_file(&fptr, FILENAME.c_str(), READONLY, &status); \
-  if (status != 0) { \
-    return FAILURE(status); \
-  } \
-  fits_read_pix(fptr, T##DATATYPE, fpixel, NROWS*NCOLS, NULL, ctrl.PARAM_NAME.data(), NULL, &status); \
-  if (status != 0) { \
-    return FAILURE(status); \
-  }
+#define FITS_TO_MATRIX(FILENAME, PARAM_NAME, NROWS, NCOLS, DATATYPE)                                     \
+    fitsfile *fptr;                                                                                      \
+    int status = 0;                                                                                      \
+    long fpixel[2] = {1, 1};                                                                             \
+    info("opening file %s", FILENAME.c_str());                                                           \
+    fits_open_file(&fptr, FILENAME.c_str(), READONLY, &status);                                          \
+    if (status != 0)                                                                                     \
+    {                                                                                                    \
+        return FAILURE(status);                                                                          \
+    }                                                                                                    \
+    fits_read_pix(fptr, T##DATATYPE, fpixel, NROWS *NCOLS, NULL, ctrl.PARAM_NAME.data(), NULL, &status); \
+    if (status != 0)                                                                                     \
+    {                                                                                                    \
+        return FAILURE(status);                                                                          \
+    }
 
-#define LOAD_FROM_FILE(PARAM_NAME, DESCRIPTION) { \
-  if (config[#PARAM_NAME].is_string()) { \
-    int status = read_##PARAM_NAME(config[#PARAM_NAME].value_or("")).status_code; \
-    if (status != 0) { \
-        error("Failed to read file specified by config[" #PARAM_NAME "], code %d", status); \
-        return status;\
-    } \
-  } else { \
-    warn(#DESCRIPTION " (" #PARAM_NAME ") is not provided in config."); \
-    info("Setting " #PARAM_NAME " to zeros."); \
-    ctrl.PARAM_NAME.setZero(); \
-  } \
-}
+#define LOAD_FROM_FILE(PARAM_NAME, DESCRIPTION)                                                     \
+    {                                                                                               \
+        if (config[#PARAM_NAME].is_string())                                                        \
+        {                                                                                           \
+            int status = read_##PARAM_NAME(config[#PARAM_NAME].value_or("")).status_code;           \
+            if (status != 0)                                                                        \
+            {                                                                                       \
+                error("Failed to read file specified by config[" #PARAM_NAME "], code %d", status); \
+                return status;                                                                      \
+            }                                                                                       \
+        }                                                                                           \
+        else                                                                                        \
+        {                                                                                           \
+            warn(#DESCRIPTION " (" #PARAM_NAME ") is not provided in config.");                     \
+            info("Setting " #PARAM_NAME " to zeros.");                                              \
+            ctrl.PARAM_NAME.setZero();                                                              \
+        }                                                                                           \
+    }
