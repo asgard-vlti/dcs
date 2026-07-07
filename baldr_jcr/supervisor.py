@@ -20,7 +20,7 @@ N_ACTUATORS = 144
 DIST_LEN = 10
 
 BEAM_TO_PORT = {
-    1: 6671,
+    1: 17474,  # 6671
     2: 6672,
     3: 6673,
     4: 6671,  # <- should this be 6674?
@@ -42,7 +42,7 @@ _RUN_TIMESTAMP = None
 BALDR_ROOT = path.abspath(path.dirname(__file__))
 
 
-class Modes:
+class Mode:
     pass
 
 
@@ -79,24 +79,24 @@ def get_meas(socket: ZmqReq) -> np.ndarray:
     return meas
 
 
-def writefits_meas_ref(
-    array: np.ndarray, filename=path.join(BALDR_ROOT, "meas_ref.fits")
+def writefits_meas_offset(
+    array: np.ndarray, filename=path.join(BALDR_ROOT, "meas_offset.fits")
 ):
     TARGET_SHAPE = (N_PIXELS,)
     if array.shape != TARGET_SHAPE:
         raise IndexError(
-            f"meas_ref.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
+            f"meas_offset.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
         )
     fits.writeto(filename=filename, data=array, overwrite=True)
 
 
-def writefits_meas_to_modes(
-    array: np.ndarray, filename=path.join(BALDR_ROOT, "meas_to_modes.fits")
+def writefits_meas_to_mode(
+    array: np.ndarray, filename=path.join(BALDR_ROOT, "meas_to_mode.fits")
 ):
     TARGET_SHAPE = (N_MODES, N_PIXELS)
     if array.shape != TARGET_SHAPE:
         raise IndexError(
-            f"meas_to_modes.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
+            f"meas_to_mode.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
         )
     fits.writeto(filename=filename, data=array, overwrite=True)
 
@@ -124,13 +124,13 @@ def writefits_filter_coeff_out(
     fits.writeto(filename=filename, data=array, overwrite=True)
 
 
-def writefits_modes_to_com(
-    array: np.ndarray, filename=path.join(BALDR_ROOT, "modes_to_com.fits")
+def writefits_mode_to_com(
+    array: np.ndarray, filename=path.join(BALDR_ROOT, "mode_to_com.fits")
 ):
     TARGET_SHAPE = (N_ACTUATORS, N_MODES)
     if array.shape != TARGET_SHAPE:
         raise IndexError(
-            f"modes_to_com.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
+            f"mode_to_com.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
         )
     fits.writeto(filename=filename, data=array, overwrite=True)
 
@@ -168,31 +168,31 @@ def writefits_com_to_meas(
     fits.writeto(filename=filename, data=array, overwrite=True)
 
 
-def writefits_modes_to_meas(
-    array: np.ndarray, filename=path.join(BALDR_ROOT, "modes_to_meas.fits")
+def writefits_mode_to_meas(
+    array: np.ndarray, filename=path.join(BALDR_ROOT, "mode_to_meas.fits")
 ):
     TARGET_SHAPE = (N_PIXELS, N_MODES)
     if array.shape != TARGET_SHAPE:
         raise IndexError(
-            f"modes_to_meas.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
+            f"mode_to_meas.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
         )
     fits.writeto(filename=filename, data=array, overwrite=True)
 
 
-def update_meas_ref(socket: ZmqReq, send: bool = True):
+def update_meas_offset(socket: ZmqReq, send: bool = True):
     """Save current image as reference measurement and load"""
     # read image via commander
     meas = get_meas(socket=socket)
 
     # save image to fits file
-    writefits_meas_ref(meas)
+    writefits_meas_offset(meas)
 
     # tell commander to load image as meas ref
     if send:
-        request(socket, "meas_ref")
+        request(socket, "meas_offset")
 
 
-def update_meas_to_modes(measurement: Measurement, modes: Modes, send: bool = True):
+def update_meas_to_mode(measurement: Measurement, mode: Mode, send: bool = True):
     """Build a reconstructor"""
     # build forward matrix from modes to measurements
     # TODO
@@ -203,7 +203,7 @@ def update_meas_to_modes(measurement: Measurement, modes: Modes, send: bool = Tr
     # save reconstructor to default path
     # TODO
 
-    # tell commander to load reconstructor as meas_to_modes
+    # tell commander to load reconstructor as meas_to_mode
     # TODO
 
     pass
@@ -229,8 +229,8 @@ def update_filter_coeff(
         pass
 
 
-def update_modes_to_com(
-    modes: Modes, influence_functions: InfluenceFunctions, send: bool = True
+def update_mode_to_com(
+    mode: Mode, influence_functions: InfluenceFunctions, send: bool = True
 ):
     """Update the modal projection matrix (from modes to DM command) using
     some global modal definition and some global influence function definition.
@@ -250,25 +250,25 @@ def update_modes_to_com(
     pass
 
 
-def update_modes(
-    modes: Modes,
+def update_mode(
+    mode: Mode,
     influence_functions: InfluenceFunctions,
     measurement: Measurement,
     send: bool = True,
 ):
     """Update the defined modes and propagate to all dependencies"""
-    # update modes to com
-    update_modes_to_com(
-        modes=modes, influence_functions=influence_functions, send=False
+    # update mode to com
+    update_mode_to_com(
+        mode=mode, influence_functions=influence_functions, send=False
     )
 
-    # update modes to com
-    update_modes_to_com(
-        modes=modes, influence_functions=influence_functions, send=False
+    # update mode to com
+    update_mode_to_com(
+        mode=mode, influence_functions=influence_functions, send=False
     )
 
-    # update meas to modes
-    update_meas_to_modes(measurement=measurement, modes=modes, send=False)
+    # update meas to mode
+    update_meas_to_mode(measurement=measurement, mode=mode, send=False)
 
     if send:
         # send commander message to update all relevant matrices and reset controller
@@ -323,14 +323,14 @@ def update_com_to_meas(
 
 if __name__ == "__main__":
     socket = get_zmq_socket(beam=1, host=DEFAULT_HOST)
-    update_meas_ref(socket=socket, send=True)
+    update_meas_offset(socket=socket, send=True)
     
     # update_filter_coeff(0.3, send=False)
-    # modes = Modes()
+    # mode = Mode()
     # measurement = Measurement()
     # influence_functions = InfluenceFunctions()
-    # update_modes(
-    #     modes=modes,
+    # update_mode(
+    #     mode=mode,
     #     influence_functions=influence_functions,
     #     measurement=measurement,
     #     send=True,

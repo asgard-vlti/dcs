@@ -36,8 +36,9 @@
 #define WIDTH 15  // Number of pixels across subim
 #define N_PIXELS WIDTH*WIDTH  // Total number of pixels in subim
 #define FILTER_LEN 2  // Max number of taps in IIR filter
-#define N_ACTUATORS 144 // Including corners
-#define DIST_LEN 10 // Length of disturbance sequence (periodic)
+#define N_ACTUATORS 144  // Including corners
+#define DIST_LEN 10  // Length of disturbance sequence (periodic)
+#define COM_BUFFER_LEN 4  // used for POLC computations, should be ceil(max_delay)+1
 
 //----- Structures and typedefs------
 
@@ -46,25 +47,40 @@ struct ControlVariables {
     std::mutex mutex;
 
     // real-time variables
+    // admittedly, this is a LOT of copying, so I might change this to a single
+    // "buffer" that we work on through the pipeline, and only keep variables
+    // that need to retain state (e.g., in the IIR filter and the feeback loop)
     Eigen::Matrix<double, N_PIXELS, 1> meas_raw;
     Eigen::Matrix<double, N_PIXELS, 1> meas_cl;
-    Eigen::Matrix<double, N_PIXELS, 1> meas_dm;
+    Eigen::Matrix<double, N_PIXELS, 1> meas_feedback;
     Eigen::Matrix<double, N_PIXELS, 1> meas_pol;
-    Eigen::Matrix<double, N_MODES, 1> modes_pol;
-    Eigen::Matrix<double, N_MODES, 1> modes_filt;
-    Eigen::Matrix<double, N_ACTUATORS, 1> com_ctrl;
+    Eigen::Matrix<double, N_MODES, 1> mode_pol;
+    Eigen::Matrix<double, N_MODES, 1> mode_filt;
+    Eigen::Matrix<double, N_MODES, FILTER_LEN> mode_pol_buffer;
+    Eigen::Matrix<double, N_MODES, FILTER_LEN> mode_filt_buffer;
     Eigen::Matrix<double, N_ACTUATORS, 1> com_raw;
+    Eigen::Matrix<double, N_ACTUATORS, 1> com_clean;
+    Eigen::Matrix<double, N_ACTUATORS, 1> com_feedback;
+    Eigen::Matrix<double, N_ACTUATORS, 1> com_write;
+    Eigen::Matrix<double, N_ACTUATORS, COM_BUFFER_LEN > com_fb_buffer;
+    Eigen::Matrix<double, N_ACTUATORS, 1 > com_effective;
 
     // dynamically configurable variables
-    Eigen::Matrix<double, N_PIXELS, 1> meas_ref;
+    Eigen::Matrix<double, N_PIXELS, 1> meas_offset;
     double delay;
-    Eigen::Matrix<double, N_MODES, N_PIXELS> meas_to_modes;
+    Eigen::Matrix<double, N_MODES, N_PIXELS> meas_to_mode;
     Eigen::Matrix<double, N_MODES, FILTER_LEN> filter_coeff_in;
-    Eigen::Matrix<double, N_MODES, FILTER_LEN> filter_coeff_out;
-    Eigen::Matrix<double, N_ACTUATORS, N_MODES> modes_to_com;
+    Eigen::Matrix<double, N_MODES, FILTER_LEN - 1> filter_coeff_out;
+    Eigen::Array<double, N_MODES, 1> mode_min;
+    Eigen::Array<double, N_MODES, 1> mode_max;
+    Eigen::Matrix<double, N_MODES, 1> mode_offset;
+    Eigen::Matrix<double, N_ACTUATORS, N_MODES> mode_to_com;
     Eigen::Matrix<double, N_ACTUATORS, 1> com_offset;
+    Eigen::Array<double, N_ACTUATORS, 1> com_min;
+    Eigen::Array<double, N_ACTUATORS, 1> com_max;
     Eigen::Matrix<double, N_ACTUATORS, DIST_LEN> com_dist_buffer;
     Eigen::Matrix<double, N_PIXELS, N_ACTUATORS> com_to_meas;
+
 };
 
 //-------Commander structs-------------
@@ -185,8 +201,10 @@ void reconstruct_modes();
 void filter_modes();
 void project_com();
 void inject_disturb();
-void shm_write();
 void inject_dm_signal();
+void clip_com();
+void write_shm();
+void remove_offset();
 
 #define DEF_READ_CTRL_PARAM(PARAM_NAME, DESCRIPTION, NROWS, NCOLS, DATATYPE) \
 Result read_##PARAM_NAME(std::string filename) { \

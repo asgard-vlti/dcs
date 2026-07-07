@@ -4,6 +4,7 @@
   inputs = {
     flake-parts.url = "github:hercules-ci/flake-parts";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    self.submodules = true;
   };
 
   outputs = inputs@{ flake-parts, ... }:
@@ -23,6 +24,30 @@
         # system.
 
         # Equivalent to  inputs'.nixpkgs.legacyPackages.hello;
+        packages = rec {
+          baldr = pkgs.stdenv.mkDerivation {
+            name = "baldr";
+            src = ./.;
+            buildInputs = with pkgs; [ 
+              cmake nlohmann_json pkg-config
+              boost cppzmq fmt fftw tomlplusplus
+              cfitsio libb64
+            ];
+            preBuild = ''
+              ls
+              find \
+                    -name CMakeCache.txt \
+                    -exec rm {} \;
+              export CPATH=$CPATH:${pkgs.eigen}/include/eigen3:${pkgs.tomlplusplus}/include/toml++
+            '';
+            installPhase = ''
+              cp -r baldr_jcr/baldr $out
+            '';
+          };
+
+          default = baldr;
+        };
+
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             boost

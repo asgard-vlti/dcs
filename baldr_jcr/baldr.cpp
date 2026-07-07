@@ -82,11 +82,11 @@ std::string encode(const char *input, unsigned int size)
 
 //----------commander functions from here---------------
 
-DEF_READ_CTRL_PARAM(meas_ref, measurement reference, N_PIXELS, 1, DOUBLE)
-DEF_READ_CTRL_PARAM(meas_to_modes, reconstructor matrix, N_MODES, N_PIXELS, DOUBLE)
+DEF_READ_CTRL_PARAM(meas_offset, measurement reference, N_PIXELS, 1, DOUBLE)
+DEF_READ_CTRL_PARAM(meas_to_mode, reconstructor matrix, N_MODES, N_PIXELS, DOUBLE)
 DEF_READ_CTRL_PARAM(filter_coeff_in, IIR input filter coefficients, N_MODES, FILTER_LEN, DOUBLE)
 DEF_READ_CTRL_PARAM(filter_coeff_out, IIR output filter coefficients, N_MODES, FILTER_LEN, DOUBLE)
-DEF_READ_CTRL_PARAM(modes_to_com, modal projection matrix, N_ACTUATORS, N_MODES, DOUBLE)
+DEF_READ_CTRL_PARAM(mode_to_com, modal projection matrix, N_ACTUATORS, N_MODES, DOUBLE)
 DEF_READ_CTRL_PARAM(com_offset, command offset vector, N_ACTUATORS, 1, DOUBLE)
 DEF_READ_CTRL_PARAM(com_dist_buffer, command disturbance buffer, N_ACTUATORS, DIST_LEN, DOUBLE)
 DEF_READ_CTRL_PARAM(com_to_meas, interaction matrix, N_PIXELS, N_ACTUATORS, DOUBLE)
@@ -95,12 +95,17 @@ Result reset_ctrl() {
   ctrl.mutex.lock();
   ctrl.meas_raw.setZero();
   ctrl.meas_cl.setZero();
-  ctrl.meas_dm.setZero();
   ctrl.meas_pol.setZero();
-  ctrl.modes_pol.setZero();
-  ctrl.modes_filt.setZero();
-  ctrl.com_ctrl.setZero();
+  ctrl.mode_pol.setZero();
+  ctrl.mode_filt.setZero();
   ctrl.com_raw.setZero();
+  ctrl.com_clean.setZero();
+  ctrl.com_write.setZero();
+  ctrl.com_feedback.setZero();
+  ctrl.meas_feedback.setZero();
+  ctrl.com_fb_buffer.setZero();
+  ctrl.mode_pol_buffer.setZero();
+  ctrl.mode_filt_buffer.setZero();
   ctrl.mutex.unlock();
   return SUCCESS();
 }
@@ -276,7 +281,7 @@ COMMANDER_REGISTER(m)
   // m.def("hol", set_hol, "Set the high-order leak term", "gain"_arg = 0.01);
   m.def("pxy", set_pxy, "Set the origin pixels", "px"_arg = 15, "py"_arg = 15);
   m.def("flux_threshold", set_flux_threshold, "Set flux threshold", "value"_arg = 100.0);
-  m.def("meas_ref", read_meas_ref, "Read reference measurement from file", "filename"_arg = "./baldr_jcr/meas_ref.fits");
+  m.def("meas_offset", read_meas_offset, "Read measurement offset from file", "filename"_arg = "./baldr_jcr/meas_offset.fits");
   m.def("filter_in", read_filter_coeff_in, "Read IIR filter input coefficients from file", "filename"_arg = "filter_coeff_in.fits");
   m.def("filter_out", read_filter_coeff_out, "Read IIR filter output coefficients from file", "filename"_arg = "filter_coeff_out.fits");
   m.def("meas", get_measurement_encoded, "Read meas_raw in Base64 encoding");
@@ -338,11 +343,11 @@ int main(int argc, char *argv[])
   // lock the mutex.
 
   // read all control matrices/vectors from fits files with same name.
-  LOAD_FROM_FILE(meas_ref, measurement reference)
-  LOAD_FROM_FILE(meas_to_modes, reconstructor matrix)
+  LOAD_FROM_FILE(meas_offset, measurement reference)
+  LOAD_FROM_FILE(meas_to_mode, reconstructor matrix)
   LOAD_FROM_FILE(filter_coeff_in, IIR input filter coefficients)
   LOAD_FROM_FILE(filter_coeff_out, IIR output filter coefficients)
-  LOAD_FROM_FILE(modes_to_com, modal projection matrix)
+  LOAD_FROM_FILE(mode_to_com, modal projection matrix)
   LOAD_FROM_FILE(com_offset, command offset vector)
   LOAD_FROM_FILE(com_dist_buffer, command disturbance buffer)
   LOAD_FROM_FILE(com_to_meas, interaction matrix)
