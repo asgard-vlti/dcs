@@ -34,7 +34,7 @@
 //----------Defines-----------
 // #define SIMULATE
 
-#define N_MODES 11            // Number of modes to control
+#define N_MODES 100            // Number of modes to control
 #define WIDTH 15              // Number of pixels across subim
 #define N_PIXELS WIDTH *WIDTH // Total number of pixels in subim
 #define FILTER_LEN 1          // Max number of taps in IIR filter
@@ -45,7 +45,7 @@
 // otherwise we might set filter_len to 1 and then request a row-major matrix
 // with only 1 column which is a compile-time error in Eigen.
 #define N_ACTUATORS 144  // Including corners
-#define DIST_LEN 20      // Length of disturbance sequence (periodic)
+#define DIST_LEN 100      // Length of disturbance sequence (periodic)
 #define COM_BUFFER_LEN 4 // used for POLC computations, should be ceil(max_delay)+1
 
 //----- Structures and typedefs------

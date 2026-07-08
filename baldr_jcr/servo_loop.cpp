@@ -6,7 +6,11 @@
 #include "./baldr.h"
 #include "commander/commander.h"
 #include "baldr.h"
-// #define PRINT_TIMING
+#define PRINT_TIMING
+
+#ifdef PRINT_TIMING
+#include <chrono>
+#endif
 // #define PRINT_TIMING_ALL
 // #define DEBUG
 // #define DEBUG_FILTER6
@@ -55,6 +59,12 @@ static inline void catch_up_with_sem(IMAGE *img, int semid)
 // The main AO servo loop
 void servo_loop()
 {
+#ifdef PRINT_TIMING
+    using std::chrono::duration;
+    using std::chrono::duration_cast;
+    using std::chrono::high_resolution_clock;
+    using std::chrono::microseconds;
+#endif
     // initialise servo loop
     initialise_servo();
 
@@ -71,7 +81,9 @@ void servo_loop()
 
         // See if there was a semaphore signalled for the next frame to be ready in K1 and K2
         ImageStreamIO_semwait(&subarray, 2);
-
+#ifdef PRINT_TIMING
+        auto t1 = high_resolution_clock::now();
+#endif
         // Image is ready, read it from shm
         read_shm();
 
@@ -117,16 +129,27 @@ void servo_loop()
         // inject a disturbance (nominally just zeros)
         inject_disturb();
 
-        // write to shared memory and post the semaphore to trigger the DM
-        // controller.
+        // write to shared memory and post the semaphore for that DM shmim
         write_shm();
-
-        // Where is the semaphore index defined?
-        ImageStreamIO_sempost(&master_DM, 1);
-
+#ifdef PRINT_TIMING
+        auto t2 = high_resolution_clock::now();
+#endif
         remove_offset();
 
-        inject_dm_signal();
+        // inject_dm_signal();
+
+#ifdef PRINT_TIMING
+        if (cnt % 20 == 0) {
+            std::cout << "|----------|-----------|-----------|\n";
+            std::cout << "|    cnt   |  critical |   total   |\n";
+            std::cout << "|----------|-----------|-----------|\n";
+        }
+        auto t3 = high_resolution_clock::now();
+        duration<double, std::micro> us_double = (t2 - t1);
+        printf("| %8d | %6.1f us", cnt, us_double.count());
+        us_double = (t3 - t1);
+        printf(" | %6.1f us |\n", us_double.count());
+#endif
     }
 }
 
@@ -222,14 +245,14 @@ void filter_modes()
     {
         ctrl.mode_filt += (ctrl.mode_pol_buffer.row(i).array() * ctrl.filter_coeff_in.row(i).array()).matrix();
     }
-    
+
     // COMPUTE COMPONENT FROM OUTPUTS
     // same for outputs, note there is one less coefficient on the output filter
     for (size_t i = 0; i < FILTER_LEN; i++)
     {
         ctrl.mode_filt += (ctrl.mode_filt_buffer.row(i).array() * ctrl.filter_coeff_out.row(i).array()).matrix();
     }
-        
+
     // apply anti-windup saturations:
     ctrl.mode_filt = (ctrl.mode_filt.array().min(ctrl.mode_max).max(ctrl.mode_min)).matrix();
 
@@ -276,9 +299,15 @@ void write_shm()
     // write to the dm shm
     for (size_t i = 0; i < N_ACTUATORS; i++)
     {
+        // TODO: Do we also need to post to this shmim semaphore, or is it
+        // sufficient to do only the master DM?
         DM_low.array.D[i] = ctrl.com_write[i];
     }
     ctrl.mutex.unlock();
+
+    // Where is the semaphore index defined?
+    // Poke the master DM to trigger an update.
+    ImageStreamIO_sempost(&master_DM, 1);
 }
 
 void remove_offset()
@@ -322,6 +351,7 @@ void inject_dm_signal()
     ctrl.com_fb_buffer.col(0) = ctrl.com_feedback.col(0);
     int idx_a = floor(ctrl.delay);
     double remainder = ctrl.delay - (double)idx_a;
+    printf("idx_a: %d, rem: %0.3f\n", idx_a, remainder);
     ctrl.com_effective = ctrl.com_fb_buffer.col(idx_a) * (1 - remainder) + ctrl.com_fb_buffer.col(idx_a + 1) * (remainder);
     ctrl.meas_feedback = ctrl.com_to_meas * ctrl.com_effective;
     ctrl.mutex.unlock();

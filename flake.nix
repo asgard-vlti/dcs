@@ -4,10 +4,13 @@
   inputs = {
     flake-parts.url = "github:hercules-ci/flake-parts";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    yorick-flake = {
+      url = "git+https://github.com/jcranney/yorick-flake";
+    };
     self.submodules = true;
   };
 
-  outputs = inputs@{ flake-parts, ... }:
+  outputs = inputs@{ flake-parts, yorick-flake, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
         # To import an internal flake module: ./other.nix
@@ -62,6 +65,7 @@
             fftw
             pkg-config
             libb64
+            yorick-flake.packages.${system}.spydr
           ];
           shellHook = ''
             source .venv/bin/activate

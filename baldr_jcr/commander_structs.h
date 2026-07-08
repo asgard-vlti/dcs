@@ -74,10 +74,12 @@ template <> struct adl_serializer<MeasBase64> {
     static void to_json(json& j, const MeasBase64& p) {
         j = json::object();
         j["meas"] = p.meas;
+        j["cnt"] = p.cnt;
     }
     static void from_json(const json& j, MeasBase64& p) {
         p = MeasBase64();
         j.at("meas").get_to(p.meas);
+        j.at("cnt").get_to(p.cnt);
     }
    };
 }

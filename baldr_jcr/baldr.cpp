@@ -234,6 +234,8 @@ Result get_measurement_encoded()
 {
   MeasBase64 meas;
   ctrl.mutex.lock();
+  // Thanks to the mutex, we can guarantee that ctrl.cnt and ctrl.meas_raw
+  // correspond to the same frame.
   meas.cnt = ctrl.cnt;
   meas.meas = encode((char *)ctrl.meas_raw.data(), sizeof(double) * N_PIXELS);
   ctrl.mutex.unlock();

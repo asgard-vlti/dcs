@@ -18,6 +18,24 @@
         "type": "github"
       }
     },
+    "flake-utils": {
+      "inputs": {
+        "systems": "systems"
+      },
+      "locked": {
+        "lastModified": 1731533236,
+        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1780243769,
@@ -49,10 +67,94 @@
         "type": "github"
       }
     },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1782636521,
+        "narHash": "sha256-Yf2TcFLw0r574fP/5eUN6N8el70HbYNdbDeeHpnK2eQ=",
+        "rev": "e1c1b84752fb0897897380a3cae9dc7fcab91ca3",
+        "type": "tarball",
+        "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.11pre1023798.e1c1b84752fb/nixexprs.tar.xz"
+      },
+      "original": {
+        "id": "nixpkgs",
+        "type": "indirect"
+      }
+    },
+    "nixpkgs_3": {
+      "locked": {
+        "lastModified": 1773734432,
+        "narHash": "sha256-IF5ppUWh6gHGHYDbtVUyhwy/i7D261P7fWD1bPefOsw=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "cda48547b432e8d3b18b4180ba07473762ec8558",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "flake-parts": "flake-parts",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "yorick-flake": "yorick-flake"
+      }
+    },
+    "systems": {
+      "locked": {
+        "lastModified": 1681028828,
+        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
+        "owner": "nix-systems",
+        "repo": "default",
+        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-systems",
+        "repo": "default",
+        "type": "github"
+      }
+    },
+    "wrappers": {
+      "inputs": {
+        "nixpkgs": "nixpkgs_3"
+      },
+      "locked": {
+        "lastModified": 1782375095,
+        "narHash": "sha256-bRepNpAluz2i0IIk7Tmzw/4BkyOrwABvc66NEgXPEhA=",
+        "owner": "lassulus",
+        "repo": "wrappers",
+        "rev": "cd780e92c0fa66c2e721e1d91894f3db13b9f2b4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "lassulus",
+        "repo": "wrappers",
+        "type": "github"
+      }
+    },
+    "yorick-flake": {
+      "inputs": {
+        "flake-utils": "flake-utils",
+        "nixpkgs": "nixpkgs_2",
+        "wrappers": "wrappers"
+      },
+      "locked": {
+        "lastModified": 1783291591,
+        "narHash": "sha256-AQQviyUtWqhjd7xB9kDTavMaClMCAGpcYcFn746RIbM=",
+        "ref": "refs/heads/main",
+        "rev": "effe7cd1d062d11cb355db4405d1932003c17d4b",
+        "revCount": 15,
+        "submodules": true,
+        "type": "git",
+        "url": "https://github.com/jcranney/yorick-flake"
+      },
+      "original": {
+        "type": "git",
+        "url": "https://github.com/jcranney/yorick-flake"
       }
     }
   },

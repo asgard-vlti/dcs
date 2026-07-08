@@ -13,7 +13,7 @@ py = 15
 #Width with respect to the central pixel. Must be odd!
 focus_amp = 0.00
 
-# Flux threshold
+# Flux threshold 0.1
 flux_threshold = 1000
 
 meas_offset = "./baldr_jcr/meas_offset.fits"
@@ -29,7 +29,7 @@ com_min = "./baldr_jcr/com_min.fits"
 com_dist_buffer = "./baldr_jcr/com_dist_buffer.fits"
 com_offset = "./baldr_jcr/com_offset.fits"
 com_to_meas = "./baldr_jcr/com_to_meas.fits"
-delay = 1.7
+delay = 2.999
 
 #All units are in radians and microns
 [geometry] 

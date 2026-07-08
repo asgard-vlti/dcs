@@ -9,16 +9,22 @@ from typing import Tuple, Optional
 from tqdm import tqdm  # type: ignore
 from dcs.ZMQutils import ZmqReq  # type: ignore
 from os import path
+from dataclasses import dataclass
+import modal_basis
+import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 # TODO: NOT REALLY SAFE: These parameters are defined both in baldr.h and here,
 # I should find a way to merge these into a single source of truth.
-N_MODES = 11
+N_MODES = 100
 WIDTH = 15
 N_PIXELS = WIDTH * WIDTH
 FILTER_LEN = 1
 N_ACTX = 12
 N_ACTUATORS = N_ACTX * N_ACTX
-DIST_LEN = 20
+DIST_LEN = 100
+POKE = 0.1
+ALPHA = 1.0
 
 BEAM_TO_PORT = {
     1: 17474,  # 6671
@@ -45,10 +51,6 @@ BALDR_ROOT = path.abspath(path.dirname(__file__))
 DTYPE = np.float64
 
 
-class Mode:
-    pass
-
-
 class InfluenceFunctions:
     pass
 
@@ -70,17 +72,17 @@ def request(socket: ZmqReq, message: str):
     resp = socket.send_payload(message, is_str=True, decode_ascii=False)  # type: ignore
     if not isinstance(resp, dict):
         raise RuntimeError(f"No valid response for command '{message}': {resp}")
-    print(resp)
+    # print(resp)
     if resp["status_code"] != 0:
         raise RuntimeError(resp["data"])
     return resp["data"]
 
 
-def get_meas(socket: ZmqReq) -> np.ndarray:
+def get_meas(socket: ZmqReq) -> Tuple[int, np.ndarray]:
     command = f"meas"
     data = request(socket, command)
-    meas = np.frombuffer(base64.b64decode(data["meas"]), dtype=np.float64)
-    return meas
+    meas = np.frombuffer(base64.b64decode(data["meas"]), dtype=np.float64).copy()
+    return (int(data["cnt"]), meas)
 
 
 def fitsread(filename: str) -> np.ndarray:
@@ -390,43 +392,72 @@ def update_com_to_meas(array: np.ndarray, socket: Optional[ZmqReq] = None):
 # computed values being loaded next time the RTC is started.
 
 
+def reset(socket: ZmqReq, init: bool = False):
+    if init:
+        writefits_meas_offset()
+        writefits_meas_to_mode()
+        writefits_filter_coeff_in()
+        writefits_filter_coeff_out()
+        writefits_mode_offset()
+        writefits_mode_max()
+        writefits_mode_min()
+        writefits_mode_to_com()
+        writefits_com_max()
+        writefits_com_min()
+        writefits_com_dist_buffer()
+        writefits_com_offset()
+        writefits_com_to_meas()
+    request(socket, "meas_offset")
+    request(socket, "meas_to_mode")
+    request(socket, "filter_coeff_in")
+    request(socket, "filter_coeff_out")
+    request(socket, "mode_offset")
+    request(socket, "mode_max")
+    request(socket, "mode_min")
+    request(socket, "mode_to_com")
+    request(socket, "com_max")
+    request(socket, "com_min")
+    request(socket, "com_dist_buffer")
+    request(socket, "com_offset")
+    request(socket, "com_to_meas")
+
+
 def create_meas_offset(socket: ZmqReq, push: bool):
     """Take a sample measurement from the RTC, negate it, and then save it
     as the measurement offset"""
     # read image via commander (we can do some averageing of the frames here if
     # we like).
-    meas = -get_meas(socket=socket)
+    meas = -get_meas(socket=socket)[1]
     if push:
         update_meas_offset(meas, socket=socket)
     else:
         update_meas_offset(meas, socket=None)
 
 
-def create_meas_to_mode(measurement: Measurement, mode: Mode, send: bool = True):
-    """Build a reconstructor"""
-    # build forward matrix from modes to measurements
-    # TODO
+def set_leaky_gain_leak(
+    gain: float = 0.3,
+    leak: float = 0.999,
+    socket: Optional[ZmqReq] = None,
+):
+    # compute filter coeffs from Exponentially weighted moving average gain
+    filter_coeff_in = np.zeros([FILTER_LEN, N_MODES])
+    filter_coeff_out = np.zeros([FILTER_LEN, N_MODES])
+    filter_coeff_in[0, :] = -gain
+    filter_coeff_out[0, :] = leak
 
-    # invert forward matrix to get reconstructor
-    # TODO
-
-    # save reconstructor to default path
-    # TODO
-
-    # tell commander to load reconstructor as meas_to_mode
-    # TODO
-
-    pass
+    # save coeffs to fits files
+    update_filter_coeff_in(filter_coeff_in, socket)
+    update_filter_coeff_out(filter_coeff_out, socket)
 
 
-def create_filter_coeff(
+def set_polc_gain(
     ewma_gain: float = 0.3,
     socket: Optional[ZmqReq] = None,
 ):
     # compute filter coeffs from Exponentially weighted moving average gain
     filter_coeff_in = np.zeros([FILTER_LEN, N_MODES])
     filter_coeff_out = np.zeros([FILTER_LEN, N_MODES])
-    filter_coeff_in[0, :] = ewma_gain
+    filter_coeff_in[0, :] = -ewma_gain
     filter_coeff_out[0, :] = 1 - ewma_gain
 
     # save coeffs to fits files
@@ -434,66 +465,141 @@ def create_filter_coeff(
     update_filter_coeff_out(filter_coeff_out, socket)
 
 
-def create_mode_to_com(
-    mode: Mode, influence_functions: InfluenceFunctions, send: bool = True
-):
-    """Update the modal projection matrix (from modes to DM command) using
-    some global modal definition and some global influence function definition.
-    """
-    # define some intermediate phase space
-    # TODO
-
-    # project modes to that phase space
-    # TODO
-
-    # project commands to that phase space
-    # TODO
-
-    # linear algebra trickery to build mode to command projector
-    # TODO
-
-    pass
+def flatten_dm(socket: ZmqReq):
+    # compute filter coeffs. Zeros correspond to an "all stop" filter.
+    filter_coeff_in = np.zeros([FILTER_LEN, N_MODES])
+    filter_coeff_out = np.zeros([FILTER_LEN, N_MODES])
+    # save coeffs to fits files
+    update_filter_coeff_in(filter_coeff_in, socket)
+    update_filter_coeff_out(filter_coeff_out, socket)
 
 
-# def create_mode(
-#     mode: Mode,
-#     influence_functions: InfluenceFunctions,
-#     measurement: Measurement,
-#     send: bool = True,
-# ):
-#     """Update the defined modes and propagate to all dependencies"""
-#     # update mode to com
-#     update_mode_to_com(mode=mode, influence_functions=influence_functions, send=False)
-
-#     # update mode to com
-#     update_mode_to_com(mode=mode, influence_functions=influence_functions, send=False)
-
-#     # update meas to mode
-#     update_meas_to_mode(measurement=measurement, mode=mode, send=False)
-
-#     if send:
-#         # send commander message to update all relevant matrices and reset controller
-#         # TODO
-#         pass
+def flatten_offsets(socket: ZmqReq):
+    array = np.zeros((N_MODES,))
+    update_mode_offset(array, socket=socket)
 
 
-def create_com_to_meas(
-    influence_functions: InfluenceFunctions,
-    measurement: Measurement,
-    send: bool = True,
-):
-    """Build an interaction matrix from an influence function model"""
-    # measure interaction matrix via commander
+def measure_interaction_matrix(socket: ZmqReq) -> Tuple[np.ndarray, np.ndarray]:
+    flatten_offsets(socket)
+    CNT_MIN: int = 2 # minimum number of measurements to wait after applying poke
+    # record reference measurement
+    cnt0, _ = get_meas(socket=socket)
+    # to be sure that the command was applied, wait for at least 5 frames to pass
+    while True:
+        time.sleep(10e-3)  # sleep for 10ms
+        cnt, meas = get_meas(socket=socket)
+        if cnt >= cnt0 + CNT_MIN:
+            ref_meas = meas
+            break
+    plt.matshow(ref_meas.reshape([WIDTH, WIDTH]))
+    plt.title(f"reference image")
+    plt.colorbar()
+    plt.savefig("tmp.png")
+    plt.close()
+    # the only way to get here is if ref_meas exists
 
-    # fit geometric parameters to build synthetic interaction matrix
-    # (this might involve )
+    mode_to_meas = np.zeros((N_PIXELS, N_MODES), dtype=DTYPE)
+    for i in tqdm(range(N_MODES)):
+        mode = np.zeros(N_MODES)
+        # poke mode i (positive poke)
+        mode[i] = POKE
+        update_mode_offset(mode, socket=socket)
 
-    # write synthetic interaction matrix to fits
+        # record response in measurement space
+        cnt0, _ = get_meas(socket=socket)
+        while True:
+            cnt, meas_pos = get_meas(socket=socket)
+            if cnt >= cnt0 + CNT_MIN:
+                break
 
-    if send:
-        # tell commander to load com_to_meas from file
-        # TODO
-        pass
+        # poke mode i (negative poke)
+        mode[i] = -POKE
+        update_mode_offset(mode, socket=socket)
+
+        # record response in measurement space
+        cnt0, _ = get_meas(socket=socket)
+        while True:
+            cnt, meas_neg = get_meas(socket=socket)
+            if cnt >= cnt0 + CNT_MIN:
+                break
+        meas = (meas_pos - meas_neg) / (2 * POKE)
+        plt.matshow(meas.reshape([WIDTH, WIDTH]))
+        plt.title(f"response to mode {i}")
+        plt.colorbar()
+        plt.savefig("tmp.png")
+        plt.close()
+
+        # inject it to matrix
+        mode_to_meas[:, i] = meas
+    flatten_offsets(socket)
+    return (mode_to_meas, -ref_meas)
+
+
+def create_polc_matrices(socket: ZmqReq):
+    """Measure the interaction matrix, fit the system parameters based on that
+    measurement, and then compute and upload all control matrices derived from
+    the system parameters."""
+
+    ### Build mode_to_com projection
+    mode_to_com = modal_basis.Zernike().modes_on_unit_disk(
+        nsamplex=N_ACTX, nmodes=N_MODES
+    )
+
+    ### Measure mode_to_slope interaction
+    # flatten DM
+    flatten_dm(socket=socket)
+    flatten_offsets(socket=socket)
+
+    # set mode_to_com
+    update_mode_to_com(mode_to_com, socket=socket)
+
+    # measure modal imat
+    mode_to_meas, meas_offset = measure_interaction_matrix(socket=socket)
+
+    # produce com imat
+    com_to_meas = mode_to_meas @ np.linalg.solve(
+        mode_to_com.T @ mode_to_com, mode_to_com.T
+    )
+    update_com_to_meas(com_to_meas)
+
+    ### Invert mode_to_slope to build slope_to_mode reconstructor
+    meas_to_mode = np.linalg.solve(
+        mode_to_meas.T @ mode_to_meas + ALPHA * np.eye(mode_to_meas.shape[1]),
+        mode_to_meas.T,
+    )
+    update_meas_to_mode(meas_to_mode, socket=socket)
+    update_meas_offset(meas_offset, socket=socket)
+
+
+def create_leaky_matrices(socket: ZmqReq):
+    """Measure the interaction matrix, fit the system parameters based on that
+    measurement, and then compute and upload all control matrices derived from
+    the system parameters."""
+    ### Build mode_to_com projection
+    mode_to_com = modal_basis.Zernike().modes_on_unit_disk(
+        nsamplex=N_ACTX, nmodes=N_MODES
+    )
+
+    ### Measure mode_to_slope interaction
+    # flatten DM
+    flatten_dm(socket=socket)
+    flatten_offsets(socket=socket)
+
+    # set mode_to_com
+    update_mode_to_com(mode_to_com, socket=socket)
+
+    # measure modal imat
+    mode_to_meas, meas_offset = measure_interaction_matrix(socket=socket)
+
+    update_com_to_meas(np.zeros((N_PIXELS, N_ACTUATORS)), socket=socket)
+
+    ### Invert mode_to_slope to build slope_to_mode reconstructor
+    meas_to_mode = np.linalg.solve(
+        mode_to_meas.T @ mode_to_meas + ALPHA * np.eye(mode_to_meas.shape[1]),
+        mode_to_meas.T,
+    )
+    update_meas_to_mode(meas_to_mode, socket=socket)
+    update_meas_offset(meas_offset, socket=socket)
 
 
 if __name__ == "__main__":
@@ -514,35 +620,40 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--gain",
-        type=float,
-        help="gain to be used in controller",
-    )
-
-    parser.add_argument(
         "--offset",
         help="inject a modal offset onto the DMs (for NCPAs later)",
         action="count",
+    )
+
+    parser.add_argument(
+        "--polc",
+        help="measure imat from live system, then initialise controller in POLC mode",
+        action="count",
+    )
+
+    parser.add_argument(
+        "--leaky",
+        help="measure imat from live system, then initialise controller in leaky integrator mode",
+        action="count",
+    )
+
+    parser.add_argument(
+        "--gain", help="gain, only used if also used with --leaky or --polc", type=float
+    )
+    parser.add_argument(
+        "--leak", help="leak, only used if also used with --leaky", type=float
+    )
+    parser.add_argument(
+        "--recompute", help="recompute the specified controller",
+        action="count"
     )
 
     args = parser.parse_args()
 
     if args.init is not None:
         print("initing!")
-        # write empty arrays for all data objects
-        writefits_meas_offset()
-        writefits_meas_to_mode()
-        writefits_filter_coeff_in()
-        writefits_filter_coeff_out()
-        writefits_mode_offset()
-        writefits_mode_max()
-        writefits_mode_min()
-        writefits_mode_to_com()
-        writefits_com_max()
-        writefits_com_min()
-        writefits_com_dist_buffer()
-        writefits_com_offset()
-        writefits_com_to_meas()
+        socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
+        reset(socket, init=True)
 
     # TODO: Change this pipeline to only create one socket (but only crash if the
     # client needs to be online)
@@ -552,24 +663,45 @@ if __name__ == "__main__":
         # over 20 frames.
         socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
         _, xx = np.meshgrid(
-            np.linspace(0, 2 * np.pi, N_ACTX + 1)[:-1],
-            np.linspace(0, 2 * np.pi, N_ACTX + 1)[:-1],
+            np.linspace(0, 2 * 2 * np.pi, N_ACTX + 1)[:-1],
+            np.linspace(0, 2 * 2 * np.pi, N_ACTX + 1)[:-1],
             indexing="ij",
         )
         xx_flat = xx.flatten()
         disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
         for i, t in enumerate(np.linspace(0, 2 * np.pi, DIST_LEN + 1)[:-1]):
-            disturbance[:, i] = 10.0 * np.sin(xx_flat + t)
+            disturbance[:, i] = 0.05 * np.sin(xx_flat + t)
         update_com_dist_buffer(disturbance, socket=socket)
 
-    if args.gain is not None:
+    if args.polc is not None:
+        if args.leak is not None:
+            raise ValueError("Leak is meaningless in POLC")
         socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
-        create_filter_coeff(args.gain, socket=socket)
-
-    #######################################################################
-    ### Next most important implementations are the abc_to_def matrices ###
-    #######################################################################
-
+        if args.recompute is not None:
+            create_polc_matrices(socket)
+        if args.gain is not None:
+            gain = args.gain
+        else:
+            gain = 0.3
+        set_polc_gain(gain, socket=socket)
+    elif args.leaky is not None:
+        socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
+        if args.recompute is not None:
+            create_leaky_matrices(socket)
+        if args.gain is not None:
+            gain = args.gain
+        else:
+            gain = 0.3
+        if args.leak is not None:
+            leak = args.leak
+        else:
+            leak = 0.95
+        set_leaky_gain_leak(gain, leak, socket=socket)
+    else:
+        if args.gain is not None:
+            raise ValueError("gain must only be set if also passing --polc or --leaky")
+        if args.leak is not None:
+            raise ValueError("leak must only be set if also passing --leaky")
 
     # socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
     # create_meas_offset(socket=socket, push=True)

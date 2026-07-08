@@ -1,0 +1,62 @@
+from abc import ABC, abstractmethod
+import numpy as np
+from aotools import zernike  # type: ignore
+
+
+class ModalBasis(ABC):
+    @abstractmethod
+    def sample(self, i: int, x: float, y: float) -> float:
+        """Sample the ith basis function at coordinates."""
+        pass
+
+    def modes(self, xx: np.ndarray, yy: np.ndarray, nmodes: int) -> np.ndarray:
+        """evaluate the "sample" function at the coordinates specified, and
+        compile a matrix of the function response for modes up to "nmodes".
+        xx and yy are vectors of the same length. (xx[i], yy[i]) is the ith
+        coordinate. The resulting matrix of this function will have:
+          shape == (xx.shape[0], nmodes)
+        """
+        out = np.zeros((xx.shape[0], nmodes), dtype=float)
+        for i in range(nmodes):
+            out[:, i] = np.r_[[self.sample(i, x, y) for (x, y) in zip(xx, yy)]]
+        return out
+
+    def modes_on_unit_disk(self, nsamplex: int, nmodes: int, norm: bool = True) -> np.ndarray:
+        """Defines a square grid ensquaring the unit circle, and produces a
+        modal matrix on this grid.
+        norm==True implies that the modes should be divided by their individual
+        standard deviation (across the whole square grid, not just the circle)
+        """
+        xx, yy = np.meshgrid(
+            np.linspace(-1, 1, nsamplex), np.linspace(-1, 1, nsamplex), indexing="xy"
+        )
+        modes = self.modes(xx.flatten(), yy.flatten(), nmodes=nmodes)
+        modes /= modes.std(axis=0)[None, :]
+        return modes
+
+
+class Zernike(ModalBasis):
+    def sample(self, i: int, x: float, y: float) -> float:
+        n, m = zernike.zernIndex(i+2)
+        r = (x**2 + y**2)**0.5
+        # The following snippet is taken from the aotools library source code:
+        # https://github.com/AOtools/aotools/blob/main/aotools/functions/zernike.py#L59
+        theta = np.arctan2(y, x)
+        if m==0:
+            z = np.sqrt(n+1)*zernike.zernikeRadialFunc(n, 0, r)
+        else:
+            if m > 0: # j is even
+                z = np.sqrt(2*(n+1)) * zernike.zernikeRadialFunc(n, m, r) * np.cos((m*theta))
+            else:   #i is odd
+                m = abs(m)
+                z = np.sqrt(2*(n+1)) * zernike.zernikeRadialFunc(n, m, r) * np.sin((m*theta))
+        return z
+
+
+if __name__ == "__main__":
+    mb = Zernike()
+    import time
+    t1 = time.perf_counter()
+    print(mb.modes_on_unit_disk(nsamplex=12, nmodes=100))
+    t2 = time.perf_counter()
+    print(f"time: {t2-t1:0.3e}")
