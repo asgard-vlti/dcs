@@ -23,8 +23,10 @@ FILTER_LEN = 1
 N_ACTX = 12
 N_ACTUATORS = N_ACTX * N_ACTX
 DIST_LEN = 100
-POKE = 0.1
-ALPHA = 1.0
+POKE = 0.3
+ALPHA = 50.0
+MEAS_SCALE = 1/1000
+CNT_MIN: int = 3 # minimum number of measurements to wait after applying poke
 
 BEAM_TO_PORT = {
     1: 17474,  # 6671
@@ -481,7 +483,6 @@ def flatten_offsets(socket: ZmqReq):
 
 def measure_interaction_matrix(socket: ZmqReq) -> Tuple[np.ndarray, np.ndarray]:
     flatten_offsets(socket)
-    CNT_MIN: int = 2 # minimum number of measurements to wait after applying poke
     # record reference measurement
     cnt0, _ = get_meas(socket=socket)
     # to be sure that the command was applied, wait for at least 5 frames to pass
@@ -522,7 +523,7 @@ def measure_interaction_matrix(socket: ZmqReq) -> Tuple[np.ndarray, np.ndarray]:
             cnt, meas_neg = get_meas(socket=socket)
             if cnt >= cnt0 + CNT_MIN:
                 break
-        meas = (meas_pos - meas_neg) / (2 * POKE)
+        meas = (meas_pos - meas_neg) / (2 * POKE) * MEAS_SCALE
         plt.matshow(meas.reshape([WIDTH, WIDTH]))
         plt.title(f"response to mode {i}")
         plt.colorbar()
@@ -555,18 +556,19 @@ def create_polc_matrices(socket: ZmqReq):
 
     # measure modal imat
     mode_to_meas, meas_offset = measure_interaction_matrix(socket=socket)
+    fits.writeto("DEBUG_mode_to_meas.fits", mode_to_meas, overwrite=True)
 
     # produce com imat
     com_to_meas = mode_to_meas @ np.linalg.solve(
         mode_to_com.T @ mode_to_com, mode_to_com.T
-    )
+    ) / MEAS_SCALE
     update_com_to_meas(com_to_meas)
 
     ### Invert mode_to_slope to build slope_to_mode reconstructor
     meas_to_mode = np.linalg.solve(
         mode_to_meas.T @ mode_to_meas + ALPHA * np.eye(mode_to_meas.shape[1]),
         mode_to_meas.T,
-    )
+    ) * MEAS_SCALE
     update_meas_to_mode(meas_to_mode, socket=socket)
     update_meas_offset(meas_offset, socket=socket)
 
@@ -590,14 +592,15 @@ def create_leaky_matrices(socket: ZmqReq):
 
     # measure modal imat
     mode_to_meas, meas_offset = measure_interaction_matrix(socket=socket)
-
+    fits.writeto("DEBUG_mode_to_meas.fits", mode_to_meas, overwrite=True)
+    
     update_com_to_meas(np.zeros((N_PIXELS, N_ACTUATORS)), socket=socket)
 
     ### Invert mode_to_slope to build slope_to_mode reconstructor
     meas_to_mode = np.linalg.solve(
         mode_to_meas.T @ mode_to_meas + ALPHA * np.eye(mode_to_meas.shape[1]),
         mode_to_meas.T,
-    )
+    ) * MEAS_SCALE
     update_meas_to_mode(meas_to_mode, socket=socket)
     update_meas_offset(meas_offset, socket=socket)
 
@@ -611,6 +614,11 @@ if __name__ == "__main__":
         "--init",
         "-i",
         help="initialise all arrays with zeros and save them to disk",
+        action="count",
+    )
+    parser.add_argument(
+        "--disturboff",
+        help="resets the disturbance to zero",
         action="count",
     )
     parser.add_argument(
@@ -659,6 +667,8 @@ if __name__ == "__main__":
     # client needs to be online)
 
     if args.disturb is not None:
+        if args.disturboff is not None:
+            raise ValueError("cannot simultaneously be disturbing and not disturbing")
         # The default disturbance is a sine wave that sweeps accross the dm
         # over 20 frames.
         socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
@@ -671,6 +681,13 @@ if __name__ == "__main__":
         disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
         for i, t in enumerate(np.linspace(0, 2 * np.pi, DIST_LEN + 1)[:-1]):
             disturbance[:, i] = 0.05 * np.sin(xx_flat + t)
+        update_com_dist_buffer(disturbance, socket=socket)
+    
+    if args.disturboff is not None:
+        # The default disturbance is a sine wave that sweeps accross the dm
+        # over 20 frames.
+        socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
+        disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
         update_com_dist_buffer(disturbance, socket=socket)
 
     if args.polc is not None:
