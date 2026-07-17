@@ -31,7 +31,7 @@ class ModalBasis(ABC):
             np.linspace(-1, 1, nsamplex), np.linspace(-1, 1, nsamplex), indexing="xy"
         )
         modes = self.modes(xx.flatten(), yy.flatten(), nmodes=nmodes)
-        modes /= modes.std(axis=0)[None, :]
+        # modes /= modes.std(axis=0)[None, :]
         return modes
 
 

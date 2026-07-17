@@ -147,6 +147,12 @@ struct MeasBase64
     uint64_t cnt;  // iteration that the measurement corresponds to
 };
 
+struct ModeBase64
+{
+    std::string mode;  // mode from the RTC
+    uint64_t cnt;  // iteration that the mode correspond to
+};
+
 //-------End of Commander structs------
 
 // Settings including a mutex.
@@ -204,6 +210,8 @@ Result set_pxy(size_t px_new, size_t py_new);
 Result get_status();
 
 Result get_settings();
+
+Result set_delay(double delay);
 
 // Poke a mode and get the average image back
 // Result poke_mode(int mode_ix, double amplitude);

@@ -29,7 +29,7 @@ com_min = "./baldr_jcr/com_min.fits"
 com_dist_buffer = "./baldr_jcr/com_dist_buffer.fits"
 com_offset = "./baldr_jcr/com_offset.fits"
 com_to_meas = "./baldr_jcr/com_to_meas.fits"
-delay = 2.999
+delay = 1.0
 
 #All units are in radians and microns
 [geometry] 

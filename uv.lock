@@ -933,6 +933,7 @@ dependencies = [
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.9.*'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "taguchi" },
     { name = "tqdm" },
     { name = "zmq" },
 ]
@@ -943,6 +944,7 @@ requires-dist = [
     { name = "astropy", specifier = ">=5.2.2" },
     { name = "black", specifier = ">=24.8.0" },
     { name = "numpy", specifier = ">=1.24.4" },
+    { name = "taguchi", specifier = ">=1.1.5" },
     { name = "tqdm", specifier = ">=4.67.3" },
     { name = "zmq", specifier = ">=0.0.0" },
 ]
@@ -3183,6 +3185,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
+]
+
+[[package]]
+name = "taguchi"
+version = "1.1.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f4/f9/213632dd0356ee689ebfed82db2a481f62dfc331726c47829afcb2b5a509/taguchi-1.1.5.tar.gz", hash = "sha256:9bf669057f1c46ba9a439c352c24ad283e62c1ff802fe6640a187091b6792842", size = 20121, upload-time = "2024-11-04T22:35:38.136Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f2/2c/db1b529d6be2f53ec1e20c97a0f6b17e780ae60d1a20d2a7f135d8012d50/taguchi-1.1.5-py3-none-any.whl", hash = "sha256:fea59f317ab88129aa481b63d619943c69426e58caed7fcbc37ed66409f7e8df", size = 19310, upload-time = "2024-11-04T22:35:35.892Z" },
 ]
 
 [[package]]

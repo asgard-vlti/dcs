@@ -156,6 +156,14 @@ Result set_log(double gain)
   return SUCCESS(settings.settings.log);
 }
 
+Result set_delay(double delay)
+{
+  ctrl.mutex.lock();
+  ctrl.delay = delay;
+  ctrl.mutex.unlock();
+  return SUCCESS(ctrl.delay);
+}
+
 // Set the high order gain
 Result set_hog(double gain)
 {
@@ -242,39 +250,17 @@ Result get_measurement_encoded()
   return SUCCESS(meas);
 }
 
-// Result poke_mode(int mode_ix, double amplitude)
-// {
-//   // ImAvgs im_avgs;
-//   // im_avgs.width = 0;
-//   // im_avgs.im_plus_sum_encoded = "";
-//   // im_avgs.im_minus_sum_encoded = "";
-//   // if (mode_ix < 0 || mode_ix >= N_MODES)
-//   // {
-//   //   std::string msg = fmt::format("Invalid mode index. Must be between 0 and %d", N_MODES - 1);
-//   //   info(msg.c_str());
-//   //   return FAILURE(msg);
-//   // }
-//   // // Encode the current im_plus_sum and im_minus_sum as base64 strings.
-//   // im_avgs.width = WIDTH;
-
-//   // // Set the control_u DM command to be the poke of the given mode and amplitude.
-//   // ctrl.modes.setZero();
-//   // ctrl.modes(mode_ix) = amplitude;
-//   // info("Poking mode %d with amplitude %f", mode_ix, amplitude);
-
-//   // // Wait 10ms for DM to settle, then set the im_plus_sum
-//   // // and im_minus_sum to zero.
-//   // usleep(10000);
-//   // im_mutex.lock();
-//   // for (size_t j = 0; j < WIDTH * WIDTH; j++)
-//   // {
-//   //   im_plus_sum[j] = 0;
-//   //   im_minus_sum[j] = 0;
-//   // }
-//   // im_mutex.unlock();
-
-//   // return SUCCESS(im_avgs);
-// }
+Result get_mode_encoded()
+{
+  ModeBase64 mode;
+  ctrl.mutex.lock();
+  // Thanks to the mutex, we can guarantee that ctrl.cnt and ctrl.meas_raw
+  // correspond to the same frame.
+  mode.cnt = ctrl.cnt;
+  mode.mode = encode((char *)ctrl.mode_filt.data(), sizeof(double) * N_MODES);
+  ctrl.mutex.unlock();
+  return SUCCESS(mode);
+}
 
 COMMANDER_REGISTER(m)
 {
@@ -285,6 +271,7 @@ COMMANDER_REGISTER(m)
   m.def("reset", reset_ctrl, "Reset the ctrl internal parameters");
   m.def("status", get_status, "Get the status of the system");
   m.def("settings", get_settings, "Get current system settings");
+  m.def("delay", set_delay, "Set the estimated system delay, used for POLC", "delay"_arg=1.8);
   // m.def("log", set_log, "Set the low-order gain for the servo loop", "gain"_arg = 0.0);
   // m.def("lol", set_lol, "Set the low-order leak term", "gain"_arg = 0.01);
   // m.def("hog", set_hog, "Set the high-order gain for the servo loop", "gain"_arg = 0.0);
@@ -292,7 +279,7 @@ COMMANDER_REGISTER(m)
   m.def("pxy", set_pxy, "Set the origin pixels", "px"_arg = 15, "py"_arg = 15);
   m.def("flux_threshold", set_flux_threshold, "Set flux threshold", "value"_arg = 100.0);
   m.def("meas", get_measurement_encoded, "Read meas_raw in Base64 encoding");
-
+  m.def("mode", get_mode_encoded, "Read mode_filt in Base64 encoding");
   m.def("meas_offset", read_meas_offset, "Read meas_offset from file", "filename"_arg = "./baldr_jcr/meas_offset.fits");
   m.def("meas_to_mode", read_meas_to_mode, "Read meas_to_mode from file", "filename"_arg = "./baldr_jcr/meas_to_mode.fits");
   m.def("filter_coeff_in", read_filter_coeff_in, "Read filter_coeff_in from file", "filename"_arg = "./baldr_jcr/filter_coeff_in.fits");

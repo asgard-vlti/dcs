@@ -23,10 +23,11 @@ FILTER_LEN = 1
 N_ACTX = 12
 N_ACTUATORS = N_ACTX * N_ACTX
 DIST_LEN = 100
-POKE = 0.3
-ALPHA = 50.0
-MEAS_SCALE = 1/1000
-CNT_MIN: int = 3 # minimum number of measurements to wait after applying poke
+POKE = 0.1
+ALPHA = 1000.0
+BETA = 0.1
+MEAS_SCALE = 1 / 1000
+CNT_MIN: int = 3  # minimum number of measurements to wait after applying poke
 
 BEAM_TO_PORT = {
     1: 17474,  # 6671
@@ -85,6 +86,39 @@ def get_meas(socket: ZmqReq) -> Tuple[int, np.ndarray]:
     data = request(socket, command)
     meas = np.frombuffer(base64.b64decode(data["meas"]), dtype=np.float64).copy()
     return (int(data["cnt"]), meas)
+
+
+def get_mode(socket: ZmqReq) -> Tuple[int, np.ndarray]:
+    command = f"mode"
+    data = request(socket, command)
+    mode = np.frombuffer(base64.b64decode(data["mode"]), dtype=np.float64).copy()
+    return (int(data["cnt"]), mode)
+
+
+def avg_meas(socket: ZmqReq, navg: int, after_frame: int) -> np.ndarray:
+    """Take `navg` frames and average them, but don't start collecting frames
+    until at least `after_frames` frames have passed (e.g., to let the DM
+    settle)
+    """
+    if navg == 0:
+        raise ValueError("number of frames to average must be at least 1")
+    cnt0, _ = get_meas(socket)
+    while True:
+        cnt, meas = get_meas(socket)
+        if cnt >= cnt0 + after_frame:
+            break
+    prev_cnt = cnt
+    im_avg = meas
+    for i in range(navg - 1):
+        while True:
+            cnt, meas = get_meas(socket)
+            if cnt > prev_cnt:
+                im_avg += meas
+                prev_cnt = cnt
+                break
+            time.sleep(1e-2)
+    im_avg /= navg
+    return im_avg
 
 
 def fitsread(filename: str) -> np.ndarray:
@@ -381,6 +415,11 @@ def update_com_to_meas(array: np.ndarray, socket: Optional[ZmqReq] = None):
     if socket is not None:
         request(socket, "com_to_meas")
 
+def update_delay(delay: float, socket: Optional[ZmqReq] = None):
+    """Update the delay from a float"""
+    if socket is not None:
+        request(socket, f"delay {delay}")
+
 
 ############################################################
 ### High level functions for executing supervisory tasks ###
@@ -424,18 +463,6 @@ def reset(socket: ZmqReq, init: bool = False):
     request(socket, "com_to_meas")
 
 
-def create_meas_offset(socket: ZmqReq, push: bool):
-    """Take a sample measurement from the RTC, negate it, and then save it
-    as the measurement offset"""
-    # read image via commander (we can do some averageing of the frames here if
-    # we like).
-    meas = -get_meas(socket=socket)[1]
-    if push:
-        update_meas_offset(meas, socket=socket)
-    else:
-        update_meas_offset(meas, socket=None)
-
-
 def set_leaky_gain_leak(
     gain: float = 0.3,
     leak: float = 0.999,
@@ -454,6 +481,7 @@ def set_leaky_gain_leak(
 
 def set_polc_gain(
     ewma_gain: float = 0.3,
+    ewma_leak: float = 1.0,
     socket: Optional[ZmqReq] = None,
 ):
     # compute filter coeffs from Exponentially weighted moving average gain
@@ -461,6 +489,7 @@ def set_polc_gain(
     filter_coeff_out = np.zeros([FILTER_LEN, N_MODES])
     filter_coeff_in[0, :] = -ewma_gain
     filter_coeff_out[0, :] = 1 - ewma_gain
+    filter_coeff_out *= ewma_leak
 
     # save coeffs to fits files
     update_filter_coeff_in(filter_coeff_in, socket)
@@ -476,22 +505,27 @@ def flatten_dm(socket: ZmqReq):
     update_filter_coeff_out(filter_coeff_out, socket)
 
 
+def set_com_clip(clip_val: float, socket: ZmqReq):
+    # compute filter coeffs. Zeros correspond to an "all stop" filter.
+    com_max = clip_val * np.ones([N_ACTUATORS])
+    # save coeffs to fits files
+    update_com_max(com_max, socket)
+    update_com_min(-com_max, socket)
+
+
 def flatten_offsets(socket: ZmqReq):
     array = np.zeros((N_MODES,))
     update_mode_offset(array, socket=socket)
 
 
-def measure_interaction_matrix(socket: ZmqReq) -> Tuple[np.ndarray, np.ndarray]:
+def measure_interaction_matrix(
+    socket: ZmqReq, navg: int = 5, poke: float = POKE
+) -> Tuple[np.ndarray, np.ndarray]:
     flatten_offsets(socket)
+
     # record reference measurement
-    cnt0, _ = get_meas(socket=socket)
-    # to be sure that the command was applied, wait for at least 5 frames to pass
-    while True:
-        time.sleep(10e-3)  # sleep for 10ms
-        cnt, meas = get_meas(socket=socket)
-        if cnt >= cnt0 + CNT_MIN:
-            ref_meas = meas
-            break
+    ref_meas = avg_meas(socket, navg, CNT_MIN)
+
     plt.matshow(ref_meas.reshape([WIDTH, WIDTH]))
     plt.title(f"reference image")
     plt.colorbar()
@@ -503,27 +537,14 @@ def measure_interaction_matrix(socket: ZmqReq) -> Tuple[np.ndarray, np.ndarray]:
     for i in tqdm(range(N_MODES)):
         mode = np.zeros(N_MODES)
         # poke mode i (positive poke)
-        mode[i] = POKE
+        mode[i] = poke
         update_mode_offset(mode, socket=socket)
-
-        # record response in measurement space
-        cnt0, _ = get_meas(socket=socket)
-        while True:
-            cnt, meas_pos = get_meas(socket=socket)
-            if cnt >= cnt0 + CNT_MIN:
-                break
-
+        meas_pos = avg_meas(socket, navg, CNT_MIN)
         # poke mode i (negative poke)
-        mode[i] = -POKE
+        mode[i] = -poke
         update_mode_offset(mode, socket=socket)
-
-        # record response in measurement space
-        cnt0, _ = get_meas(socket=socket)
-        while True:
-            cnt, meas_neg = get_meas(socket=socket)
-            if cnt >= cnt0 + CNT_MIN:
-                break
-        meas = (meas_pos - meas_neg) / (2 * POKE) * MEAS_SCALE
+        meas_neg = avg_meas(socket, navg, CNT_MIN)
+        meas = (meas_pos - meas_neg) / (2 * poke) * MEAS_SCALE
         plt.matshow(meas.reshape([WIDTH, WIDTH]))
         plt.title(f"response to mode {i}")
         plt.colorbar()
@@ -536,7 +557,13 @@ def measure_interaction_matrix(socket: ZmqReq) -> Tuple[np.ndarray, np.ndarray]:
     return (mode_to_meas, -ref_meas)
 
 
-def create_polc_matrices(socket: ZmqReq):
+def create_polc_matrices(
+    socket: ZmqReq,
+    navg: int = 5,
+    alpha: float = ALPHA,
+    beta: float = BETA,
+    poke: float = POKE,
+):
     """Measure the interaction matrix, fit the system parameters based on that
     measurement, and then compute and upload all control matrices derived from
     the system parameters."""
@@ -555,25 +582,40 @@ def create_polc_matrices(socket: ZmqReq):
     update_mode_to_com(mode_to_com, socket=socket)
 
     # measure modal imat
-    mode_to_meas, meas_offset = measure_interaction_matrix(socket=socket)
+    mode_to_meas, meas_offset = measure_interaction_matrix(
+        socket=socket, navg=navg, poke=poke
+    )
     fits.writeto("DEBUG_mode_to_meas.fits", mode_to_meas, overwrite=True)
 
+    # run some statistics on the measured interaction matrix
+    # TODO
+
     # produce com imat
-    com_to_meas = mode_to_meas @ np.linalg.solve(
-        mode_to_com.T @ mode_to_com, mode_to_com.T
-    ) / MEAS_SCALE
+    com_to_meas = (
+        mode_to_meas
+        @ np.linalg.solve(
+            mode_to_com.T @ mode_to_com + beta * np.eye(mode_to_com.shape[1]),
+            mode_to_com.T,
+        )
+        / MEAS_SCALE
+    )
     update_com_to_meas(com_to_meas)
 
     ### Invert mode_to_slope to build slope_to_mode reconstructor
-    meas_to_mode = np.linalg.solve(
-        mode_to_meas.T @ mode_to_meas + ALPHA * np.eye(mode_to_meas.shape[1]),
-        mode_to_meas.T,
-    ) * MEAS_SCALE
+    meas_to_mode = (
+        np.linalg.solve(
+            mode_to_meas.T @ mode_to_meas + alpha * np.eye(mode_to_meas.shape[1]),
+            mode_to_meas.T,
+        )
+        * MEAS_SCALE
+    )
     update_meas_to_mode(meas_to_mode, socket=socket)
     update_meas_offset(meas_offset, socket=socket)
 
 
-def create_leaky_matrices(socket: ZmqReq):
+def create_leaky_matrices(
+    socket: ZmqReq, navg: int = 5, alpha: float = ALPHA, poke: float = POKE
+):
     """Measure the interaction matrix, fit the system parameters based on that
     measurement, and then compute and upload all control matrices derived from
     the system parameters."""
@@ -591,18 +633,46 @@ def create_leaky_matrices(socket: ZmqReq):
     update_mode_to_com(mode_to_com, socket=socket)
 
     # measure modal imat
-    mode_to_meas, meas_offset = measure_interaction_matrix(socket=socket)
+    mode_to_meas, meas_offset = measure_interaction_matrix(
+        socket=socket, navg=navg, poke=poke
+    )
     fits.writeto("DEBUG_mode_to_meas.fits", mode_to_meas, overwrite=True)
-    
+
     update_com_to_meas(np.zeros((N_PIXELS, N_ACTUATORS)), socket=socket)
 
     ### Invert mode_to_slope to build slope_to_mode reconstructor
-    meas_to_mode = np.linalg.solve(
-        mode_to_meas.T @ mode_to_meas + ALPHA * np.eye(mode_to_meas.shape[1]),
-        mode_to_meas.T,
-    ) * MEAS_SCALE
+    meas_to_mode = (
+        np.linalg.solve(
+            mode_to_meas.T @ mode_to_meas + alpha * np.eye(mode_to_meas.shape[1]),
+            mode_to_meas.T,
+        )
+        * MEAS_SCALE
+    )
     update_meas_to_mode(meas_to_mode, socket=socket)
     update_meas_offset(meas_offset, socket=socket)
+
+
+def mode_telemetry(nframes: int, after_frame: int, socket: ZmqReq) -> np.ndarray:
+    if nframes == 0:
+        raise ValueError("number of frames to average must be at least 1")
+    cnt0, _ = get_mode(socket)
+    while True:
+        cnt, mode = get_mode(socket)
+        if cnt >= cnt0 + after_frame:
+            break
+    prev_cnt = cnt
+    mode_telem = [mode]
+    # note that the frames aren't guaranteed (or even expected) to be
+    # contiguous in time-samples
+    for i in range(nframes + 1):
+        while True:
+            cnt, mode = get_mode(socket)
+            if cnt > prev_cnt:
+                mode_telem += [mode]
+                prev_cnt = cnt
+                break
+            time.sleep(1e-2)
+    return np.array(mode_telem)
 
 
 if __name__ == "__main__":
@@ -652,8 +722,13 @@ if __name__ == "__main__":
         "--leak", help="leak, only used if also used with --leaky", type=float
     )
     parser.add_argument(
-        "--recompute", help="recompute the specified controller",
-        action="count"
+        "--recompute", help="recompute the specified controller", action="count"
+    )
+
+    parser.add_argument("--clipcom", help="value to clip commands to", type=float)
+
+    parser.add_argument(
+        "--modeplot", help="recompute the specified controller", action="count"
     )
 
     args = parser.parse_args()
@@ -662,6 +737,10 @@ if __name__ == "__main__":
         print("initing!")
         socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
         reset(socket, init=True)
+
+    if args.clipcom is not None:
+        socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
+        set_com_clip(args.clipcom, socket)
 
     # TODO: Change this pipeline to only create one socket (but only crash if the
     # client needs to be online)
@@ -680,9 +759,9 @@ if __name__ == "__main__":
         xx_flat = xx.flatten()
         disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
         for i, t in enumerate(np.linspace(0, 2 * np.pi, DIST_LEN + 1)[:-1]):
-            disturbance[:, i] = 0.05 * np.sin(xx_flat + t)
+            disturbance[:, i] = 0.1 * np.sin(xx_flat + t)
         update_com_dist_buffer(disturbance, socket=socket)
-    
+
     if args.disturboff is not None:
         # The default disturbance is a sine wave that sweeps accross the dm
         # over 20 frames.
@@ -691,8 +770,6 @@ if __name__ == "__main__":
         update_com_dist_buffer(disturbance, socket=socket)
 
     if args.polc is not None:
-        if args.leak is not None:
-            raise ValueError("Leak is meaningless in POLC")
         socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
         if args.recompute is not None:
             create_polc_matrices(socket)
@@ -700,7 +777,11 @@ if __name__ == "__main__":
             gain = args.gain
         else:
             gain = 0.3
-        set_polc_gain(gain, socket=socket)
+        if args.leak is not None:
+            leak = args.leak
+        else:
+            leak = 1.0
+        set_polc_gain(gain, leak, socket=socket)
     elif args.leaky is not None:
         socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
         if args.recompute is not None:
@@ -720,6 +801,16 @@ if __name__ == "__main__":
         if args.leak is not None:
             raise ValueError("leak must only be set if also passing --leaky")
 
+    if args.modeplot:
+        socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
+        telem = mode_telemetry(100, 0, socket)
+        plt.close("all")
+        plt.plot(telem)
+        plt.savefig("modes.png")
+        plt.close("all")
+        plt.matshow(telem.T @ telem)
+        plt.colorbar()
+        plt.savefig("mode_cov.png")
     # socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
     # create_meas_offset(socket=socket, push=True)
 

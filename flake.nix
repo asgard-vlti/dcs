@@ -7,10 +7,11 @@
     yorick-flake = {
       url = "git+https://github.com/jcranney/yorick-flake";
     };
+    shmimshow.url = "github:jcranney/shmimshow";
     self.submodules = true;
   };
 
-  outputs = inputs@{ flake-parts, yorick-flake, ... }:
+  outputs = inputs@{ flake-parts, yorick-flake, shmimshow, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
         # To import an internal flake module: ./other.nix
@@ -66,6 +67,7 @@
             pkg-config
             libb64
             yorick-flake.packages.${system}.spydr
+            shmimshow.defaultPackage.${system}
           ];
           shellHook = ''
             source .venv/bin/activate

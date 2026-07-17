@@ -136,7 +136,7 @@ void servo_loop()
 #endif
         remove_offset();
 
-        // inject_dm_signal();
+        inject_dm_signal();
 
 #ifdef PRINT_TIMING
         if (cnt % 20 == 0) {
@@ -351,8 +351,7 @@ void inject_dm_signal()
     ctrl.com_fb_buffer.col(0) = ctrl.com_feedback.col(0);
     int idx_a = floor(ctrl.delay);
     double remainder = ctrl.delay - (double)idx_a;
-    printf("idx_a: %d, rem: %0.3f\n", idx_a, remainder);
     ctrl.com_effective = ctrl.com_fb_buffer.col(idx_a) * (1 - remainder) + ctrl.com_fb_buffer.col(idx_a + 1) * (remainder);
-    ctrl.meas_feedback = ctrl.com_to_meas * ctrl.com_effective;
+    ctrl.meas_feedback = -ctrl.com_to_meas * ctrl.com_effective;
     ctrl.mutex.unlock();
 }
