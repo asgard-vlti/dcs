@@ -4,30 +4,16 @@
   inputs = {
     flake-parts.url = "github:hercules-ci/flake-parts";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    yorick-flake = {
-      url = "git+https://github.com/jcranney/yorick-flake";
-    };
-    shmimshow.url = "github:jcranney/shmimshow";
     self.submodules = true;
   };
 
   outputs = inputs@{ flake-parts, yorick-flake, shmimshow, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
-        # To import an internal flake module: ./other.nix
-        # To import an external flake module:
-        #   1. Add foo to inputs
-        #   2. Add foo as a parameter to the outputs function
-        #   3. Add here: foo.flakeModule
 
       ];
       systems = [ "x86_64-linux" ];
       perSystem = { config, self', inputs', pkgs, system, ... }: {
-        # Per-system attributes can be defined here. The self' and inputs'
-        # module parameters provide easy access to attributes of the same
-        # system.
-
-        # Equivalent to  inputs'.nixpkgs.legacyPackages.hello;
         packages = rec {
           baldr = pkgs.stdenv.mkDerivation {
             name = "baldr";
@@ -66,8 +52,6 @@
             fftw
             pkg-config
             libb64
-            yorick-flake.packages.${system}.spydr
-            shmimshow.defaultPackage.${system}
           ];
           shellHook = ''
             source .venv/bin/activate

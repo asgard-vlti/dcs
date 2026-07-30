@@ -1,15 +1,51 @@
 # dcs
 Detector Control System for Heimdallr/Baldr
 
-## Dependencies
-If you are using nix for package management, you can install all dependencies
-into a `devShell` by calling:
-```bash
-nix develop
-```
+## Subsystems
+This repository covers multiple control modules. Modules with a `README.md` are hyperlinked.
+ - C-RED1
+    - `asgard-cred1-server`
+ - DM Interface
+    - `asgard-dm-server`
+ - Baldr
+    - `baldr`
+    - [`baldr_jcr`](./baldr_jcr/README.md)
+    - [`baldr_python_rtc`](./baldr_python_rtc/README.md)
+    - `baldr_tt`
+    - `minimal_baldr_python_rtc`
+ - Inter-process communication
+    - [`commander`](./commander/README.md)
+    - `libImageStreamIO`
+ - Monitoring
+    - ?
+ - Unknown, To Be Discussed with Mike
+    - `back_end_server`
+    - `calibration_frames`
+    - `catch2`
+    - `cred1view`
+    - `dcs`
+    - `heimdallr`
+    - `lab-dm-tools`
+    - `mcs_client`
+    - `pyeng_baldr`
+    - `pyeng_heimdallr`
+    - [`simulation`](./simulation/readme.md)
+    - `utils`
+ - Legacy/Redundant
+    - `lib`, contains copy of static libraries which are now built by `cmake`
 
-If you are not using nix, you can inspect the `packages` listed
-in the `./flake.nix` file to  see which libraries you might need to install.
+
+## Dependencies
+A possibly incomplete list of dependencies is below:
+ - `cmake`
+ - `nlohmann_json`
+ - `boost`
+ - `cppzmq`
+ - `fmt`
+ - `fftw`
+ - `tomlplusplus`
+ - `cfitsio`
+ - `libb64`
 
 ## Installation
 The simplest installation of the executables and libraries in this repo is
