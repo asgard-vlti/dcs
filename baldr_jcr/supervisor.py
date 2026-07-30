@@ -415,6 +415,7 @@ def update_com_to_meas(array: np.ndarray, socket: Optional[ZmqReq] = None):
     if socket is not None:
         request(socket, "com_to_meas")
 
+
 def update_delay(delay: float, socket: Optional[ZmqReq] = None):
     """Update the delay from a float"""
     if socket is not None:
@@ -433,7 +434,7 @@ def update_delay(delay: float, socket: Optional[ZmqReq] = None):
 # computed values being loaded next time the RTC is started.
 
 
-def reset(socket: ZmqReq, init: bool = False):
+def reset(socket: ZmqReq, init: bool = False, offline=False):
     if init:
         writefits_meas_offset()
         writefits_meas_to_mode()
@@ -448,19 +449,20 @@ def reset(socket: ZmqReq, init: bool = False):
         writefits_com_dist_buffer()
         writefits_com_offset()
         writefits_com_to_meas()
-    request(socket, "meas_offset")
-    request(socket, "meas_to_mode")
-    request(socket, "filter_coeff_in")
-    request(socket, "filter_coeff_out")
-    request(socket, "mode_offset")
-    request(socket, "mode_max")
-    request(socket, "mode_min")
-    request(socket, "mode_to_com")
-    request(socket, "com_max")
-    request(socket, "com_min")
-    request(socket, "com_dist_buffer")
-    request(socket, "com_offset")
-    request(socket, "com_to_meas")
+    if not offline:
+        request(socket, "meas_offset")
+        request(socket, "meas_to_mode")
+        request(socket, "filter_coeff_in")
+        request(socket, "filter_coeff_out")
+        request(socket, "mode_offset")
+        request(socket, "mode_max")
+        request(socket, "mode_min")
+        request(socket, "mode_to_com")
+        request(socket, "com_max")
+        request(socket, "com_min")
+        request(socket, "com_dist_buffer")
+        request(socket, "com_offset")
+        request(socket, "com_to_meas")
 
 
 def set_leaky_gain_leak(
@@ -727,16 +729,20 @@ if __name__ == "__main__":
 
     parser.add_argument("--clipcom", help="value to clip commands to", type=float)
 
-    parser.add_argument(
-        "--modeplot", help="recompute the specified controller", action="count"
-    )
-
     args = parser.parse_args()
 
     if args.init is not None:
         print("initing!")
         socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
-        reset(socket, init=True)
+        try:
+            reset(socket, init=True)
+        except RuntimeError:
+            print("""
+Succesfullly initialised arrays and wrote them to disk, but didn't
+update them on the live RTC.
+
+This is correct behaviour if the RTC is not yet running.
+""")
 
     if args.clipcom is not None:
         socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
@@ -801,16 +807,6 @@ if __name__ == "__main__":
         if args.leak is not None:
             raise ValueError("leak must only be set if also passing --leaky")
 
-    if args.modeplot:
-        socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
-        telem = mode_telemetry(100, 0, socket)
-        plt.close("all")
-        plt.plot(telem)
-        plt.savefig("modes.png")
-        plt.close("all")
-        plt.matshow(telem.T @ telem)
-        plt.colorbar()
-        plt.savefig("mode_cov.png")
     # socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
     # create_meas_offset(socket=socket, push=True)
 
