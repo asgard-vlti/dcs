@@ -7,7 +7,7 @@
     self.submodules = true;
   };
 
-  outputs = inputs@{ flake-parts, yorick-flake, shmimshow, ... }:
+  outputs = inputs@{ flake-parts,  ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
 
