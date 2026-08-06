@@ -1,8 +1,5 @@
-CC=gcc
-CFLAGS  = -W -Wall -ggdb
-
 CC=g++
-CFLAGS  = -std=c++17 -Wall -Wextra -ggdb -O1
+CFLAGS  = -std=c++17 -Wall -Wextra -ggdb -O1 -Icommander -I../commander/include
 
 LIB     = libImageStreamIO.a
 OBJECTS = ImageStreamIO.o
@@ -21,7 +18,7 @@ $(LIB): $(OBJECTS)
 	$(CC) -o $@ -c $< $(CFLAGS)
 
 imft: ImCreate_ft.c
-	$(CC) -o $@ ImageStreamIO.c $< $(CFLAGS) -O3 -lm -lpthread -lfftw3 -lfmt -lcommander -lboost_program_options -lzmq -lb64
+	$(CC) -o $@ ImageStreamIO.c $< $(CFLAGS) -O3 -L../lib -lm -lpthread -lfftw3 -lfmt -lcommander -lboost_program_options -lzmq -lb64
 
 clean:
 	rm -rf *.o *~ imft

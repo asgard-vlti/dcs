@@ -74,7 +74,7 @@ template <> struct fmt::formatter<commander::UnamedArg> {
     }
 
     template <typename FormatContext>
-    auto format(const commander::UnamedArg& arg, FormatContext& ctx) -> decltype(ctx.out()) {
+    constexpr auto format(const commander::UnamedArg& arg, FormatContext& ctx) const -> decltype(ctx.out()) {
         // ctx.out() is an output iterator to write to.
         return format_to(ctx.out(), "{}", arg.type);
     }
@@ -87,7 +87,7 @@ template <> struct fmt::formatter<commander::Arg> {
     }
 
     template <typename FormatContext>
-    auto format(const commander::Arg& arg, FormatContext& ctx) -> decltype(ctx.out()) {
+    constexpr auto format(const commander::Arg& arg, FormatContext& ctx) const -> decltype(ctx.out()) {
         auto it = format_to(ctx.out(), "{}: {}", arg.name, arg.type);
         if (arg.default_value)
             it = format_to(it, " = {}", arg.default_value.value().dump());

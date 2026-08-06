@@ -46,7 +46,7 @@ class ZmqReq:
             return False
 
     def send_payload(
-        self, payload: Dict[str, Any], is_str=False, decode_ascii=True, image=False
+        self, payload: Dict[str, Any] | str, is_str=False, decode_ascii=True, image=False
     ) -> Optional[Dict[str, Any]]:
         """
         is_str: if True, payload is a string and will be sent as-is

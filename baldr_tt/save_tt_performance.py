@@ -11,8 +11,14 @@ The "cnt" variable is returned each time.
 import numpy as np
 import time
 import pathlib
+import os
+import sys
+import fcntl
 
 from dcs.ZMQutils import ZmqReq
+
+
+LOCK_FILE_PATH = "/tmp/asg.baldr_tt_telem.lock"
 
 ports = [
     6671,
@@ -36,6 +42,22 @@ settings_to_log = [
     "ttxo",
     "ttyo",
 ]
+
+
+def acquire_process_lock(lock_path=LOCK_FILE_PATH):
+    """Acquire a non-blocking process lock and record current PID in the lock file."""
+    lock_file = open(lock_path, "a+")
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock_file.close()
+        raise RuntimeError(f"lock file is already locked: {lock_path}")
+
+    lock_file.seek(0)
+    lock_file.truncate()
+    lock_file.write(f"{os.getpid()}\n")
+    lock_file.flush()
+    return lock_file
 
 
 def get_zmq(port):
@@ -166,6 +188,12 @@ class BTTSettingLogger:
 
 
 def main():
+    try:
+        _instance_lock = acquire_process_lock()
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
     cur_datetime = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
     year_month_day = time.strftime("%Y%m%d", time.gmtime())
     pth = f"/data/{year_month_day}"

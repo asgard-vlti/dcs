@@ -429,12 +429,15 @@ int main(int argc, char* argv[]) {
     info("Servo thread priority: %d  Priority policy: %d\n", param.sched_priority, policy); 
 
      
+    printf("about to run commander server\n");
     
     // Initialize the commander server and run it
     commander::Server s(argc, argv);
     s.run();
 
-    // Join the fringe-tracking thread
+    printf("about to join servo thread\n");
+
+    // join the servo thread
     settings.s.servo_mode = SERVO_STOP;
     servo_thread.join();
 

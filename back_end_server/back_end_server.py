@@ -10,6 +10,7 @@ from pathlib import Path
 import sys
 import subprocess
 import logging
+import fcntl
 
 # from rts_base import AbstractRTSTask, RTSContext, RTSState, RTSErr
 # !!!ADAM please educate Mike on this path bit for editable installs.
@@ -43,6 +44,25 @@ def _setup_logging():
 
 
 _setup_logging()
+
+
+LOCK_FILE_PATH = "/tmp/asg.back_end_server.lock"
+
+
+def acquire_process_lock(lock_path=LOCK_FILE_PATH):
+    """Acquire a non-blocking process lock and record current PID in the lock file."""
+    lock_file = open(lock_path, "a+")
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock_file.close()
+        raise RuntimeError(f"lock file is already locked: {lock_path}")
+
+    lock_file.seek(0)
+    lock_file.truncate()
+    lock_file.write(f"{os.getpid()}\n")
+    lock_file.flush()
+    return lock_file
 
 
 # port 7004 is used by nomachines! changed to 7010
@@ -746,6 +766,12 @@ class BackEndServer:
 
 
 def main():
+    try:
+        _instance_lock = acquire_process_lock()
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
     server = BackEndServer()
     server.run()
 

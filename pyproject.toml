@@ -6,6 +6,15 @@ version = "0.0.1"
 readme = "README.md"
 requires-python =">=3.8"
 license = {file = "LICENSE"}
+dependencies = [
+    "aotools>=1.0.7",
+    "astropy>=5.2.2",
+    "black>=24.8.0",
+    "numpy>=1.24.4",
+    "taguchi>=1.1.5",
+    "tqdm>=4.67.3",
+    "zmq>=0.0.0",
+]
 
 [project.scripts] 
 h-autoalign = "dcs.cmd_scripts.h_autoalign:main"
