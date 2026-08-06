@@ -75,7 +75,7 @@ bool read_modes(std::string filename, Eigen::Matrix<double, N_ACTUATORS, N_MODES
 {
     fitsfile *fptr;   /* pointer to the FITS file, defined in fitsio.h */
     int status = 0;   /* CFITSIO status value MUST be initialized to zero! */
-    int nfound, anynul;
+    int nfound;
     long naxes[2] = {1,1};
     double *data;
 
@@ -91,20 +91,18 @@ bool read_modes(std::string filename, Eigen::Matrix<double, N_ACTUATORS, N_MODES
         error("Error: modes file has wrong dimensions. Expected %dx%d, got %ldx%ld", N_ACTUATORS, N_MODES, naxes[0], naxes[1]);
         return false;
     }
-    data = new double[N_ACTUATORS*N_MODES];
-    if (fits_read_img(fptr, TDOUBLE, 1, N_ACTUATORS*N_MODES, NULL, data, NULL, &status)) {
+    const long nread = naxes[0] * naxes[1];
+    data = new double[nread];
+    if (fits_read_img(fptr, TDOUBLE, 1, nread, NULL, data, NULL, &status)) {
         error("Error reading image data from file: %s", filename.c_str());
         delete[] data;
         return false;
     }
-    // Copy the data into the Eigen matrix. 
-    for (int i=0; i<N_MODES; i++) {
-        for (int j=0; j<N_ACTUATORS; j++) {
-            if (naxes[1] > i) {
-                modes(j,i) = data[i*N_MODES + j];
-            } else {
-                modes(j,i) = 0.0;
-            }
+    // Fill missing modes with zero and copy present FITS rows.
+    modes.setZero();
+    for (long i = 0; i < naxes[1]; i++) {
+        for (long j = 0; j < naxes[0]; j++) {
+            modes((int)j, (int)i) = data[i*naxes[0] + j];
         }
     }
     delete[] data;
