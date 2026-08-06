@@ -237,9 +237,9 @@ void servo_loop(){
         if (control_u.ho_ix == (HO_CYCLE-1)){
             im_mutex.lock();
             double sum_both=0;
-            for (int j=0;j<width*width;j++) sum_both += im_plus_sum[j] + im_minus_sum[j];
+            for (int j=0;j<width*width;j++) sum_both += im_plus[j] + im_minus[j];
             for (int j=0;j<width*width;j++) {
-                norm_imsub[j] = (im_plus_sum[j] - im_minus_sum[width*width - 1 - j]) / sum_both;
+                norm_imsub[j] = (im_plus[j] - im_minus[width*width - 1 - j]) / sum_both;
             }
             im_mutex.unlock();
             // Here we could compute the high-order modes based on norm_imsub
