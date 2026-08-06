@@ -11,17 +11,11 @@ import abc
 import logging
 
 import pathlib
-import scipy.optimize as opt
-from xaosim.shmlib import shm
-from asgard_alignment.DM_shm_ctrl import dmclass
-from asgard_alignment import FLI_Cameras as FLI
 import matplotlib.pyplot as plt
 
-import Cam
-import utils
-import basis_funcs
-import model
-import consts
+import minimal_baldr_python_rtc.Cam as Cam
+import minimal_baldr_python_rtc.utils as utils
+import minimal_baldr_python_rtc.model as model
 
 logger = logging.getLogger(__name__)
 
