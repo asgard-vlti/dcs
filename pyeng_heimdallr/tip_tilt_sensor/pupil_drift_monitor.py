@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
+try:
+    from hmd_tts import HMD_TTS
+except:
+    from pyeng_heimdallr.tip_tilt_sensor.hmd_tts import HMD_TTS
 
-from hmd_tts import HMD_TTS
 from xaosim.shmlib import shm
 import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime
 import os
 
-ddir = os.getenv("HOME") + "/Progs/repos/dcs/pyeng_heimdallr/tip_tilt_sensor/"
+# ddir = os.getenv("HOME") + "/Progs/repos/dcs/pyeng_heimdallr/tip_tilt_sensor/"
+ddir = "/data/custom/hmd_pupil/"
 default_log = ddir + "log_pupil_monitor.log"
 
 def log(message="", logfile=default_log, echo=True):
@@ -16,6 +20,7 @@ def log(message="", logfile=default_log, echo=True):
     -----------------------------------------------------------------------"""
     tstamp = datetime.utcnow().strftime("%D %H:%M:%S")
     myline = f"{tstamp}: {message}"
+
     with open(logfile, "a") as mylog:
         mylog.write(myline + "\n")
     if echo:
@@ -36,33 +41,34 @@ def main():
     xy0 = hmd.sparse.kpi.VAC[:, :2]
     xy1 = hmd.infer_pupil_model(v2)
 
+    tstamp = datetime.utcnow().strftime("%Y%M%d_T%H:%M:%S_")
     # ----------------------
     f1, ax = plt.subplots()
     ax.scatter(uu, vv, c=v2, vmax=0.3)
     ax.grid(True)
     f1.set_size_inches(5,5, forward=True)
     f1.set_tight_layout(True)
-    f1.savefig("powerspectrum.png")
+    f1.savefig(f"{ddir}/pwsp/{tstamp}.png")
 
     # ----------------------
     f2, ax = plt.subplots()
-    ax.scatter(xy0[:,0], xy0[:,1], c='b', label="Theoretical")    
-    ax.scatter(xy1[:,0], xy1[:,1], c='r', label="Measured")
+    ax.scatter(xy0[:,0], xy0[:,1], c='b', s=14**2, label="Model")
+    ax.scatter(xy1[:,0], xy1[:,1], c='r', s=14**2, label="Measured")
     for ii in range(4):
         ax.text(xy0[ii,0]-0.2, xy0[ii,1]-0.2, f"B{ii+1}", fontsize=14)
     ax.legend(loc=1)
-    ax.set_xlim([-1.5, 1.5])
-    ax.set_ylim([-1.5, 1.5])
+    ax.set_xlim([-1.7, 1.7])
+    ax.set_ylim([-1.7, 1.7])
     ax.grid(True)
     f2.set_size_inches(5,5, forward=True)
     f2.set_tight_layout(True)
-    f2.savefig("pupil.png")
+    f2.savefig(f"{ddir}/pupil/{tstamp}.png")
     log(np.array2string(
         (xy1 - xy0[:,:2]).flatten(),
         suppress_small=True,
         floatmode='fixed',
         precision=3,
-        separator=', '), echo=False)
+        separator=', '), echo=True)
 
 # ----------------------------------------------------------------------
 # ----------------------------------------------------------------------

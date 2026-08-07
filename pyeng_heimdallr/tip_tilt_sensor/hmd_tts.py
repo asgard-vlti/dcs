@@ -95,7 +95,7 @@ class HMD_TTS:
         if hc_sparse is not None:
             self.hc_sparse = hc_sparse
         else:
-            self.hc_sparse = np.loadtxt("../N1_hole_coordinates.txt")
+            self.hc_sparse = np.loadtxt("/home/asg/Progs/repos/dcs/pyeng_heimdallr/N1_hole_coordinates.txt")
         self.update_pupil_model(self.hc_sparse)
 
         # tools for data clean-up

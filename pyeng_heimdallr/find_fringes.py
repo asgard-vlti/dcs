@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 
-from wfs import Heimdallr
+try:
+    from wfs import Heimdallr
+except:
+    from pyeng_heimdallr.wfs import Heimdallr
+
 import argparse
 import math
 import threading
