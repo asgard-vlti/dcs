@@ -87,8 +87,8 @@ void initialise_servo(){
     } 
 
     // Set the tt boxcar averages to zero.
-    rt_status.s.rt_status.s.ttx_avg=0;
-    tty_avg=0;
+    rt_status.s.ttx_avg=0;
+    rt_status.s.tty_avg=0;
     for (int j=0;j<N_TT_BOXCAR;j++){
         ttx_boxcar[j]=0;
         tty_boxcar[j]=0;
@@ -198,14 +198,12 @@ void servo_loop(){
         if (control_u.ho_ix == HO_CYCLE - 1) {
             control_u.ho_sign *= -1;
         }
-        
-        // Now add the coupling terms to the tip/tilt. 
-        control_u.tx -= settings.s.ttx_coupling * settings.s.focus_amp * control_u.ho_sign / PIX_PER_TT;
-        control_u.ty -= settings.s.tty_coupling * settings.s.focus_amp * control_u.ho_sign / PIX_PER_TT;
 
-        // Set the DM if we are in the appropriate mode.
+        // Set the DM if we are in the appropriate mode. Add in the coupling terms to the tip/tilt.
         if ((settings.s.servo_mode == SERVO_HO) || (settings.s.servo_mode == SERVO_TT)) 
-            set_dm_tilt_foc(control_u.tx, control_u.ty, settings.s.focus_offset + settings.s.focus_amp * control_u.ho_sign);
+            set_dm_tilt_foc(control_u.tx + settings.s.ttx_coupling * settings.s.focus_amp * control_u.ho_sign / PIX_PER_TT, 
+            				control_u.ty + settings.s.tty_coupling * settings.s.focus_amp * control_u.ho_sign / PIX_PER_TT, 
+            				settings.s.focus_offset + settings.s.focus_amp * control_u.ho_sign);
         else
             set_dm_tilt_foc(settings.s.ttxo, settings.s.ttyo, settings.s.focus_offset);
 
@@ -239,8 +237,8 @@ void servo_loop(){
                     for (int j=0;j<width*width;j++) im_plus_sum[j] += im_plus[j];
                 }
                 // Save the tip/tilt boxcar average for the current ho_ix.
-                ttx_boxcar[tt_boxcar_ix] = rt_status.s.tx;
-                tty_boxcar[tt_boxcar_ix] = rt_status.s.ty;
+                ttx_boxcar[tt_boxcar_ix] = rt_status.s.tx/N_TT_BOXCAR;
+                tty_boxcar[tt_boxcar_ix] = rt_status.s.ty/N_TT_BOXCAR;
             } else {
                 // Clear the minus image at the start of the minus phase.
                 if (control_u.ho_ix==1) for (int j=0;j<width*width;j++) im_minus[j]=0; 
@@ -252,8 +250,8 @@ void servo_loop(){
                     for (int j=0;j<width*width;j++) im_minus_sum[j] += im_minus[j];
                 }
                 // Save the tip/tilt boxcar average for the current ho_ix.
-                ttx_boxcar[tt_boxcar_ix] = -rt_status.s.tx;
-                tty_boxcar[tt_boxcar_ix] = -rt_status.s.ty;
+                ttx_boxcar[tt_boxcar_ix] = -rt_status.s.tx/N_TT_BOXCAR;
+                tty_boxcar[tt_boxcar_ix] = -rt_status.s.ty/N_TT_BOXCAR;
             }
             // Update the boxcar average of the tip/tilt response to the focus modulation.
             rt_status.s.ttx_avg += ttx_boxcar[tt_boxcar_ix];

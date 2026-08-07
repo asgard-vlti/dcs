@@ -225,8 +225,8 @@ void auto_coupling(double scale){
     // The idea is that if we see a tilt in the image, we can estimate how much of that 
     // is due to the focus modulation, and set the coupling terms accordingly.
     rt_status.mutex.lock();
-    double ttx_coupling = scale * rt_status.s.tx_avg / settings.s.focus_amp;
-    double tty_coupling = scale * rt_status.s.ty_avg / settings.s.focus_amp;
+    double ttx_coupling = settings.s.ttx_coupling + scale * rt_status.s.ttx_avg / settings.s.focus_amp;
+    double tty_coupling = settings.s.tty_coupling + scale * rt_status.s.tty_avg / settings.s.focus_amp;
     rt_status.mutex.unlock();
     set_coupling(ttx_coupling, tty_coupling);
 }
@@ -237,6 +237,8 @@ Status get_status() {
     rt_status.mutex.unlock();
     s.tx = std::round(s.tx*1000)/1000.0;
     s.ty = std::round(s.ty*1000)/1000.0;
+    s.ttx_avg = std::round(s.ttx_avg*1000)/1000.0;
+    s.tty_avg = std::round(s.tty_avg*1000)/1000.0;
     s.flux = std::round(s.flux*10)/10.0;
     s.cnt = cnt % 10000; 
     return s;
@@ -321,8 +323,8 @@ ImAvgs poke_mode(int mode_ix, double amplitude){
     im_avgs.width = width;
 
     // Set the control_u DM command to be the poke of the given mode and amplitude.
-    control_a.modes_amplitudes.setZero();
-    control_a.modes_amplitudes(mode_ix) = amplitude;
+    control_a.mode_amplitudes.setZero();
+    control_a.mode_amplitudes(mode_ix) = amplitude;
     info("Poking mode %d with amplitude %f", mode_ix, amplitude);
 
     // Wait 10ms for DM to settle, then set the im_plus_sum 
@@ -398,6 +400,8 @@ int main(int argc, char* argv[]) {
         }
     }
     width = config["width"].value_or(15);
+    settings.s.ttyo=0;
+    settings.s.ttxo=0;
     settings.s.gauss_hwidth = config["gauss_hwidth"].value_or(3.0);
     settings.s.ttg = config["ttg"].value_or(0.01);
     settings.s.ttl = config["ttl"].value_or(0.01);

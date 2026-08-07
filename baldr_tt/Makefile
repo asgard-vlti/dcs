@@ -17,7 +17,10 @@ all: $(EXEC)
 baldr_tt: $(OBJECTS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
-%.o: %.cpp baldr_tt.h
+commander_structs.h: baldr_tt.h
+	/usr/bin/env python ../make_commander_structs.py baldr_tt.h commander_structs.h
+
+%.o: %.cpp baldr_tt.h commander_structs.h
 	$(CC) -o $@ -c $< $(CFLAGS)
 
 clean:

@@ -84,7 +84,7 @@ struct EncodedImage
 // key variables.
 struct Status
 {
-    double flux, tx, ty, tx_avg, ty_avg;
+    double flux, tx, ty, ttx_avg, tty_avg;
     int cnt;
 };
 
@@ -93,8 +93,8 @@ struct Settings
 {
     double ttg, ttl, hog, hol, focus_amp, flux_threshold;
     double gauss_hwidth;
-    double ttxo=0.0, ttyo=0.0, focus_offset=0.0;
-    double ttx_coupling=0.0, tty_coupling=0.0;
+    double ttxo, ttyo, focus_offset;
+    double ttx_coupling, tty_coupling;
     int px, py;
     int servo_mode;
 };
