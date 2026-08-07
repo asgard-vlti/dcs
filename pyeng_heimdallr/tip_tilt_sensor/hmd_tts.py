@@ -78,7 +78,8 @@ class HMD_TTS:
         --------------------------------------------------------------------"""
         self.K1_wl = 2.05e-6  # True Heimdallr Ks wavelength (in meters)
         self.K2_wl = 2.25e-6  # True Heimdallr Kl wavelength (in meters)
-        self.pscale = 61.9    # should be 64.75 - adjust data simulation!
+        #self.pscale = 61.9    # should be 64.75 - adjust data simulation!
+        self.pscale = 64.75
         self.isz = 32         # image size assumed by default
 
         # K1/2_DM2rad is to convert DM piston command amplitude into phase
