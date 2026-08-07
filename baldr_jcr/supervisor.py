@@ -6,13 +6,11 @@ import numpy as np
 from astropy.io import fits  # type: ignore
 import time
 from typing import Tuple, Optional
-from tqdm import tqdm  # type: ignore
 from dcs.ZMQutils import ZmqReq  # type: ignore
 from os import path
 from dataclasses import dataclass
 import modal_basis
-import matplotlib.pyplot as plt
-from tqdm import tqdm
+# import matplotlib.pyplot as plt
 
 # TODO: NOT REALLY SAFE: These parameters are defined both in baldr.h and here,
 # I should find a way to merge these into a single source of truth.
@@ -528,15 +526,15 @@ def measure_interaction_matrix(
     # record reference measurement
     ref_meas = avg_meas(socket, navg, CNT_MIN)
 
-    plt.matshow(ref_meas.reshape([WIDTH, WIDTH]))
-    plt.title(f"reference image")
-    plt.colorbar()
-    plt.savefig("tmp.png")
-    plt.close()
+    # plt.matshow(ref_meas.reshape([WIDTH, WIDTH]))
+    # plt.title(f"reference image")
+    # plt.colorbar()
+    # plt.savefig("tmp.png")
+    # plt.close()
     # the only way to get here is if ref_meas exists
 
     mode_to_meas = np.zeros((N_PIXELS, N_MODES), dtype=DTYPE)
-    for i in tqdm(range(N_MODES)):
+    for i in range(N_MODES):
         mode = np.zeros(N_MODES)
         # poke mode i (positive poke)
         mode[i] = poke
@@ -547,11 +545,11 @@ def measure_interaction_matrix(
         update_mode_offset(mode, socket=socket)
         meas_neg = avg_meas(socket, navg, CNT_MIN)
         meas = (meas_pos - meas_neg) / (2 * poke) * MEAS_SCALE
-        plt.matshow(meas.reshape([WIDTH, WIDTH]))
-        plt.title(f"response to mode {i}")
-        plt.colorbar()
-        plt.savefig("tmp.png")
-        plt.close()
+        # plt.matshow(meas.reshape([WIDTH, WIDTH]))
+        # plt.title(f"response to mode {i}")
+        # plt.colorbar()
+        # plt.savefig("tmp.png")
+        # plt.close()
 
         # inject it to matrix
         mode_to_meas[:, i] = meas
