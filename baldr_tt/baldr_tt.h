@@ -40,6 +40,13 @@
 #define SERVO_HO 2
 #define SERVO_STOP -1
 
+// 0.4 on MDM = 30 pix on beams 1, 2, 3 and (roughly) 4.
+// 0.2 gives a left to right amplitude of 0.7, while in my code, 1.0 would be +/- 1.0 (i.e. 2.0 total left to right) while 0.2 would be 0.4.
+// i.e. the MDM has more tilt by a ratio 0.7/0.4 =1.75 
+// MDM 0.4 = my tilt 0.4 * 1.75 = 0.7  = 30 pix.
+// So the hardware gain should be 30/0.7 = 43
+#define PIX_PER_TT 43.0 
+
 //----- Structures and typedefs------
 typedef std::complex<double> dcomp;
 
@@ -54,8 +61,8 @@ struct ControlU{
 
 // This is our knowledge of the DM modes
 struct ControlA{
-    Eigen::Matrix<double, N_MODES, 1> modes;
-    Eigen::Matrix<double, N_ACTUATORS, N_MODES> influence_functions;
+    Eigen::Matrix<double, N_MODES, 1> mode_amplitudes;
+    Eigen::Matrix<double, N_ACTUATORS, N_MODES> modes;
 };
 
 struct TTMet_save{
@@ -77,7 +84,7 @@ struct EncodedImage
 // key variables.
 struct Status
 {
-    double flux, tx, ty;
+    double flux, tx, ty, tx_avg, ty_avg;
     int cnt;
 };
 
@@ -86,7 +93,8 @@ struct Settings
 {
     double ttg, ttl, hog, hol, focus_amp, flux_threshold;
     double gauss_hwidth;
-    double ttxo, ttyo, focus_offset;
+    double ttxo=0.0, ttyo=0.0, focus_offset=0.0;
+    double ttx_coupling=0.0, tty_coupling=0.0;
     int px, py;
     int servo_mode;
 };

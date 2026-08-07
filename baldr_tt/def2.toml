@@ -20,8 +20,8 @@ focus_amp = 0.00
 #Tip/tilt Gaussian weight 1/e^2 half width
 gauss_hwidth = 3.5
 
-# Tip/tilt gain in units of DM stroke per pixel.
-ttg = 0.01
+# Tip/tilt gain normalised units.
+ttg = 0.5
 ttl = 0.01
 # High-order gain - normalised to unity 
 hog = 0.2

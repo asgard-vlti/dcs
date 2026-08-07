@@ -6,11 +6,16 @@
 //#define DEBUG_FILTER6
 #define DARK_OFFSET 1000
 #define DM_MAX_R 5.0
+#define N_TT_BOXCAR 840 // A very composite number
 
 long unsigned int cnt=0, cnt_since_init=0;
 long unsigned int nerrors=0;
 int sz=0;
 int *im_boxcar[N_BOXCAR];
+// Boxcar average of the tip/tilt response to
+// the focus modulation. 
+double ttx_boxcar[N_TT_BOXCAR], tty_boxcar[N_TT_BOXCAR];
+int tt_boxcar_ix=0;
 double *window, *subim;
 double *im_av, *im_plus, *im_minus, *norm_imsub;
 float *im_plus_sum, *im_minus_sum;
@@ -80,6 +85,14 @@ void initialise_servo(){
         im_minus_sum[j]=0;
         norm_imsub[j]=0;
     } 
+
+    // Set the tt boxcar averages to zero.
+    rt_status.s.rt_status.s.ttx_avg=0;
+    tty_avg=0;
+    for (int j=0;j<N_TT_BOXCAR;j++){
+        ttx_boxcar[j]=0;
+        tty_boxcar[j]=0;
+    }
 
     // Allocate memory for the boxcar averages and set to zero.
     for (int i=0;i<N_BOXCAR;i++){
@@ -168,8 +181,8 @@ void servo_loop(){
         // Otherwise, skip the DM update and just wait for the next frame.
         if (rt_status.s.flux > settings.s.flux_threshold) {
             // Compute the new DM settings. For now, just a simple proportional controller on the tip/tilt, and a focus term that is proportional to the flux (this is just to test that the focus term is working).
-            add_tx = settings.s.ttg * rt_status.s.tx;
-            add_ty = settings.s.ttg * rt_status.s.ty;
+            add_tx = settings.s.ttg * rt_status.s.tx / PIX_PER_TT;
+            add_ty = settings.s.ttg * rt_status.s.ty / PIX_PER_TT;
         } else {
             add_tx = 0.0;
             add_ty = 0.0;
@@ -186,6 +199,10 @@ void servo_loop(){
             control_u.ho_sign *= -1;
         }
         
+        // Now add the coupling terms to the tip/tilt. 
+        control_u.tx -= settings.s.ttx_coupling * settings.s.focus_amp * control_u.ho_sign / PIX_PER_TT;
+        control_u.ty -= settings.s.tty_coupling * settings.s.focus_amp * control_u.ho_sign / PIX_PER_TT;
+
         // Set the DM if we are in the appropriate mode.
         if ((settings.s.servo_mode == SERVO_HO) || (settings.s.servo_mode == SERVO_TT)) 
             set_dm_tilt_foc(control_u.tx, control_u.ty, settings.s.focus_offset + settings.s.focus_amp * control_u.ho_sign);
@@ -208,6 +225,9 @@ void servo_loop(){
 
         im_mutex.lock();
         if (control_u.ho_ix > 0) {
+            // Remove the part of the boxcar average that is being replaced.
+            rt_status.s.ttx_avg -= ttx_boxcar[tt_boxcar_ix];
+            rt_status.s.tty_avg -= tty_boxcar[tt_boxcar_ix];
             if (last_ho_sign > 0) {
                 // Clear the plus image at the start of the plus phase.
                 if (control_u.ho_ix==1) for (int j=0;j<width*width;j++) im_plus[j]=0; 
@@ -218,6 +238,9 @@ void servo_loop(){
                 if (control_u.ho_ix == (HO_CYCLE-1)) {
                     for (int j=0;j<width*width;j++) im_plus_sum[j] += im_plus[j];
                 }
+                // Save the tip/tilt boxcar average for the current ho_ix.
+                ttx_boxcar[tt_boxcar_ix] = rt_status.s.tx;
+                tty_boxcar[tt_boxcar_ix] = rt_status.s.ty;
             } else {
                 // Clear the minus image at the start of the minus phase.
                 if (control_u.ho_ix==1) for (int j=0;j<width*width;j++) im_minus[j]=0; 
@@ -228,7 +251,14 @@ void servo_loop(){
                 if (control_u.ho_ix == (HO_CYCLE-1)) {
                     for (int j=0;j<width*width;j++) im_minus_sum[j] += im_minus[j];
                 }
+                // Save the tip/tilt boxcar average for the current ho_ix.
+                ttx_boxcar[tt_boxcar_ix] = -rt_status.s.tx;
+                tty_boxcar[tt_boxcar_ix] = -rt_status.s.ty;
             }
+            // Update the boxcar average of the tip/tilt response to the focus modulation.
+            rt_status.s.ttx_avg += ttx_boxcar[tt_boxcar_ix];
+            rt_status.s.tty_avg += tty_boxcar[tt_boxcar_ix];
+            tt_boxcar_ix = (tt_boxcar_ix + 1) % N_TT_BOXCAR;
         } 
         im_mutex.unlock();
 
@@ -246,8 +276,8 @@ void servo_loop(){
             //!!! needs a reconstrutor.
 
             if (settings.s.servo_mode != SERVO_OFF){
-                // Multiply the high-order modes by the influence functions to get the DM shape.
-                control_u.DM = control_a.influence_functions * control_a.modes;
+                // Matrix multiply the high-order modes by the amplitudes to get the DM shape.
+                control_u.DM = control_a.modes * control_a.mode_amplitudes;
                 // Update the DM image with the new high-order shape.
                 for (int i=0; i<N_ACTUATORS; i++) 
                     DM_high.array.D[i] = control_u.DM(i);
