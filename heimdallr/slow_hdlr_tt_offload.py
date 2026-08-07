@@ -1,17 +1,18 @@
-"""
-Modify tip/tilt. Algorithm...
-1) Read in all the baseline averaged power for K1 and K2.
-2) Add K1 and K2 together. Let's keep this simple!
-3) Find the SNR of each image by noise = np.percentile(power,15),
-and SNR = (np.max(power) - noise)/noise
-4) Computer the centroids for baselines, and convert to
-telescopes by weighted least squares.
-5) Via an MDS connection, move the HTXI motors!
-"""
+"""Internal Heimdallr tip/tilt offload command."""
 
+import argparse
 import time
 import zmq
 import numpy as np
+
+SHORT_DESCRIPTION = "Run Heimdallr's internal tip/tilt offload method."
+METHOD_DESCRIPTION = """Method:
+1. Read the baseline-averaged power images for K1 and K2.
+2. Sum the K1 and K2 power images for each baseline.
+3. Estimate noise from the 15th percentile and calculate each image's SNR.
+4. Convert baseline centroids into telescope offsets with SNR-weighted least squares.
+5. Send the resulting tip/tilt steps to the HTTI and HTPI motors through MDS.
+"""
 
 try:
     import ZMQ_control_client as Z
@@ -99,6 +100,13 @@ def telescope_centroids(baseline_centroids, snrs):
 
 # Just once - not in a loop for now
 def main_loop():
+    parser = argparse.ArgumentParser(
+        description=SHORT_DESCRIPTION,
+        epilog=METHOD_DESCRIPTION,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.parse_args()
+
     baseline_powers = get_baseline_powers()
     baseline_centroids = []
     snrs = []
