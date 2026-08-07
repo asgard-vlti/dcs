@@ -218,7 +218,7 @@ def _parse_args(argv=None):
     parser.add_argument(
         "beam",
         nargs="+",
-        help="One or more beam indices used in dm<beam> shared-memory names",
+        help="One or more beam indices used in dm<beam> shared-memory names, -1 for all beams",
     )
     return parser.parse_args(argv)
 

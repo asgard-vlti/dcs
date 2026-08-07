@@ -19,7 +19,6 @@ from dcs.ZMQutils import ZmqReq
 
 import threading
 
-
 LOCK_FILE_PATH = "/tmp/asg.heim_telem.lock"
 
 keys_of_interest = [
