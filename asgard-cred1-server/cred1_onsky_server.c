@@ -77,8 +77,9 @@ typedef struct {
  *        these are read/written to/from a json configuration file
  *         or eventually, a toml configuration file
  * 
- * each array stores: x0, y0, x1, y1 (in that order) coordinates in the
- * full image reference frame!
+ * each array stores: x0, y0 coordinates in the full image reference frame!
+ *
+ * NB: This matters! crop_mode affects y coordinates for baldr ROI.
  * ========================================================================= */
 typedef struct {
   char name[6] = "";     // name of the live image
@@ -87,7 +88,7 @@ typedef struct {
   long npx;              // number of pixels in ROI (= xsz * ysz)
   char _name[8] = "";    // name of the multiple reads data cube
   long nbs;              // number of frames saved per ROI data cube (x2)
-  // int *tsig;          // time signature (ex: [2, -1, -1])
+  int *tsig;             // time signature (ex: [2, -1, -1])
 } subarray;
 
 //-------Commander structs-------------
@@ -119,6 +120,7 @@ void* save_roi_cubes(void *arg);
 
 // configuration functions
 void refresh_image_splitting_configuration();
+void save_splitting_configuration();
 int init_cam_configuration();
 void optimize_cropping_parameters();
 void shm_setup(int roi_too);
@@ -143,6 +145,7 @@ void set_dark_sub_mode(int _mode);
 void set_crop_mode(int _mode);
 void set_ndmr_mode(unsigned int _mode);
 void show_cam_conf();
+void move_roi(std::string roi_str, int dx, int dy);
 
 /* =========================================================================
  *                            Global variables
@@ -195,6 +198,8 @@ int previous_timeouts = 0;
 /* =========================================================================
  *                  JSON configuration file processing
  * ========================================================================= */
+char split_conf_fname[LINESIZE];
+char split_conf_fname_backup[LINESIZE];
 
 // ============================================================
 char *read_json_file(const char *filename) {
@@ -226,11 +231,10 @@ char *read_json_file(const char *filename) {
  *   The procedure updates a shared readout configuration data structure.
  * ========================================================================= */
 void refresh_image_splitting_configuration() {
-  char split_conf_fname[LINESIZE];
+
   int ii;
-  sprintf(split_conf_fname, "%s/.config/cred1_split.json", getenv("HOME"));
   if (access(split_conf_fname, F_OK) == 0) {
-    info("Configuration file %s found!", split_conf_fname);
+    info("Split configuration file %s loading!", split_conf_fname);
     char *json_data = read_json_file(split_conf_fname);
     cJSON *json_root = cJSON_Parse(json_data);
     free(json_data);
@@ -248,7 +252,13 @@ void refresh_image_splitting_configuration() {
       ROI[ii].y0  = cJSON_GetObjectItem(item, "y0")->valueint;
       ROI[ii].xsz = cJSON_GetObjectItem(item, "xsz")->valueint;
       ROI[ii].ysz = cJSON_GetObjectItem(item, "ysz")->valueint;
-      ROI[ii].nrs = 5; // 3; // cJSON_GetObjectItem(item, "nrs")->valueint; // assumes 3
+      ROI[ii].nrs = cJSON_GetObjectItem(item, "nrs")->valueint;
+
+      ROI[ii].tsig = (int*) malloc(ROI[ii].nrs * sizeof(int));
+      cJSON *arr = cJSON_GetObjectItem(item, "tsig");
+      for (int kk = 0; kk < ROI[ii].nrs; kk++) {
+        ROI[ii].tsig[kk] = cJSON_GetArrayItem(arr, kk)->valueint;
+      }
       ROI[ii].npx = ROI[ii].xsz * ROI[ii].ysz;
       ROI[ii].nbs = 10000; // hardcoded here - should be fine
       ii++;
@@ -256,16 +266,55 @@ void refresh_image_splitting_configuration() {
     // update y0 coordinates of the Baldr ROI if cropmode is on
     if (camconf->cropmode == 1) {
       for (int ii = 0; ii < nroi; ii++) {
-	if (strncmp(ROI[ii].name, "baldr", strlen("baldr")) == 0) {
-	  ROI[ii].y0 -= camconf->nrows_cropped;
-	}
+        if (strncmp(ROI[ii].name, "baldr", strlen("baldr")) == 0) {
+          ROI[ii].y0 -= camconf->nrows_cropped;
+        }
       }
     }
   } else {
     error("%s doesn't exist!", split_conf_fname);
-    // split mode should not be possible here... do I want to bother?
     splitmode = 0;
   }
+}
+
+/* ========================================================================
+ *         Save the current ROI configuration as a JSON file
+ * Before running: save the previous config as a backup!
+ * ======================================================================== */
+void save_splitting_configuration() {
+  cJSON *root = cJSON_CreateObject();
+  int tmp_y0;
+  for (int ii = 0; ii < nroi; ii++) {
+    cJSON *item = cJSON_CreateObject();
+
+    // account for cropmode on value of y0 for the Baldr ROI
+    tmp_y0 = ROI[ii].y0;
+    if (strncmp(ROI[ii].name, "baldr", strlen("baldr")) == 0) {
+      tmp_y0 = ROI[ii].y0 + camconf->nrows_cropped;
+    }
+    cJSON_AddNumberToObject(item, "x0", ROI[ii].x0);
+    cJSON_AddNumberToObject(item, "y0", tmp_y0);
+    cJSON_AddNumberToObject(item, "xsz", ROI[ii].xsz);
+    cJSON_AddNumberToObject(item, "ysz", ROI[ii].ysz);
+    cJSON_AddNumberToObject(item, "nrs", ROI[ii].nrs);
+    cJSON *tsig = cJSON_CreateArray();
+    for (int kk = 0; kk < ROI[ii].nrs; kk++)
+      cJSON_AddItemToArray(tsig, cJSON_CreateNumber(ROI[ii].tsig[kk]));
+    cJSON_AddItemToObject(item, "tsig", tsig);
+    cJSON_AddItemToObject(root, ROI[ii].name, item);
+  }
+
+  char *json_str = cJSON_Print(root);
+
+  // cp(split_conf_name, split_conf_name_backup);  // TBD !!
+  FILE *fd = fopen(split_conf_fname, "w");
+  fputs(json_str, fd);
+  fclose(fd);
+
+  free(json_str);
+  cJSON_Delete(root);
+  info("Split configuration file %s was updated!", split_conf_fname);
+
 }
 
 /* =========================================================================
@@ -1057,6 +1106,8 @@ void quit() {
     keepgoing = 0;
     usleep(100000); // sleep for 100ms
   }
+  for (int ii = 0; ii < nroi; ii++)
+    free(ROI[ii].tsig);
   free(ROI);
   free_shm(1); // erase everything, including ROI SHMs!
   exit(0);
@@ -1385,6 +1436,27 @@ void show_cam_conf() {
   info("%s", dashline);
 }
 
+/* ========================================================================
+ * Move the location of provided ROI name
+ * ======================================================================== */
+void move_roi(std::string roi_str, int dx, int dy) {
+  const char* roi_name = roi_str.c_str();
+  // stop();  // stop the acquisition
+  // usleep(100000); // sleep for 100ms
+  // set_split_mode(0);  // turn off the split mode
+  // usleep(100000); // sleep for 100ms
+  for (int ii = 0; ii < nroi; ii++) {
+    if (strncmp(ROI[ii].name, roi_name, strlen(roi_name)) == 0) {
+      ROI[ii].x0 += dx;
+      ROI[ii].y0 += dy;
+    }
+  }
+  save_splitting_configuration();
+  // usleep(100000); // sleep for 100ms
+  // set_split_mode(1);
+  usleep(100000); // sleep for 100ms
+}
+
 namespace co=commander;
 
 COMMANDER_REGISTER(m)
@@ -1409,6 +1481,7 @@ COMMANDER_REGISTER(m)
   m.def("subtract_dark", set_dark_sub_mode, "Set/unset the dark subtraction.");
   m.def("cam_conf", show_cam_conf, "Summary of the current camera configuration");
   m.def("skip_save_baldr", skip_save_baldr_mode, "Skip saving BALDR data");
+  m.def("move_roi", move_roi, "Updates position of specified ROI");
 }
 
 /* =========================================================================
@@ -1417,6 +1490,11 @@ COMMANDER_REGISTER(m)
 int main(int argc, char **argv) {
   char errstr[2*CMDSIZE];
   char edt_devname[CMDSIZE];
+
+  sprintf(split_conf_fname,
+          "%s/.config/cred1_split.json", getenv("HOME"));
+  sprintf(split_conf_fname_backup,
+          "%s/.config/cred1_split.json.backup", getenv("HOME"));
 
   // Exit immediately if another instance of this server is running.
   if (!acquire_single_instance_lock("/tmp/asg.cam_server.lock")) {
@@ -1468,14 +1546,13 @@ int main(int argc, char **argv) {
 
   init_cam_configuration();
   refresh_image_splitting_configuration();
-  set_crop_mode(1);  // now starting the CRED1 in crop mode
-  update_fps(500.0); // engineering startup configuration
-  update_gain(1);   // engineering startup configuration
+  set_crop_mode(1);    // now starting the CRED1 in crop mode
+  update_fps(1000.0);  // engineering startup configuration
+  update_gain(5);      // engineering startup configuration
   show_cam_conf();
-  shm_setup(1);  // setup everything, including the ROI SHMs  
-  set_split_mode(1);
+  shm_setup(1);        // setup everything, including the ROI SHMs  
+  set_split_mode(1);   // Now set the split mode.
   usleep(100000); // Sleep - if we don't so this there are Kernel errors.
-  // Now set the split mode.
 
   // --------------------------
   // start the commander server
