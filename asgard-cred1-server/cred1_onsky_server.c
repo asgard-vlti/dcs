@@ -1391,24 +1391,33 @@ COMMANDER_REGISTER(m)
 {
   using namespace co::literals;
   m.def("fetch", fetch, "Trigger fetching data from the camera.");
-  m.def("cli", cli, "Direct interface to the camera Command Line Interface.");
+  m.def("cli", cli, "Direct interface to the camera Command Line Interface.",
+        co::arg("command", "Raw command string forwarded to the camera CLI."));
   m.def("status", get_status, "Get the current status of the camera.");
   m.def("stop", stop, "Stop fetching data from the. camera.");
   m.def("quit", quit, "Stops and closes the server.");
-  m.def("set_fps", update_fps, "Updates the camera FPS and syncs SHM.");
+  m.def("set_fps", update_fps, "Updates the camera FPS and syncs SHM.",
+        co::arg("fps", "Requested camera frame rate in Hz."));
   m.def("get_fps", query_fps, "Temporarily stops and restarts readout to ask the camera for it's set frame rate.\n Use 'status' for the internal saved rate.");
   m.def("get_gain", query_gain, "Prints the current camera gain.");
   m.def("get_det_temp", query_det_temp, "Prints the detector temperature.");
   m.def("get_water_temp", query_water_temp, "Prints the water temperature.");
-  m.def("set_gain", update_gain, "Updates the camera gain.");
-  m.def("split_mode", set_split_mode, "Set/unset the multi ROI use mode.");
-  m.def("save_mode", set_save_mode, "Set/unset the FITS cube save mode.");
-  m.def("crop_mode", set_crop_mode, "Set/unset the cropped readout mode.");
-  m.def("ndmr_mode", set_ndmr_mode, "Set/unset the multiple readout mode.");
+  m.def("set_gain", update_gain, "Updates the camera gain.",
+        co::arg("gain", "Detector gain value accepted by the camera."));
+  m.def("split_mode", set_split_mode, "Set/unset the multi ROI use mode.",
+        co::arg("mode", "Positive enables ROI splitting; non-positive disables it."));
+  m.def("save_mode", set_save_mode, "Set/unset the FITS cube save mode.",
+        co::arg("mode", "Positive enables FITS cube saving; non-positive disables it."));
+  m.def("crop_mode", set_crop_mode, "Set/unset the cropped readout mode.",
+        co::arg("mode", "Positive enables cropped readout; non-positive disables it."));
+  m.def("ndmr_mode", set_ndmr_mode, "Set/unset the multiple readout mode.",
+        co::arg("reads", "Number of non-destructive reads; values up to 2 select GCDS mode."));
   m.def("make_dark", trigger_save_dark, "Records dark for current config.");
-  m.def("subtract_dark", set_dark_sub_mode, "Set/unset the dark subtraction.");
+  m.def("subtract_dark", set_dark_sub_mode, "Set/unset the dark subtraction.",
+        co::arg("mode", "Positive enables live dark subtraction; non-positive disables it."));
   m.def("cam_conf", show_cam_conf, "Summary of the current camera configuration");
-  m.def("skip_save_baldr", skip_save_baldr_mode, "Skip saving BALDR data");
+  m.def("skip_save_baldr", skip_save_baldr_mode, "Skip saving BALDR data",
+        co::arg("mode", "Positive skips BALDR streams; non-positive saves all streams."));
 }
 
 /* =========================================================================

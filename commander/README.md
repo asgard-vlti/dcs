@@ -27,9 +27,20 @@ int add(int i, int j) {
 }
 
 COMMANDER_REGISTER(m) {
-    m.def("add", &add, "A function that adds two numbers");
+    m.def(
+        "add",
+        &add,
+        "A function that adds two numbers",
+        commander::arg("i", "First integer to add."),
+        commander::arg("j", "Second integer to add.")
+    );
 }
 ```
+
+`commander::arg` supplies the argument name and description while Commander
+continues to infer its type from the callable. A third parameter supplies a
+default value, for example `commander::arg("scale", "Scale factor.", 1.0)`.
+The older `"name"_arg` syntax remains supported without a description.
 
 Now, all you need is to compile the source file including the library flag -lcommander, including
 the lib directory of this repository in the -L flag and run the executable with for instance the

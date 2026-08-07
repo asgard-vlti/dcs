@@ -434,8 +434,11 @@ COMMANDER_REGISTER(m) {
   m.def("stop", stop, "Stops monitoring shared memory data structures.");
   m.def("status", status, "Returns status of the DM server.");
   m.def("get_nch", get_nch, "Returns the number of virtual channels per DM.");
-  m.def("set_nch", set_nch, "Updates the number of virtual channels per DM.");
-  m.def("reset", reset, "Resets DM #arg_0 channel #arg_1 (or if arg_1=-1).");
+  m.def("set_nch", set_nch, "Updates the number of virtual channels per DM.",
+        co::arg("n_channels", "Number of virtual channels to allocate per DM."));
+  m.def("reset", reset, "Resets one or all virtual channels of a DM.",
+        co::arg("dm_id", "One-based deformable mirror identifier."),
+        co::arg("channel", "Zero-based virtual channel; a negative value resets all channels."));
   m.def("quit", quit, "Stops and closes the server.");  
 }
 

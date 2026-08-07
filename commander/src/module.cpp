@@ -10,22 +10,26 @@ namespace commander
 
             def("help", [this]() {
                 return get_help();
-            });
+            }, "List every command and its description.");
             def("command_names", [this]() {
                 return command_names();
-            });
+            }, "List all available command names.");
             def("description", [this](string name) {
                 return description(name);
-            });
+            }, "Describe one command, including its signature.",
+                arg("name", "Name of the command to describe."));
             def("signature", [this](string name) {
                 return signature(name);
-            });
+            }, "Return the arguments and return type for one command.",
+                arg("name", "Name of the command to inspect."));
             def("arguments", [this](string name) {
                 return arguments(name);
-            });
+            }, "Return argument metadata for one command.",
+                arg("name", "Name of the command to inspect."));
             def("return_type", [this](string name) {
                 return return_type(name);
-            });
+            }, "Return the result type for one command.",
+                arg("name", "Name of the command to inspect."));
         }
 
         string Module::get_help() const {
@@ -60,6 +64,8 @@ namespace commander
                 json arg_json;
                 arg_json["name"] = arg.name;
                 arg_json["type"] = arg.type;
+                if (!arg.description.empty())
+                    arg_json["description"] = arg.description;
                 if (arg.default_value)
                     arg_json["default_value"] = arg.default_value.value();
                 res.push_back(arg_json);
