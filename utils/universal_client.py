@@ -300,6 +300,7 @@ class UniversalClient(QtWidgets.QMainWindow):
 
 
 def main():
+    """Launch the Qt command client for the configured DCS servers."""
     if len(sys.argv) != 2:
         print("Usage: python universal_client.py <ip_address>")
         sys.exit(1)

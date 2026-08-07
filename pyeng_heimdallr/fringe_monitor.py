@@ -565,6 +565,7 @@ class MyMainWidget(QWidget):
 # ==========================================================
 # ==========================================================
 def main():
+    """Launch the Qt Heimdallr fringe-monitoring GUI."""
     global myqt
     myqt = QtMain()
 

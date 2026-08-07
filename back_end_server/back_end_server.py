@@ -766,6 +766,7 @@ class BackEndServer:
 
 
 def main():
+    """Acquire the singleton lock and run the Asgard back-end server."""
     try:
         _instance_lock = acquire_process_lock()
     except RuntimeError as e:
