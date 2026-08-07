@@ -52,6 +52,7 @@ def create_modes():
     mode_indices = [(2, 0), (2, 2), (2, -2), (3, 1), (3, -1), (3, 3), (3, -3), (4, -2), (4, 2), (4, -4), (4, 4)]
     for i, (n, m) in enumerate(mode_indices):
         modes[i] = zernike(n, m, rho, theta)
+        breakpoint()
     return modes    
 
 if __name__ == "__main__":

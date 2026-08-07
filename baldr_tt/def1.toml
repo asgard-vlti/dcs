@@ -29,7 +29,8 @@ hol = 0.01
 # Flux threshold
 flux_threshold = 1000
 
-modefile = "./modes.fits"
+modefile = "/usr/local/etc/modes.fits"
+#modefile = "/usr/local/etc/astig.fits"
 
 #All units are in radians and microns
 [geometry] 
