@@ -1,3 +1,4 @@
+import argparse
 import sys
 import zmq
 import json
@@ -301,13 +302,12 @@ class UniversalClient(QtWidgets.QMainWindow):
 
 def main():
     """Launch the Qt command client for the configured DCS servers."""
-    if len(sys.argv) != 2:
-        print("Usage: python universal_client.py <ip_address>")
-        sys.exit(1)
-    ip_addr = sys.argv[1]
+    parser = argparse.ArgumentParser(description=main.__doc__)
+    parser.add_argument("ip_address", help="Server IP address or hostname")
+    args = parser.parse_args()
     servers = sockets
-    app = QtWidgets.QApplication(sys.argv)
-    client = UniversalClient(ip_addr, servers)
+    app = QtWidgets.QApplication([])
+    client = UniversalClient(args.ip_address, servers)
     client.show()
     sys.exit(app.exec_())
     
