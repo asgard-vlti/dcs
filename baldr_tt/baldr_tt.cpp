@@ -213,6 +213,24 @@ void set_focus_offset(double offset){
     settings.mutex.unlock();
 }
 
+void set_coupling(double ttx_coupling, double tty_coupling){
+    settings.mutex.lock();
+    settings.s.ttx_coupling = ttx_coupling;
+    settings.s.tty_coupling = tty_coupling;
+    settings.mutex.unlock();
+}
+
+void auto_coupling(double scale){
+    // This function will set the tip/tilt coupling terms based on the observed tilt. 
+    // The idea is that if we see a tilt in the image, we can estimate how much of that 
+    // is due to the focus modulation, and set the coupling terms accordingly.
+    rt_status.mutex.lock();
+    double ttx_coupling = scale * rt_status.s.tx_avg / settings.s.focus_amp;
+    double tty_coupling = scale * rt_status.s.ty_avg / settings.s.focus_amp;
+    rt_status.mutex.unlock();
+    set_coupling(ttx_coupling, tty_coupling);
+}
+
 Status get_status() {
     rt_status.mutex.lock();
     Status s = rt_status.s;
@@ -303,8 +321,8 @@ ImAvgs poke_mode(int mode_ix, double amplitude){
     im_avgs.width = width;
 
     // Set the control_u DM command to be the poke of the given mode and amplitude.
-    control_a.modes.setZero();
-    control_a.modes(mode_ix) = amplitude;
+    control_a.modes_amplitudes.setZero();
+    control_a.modes_amplitudes(mode_ix) = amplitude;
     info("Poking mode %d with amplitude %f", mode_ix, amplitude);
 
     // Wait 10ms for DM to settle, then set the im_plus_sum 
@@ -341,6 +359,9 @@ COMMANDER_REGISTER(m)
     m.def("ttmet", get_ttmet, "Get the saved tip/tilt metrology", "last_cnt"_arg=0);
     m.def("poke", poke_mode, "Poke the DM with a given mode and amplitude", "mode_ix"_arg=0, "amplitude"_arg=0.1);
     m.def("recon", load_reconstructor, "Load a reconstructor from a fits file", "filename"_arg="recon.fits");
+    m.def("set_coupling", set_coupling, "Set the tip/tilt coupling terms", "ttx_coupling"_arg=0.0, "tty_coupling"_arg=0.0);
+    m.def("auto_coupling", auto_coupling, "Set the tip/tilt coupling terms based on observed tilt", "scale"_arg=1.0);
+    m.def("badpix", set_bad_pixels, "Set the bad pixels", "x"_arg=std::vector<int>(), "y"_arg=std::vector<int>());
  }
 
 int main(int argc, char* argv[]) {
@@ -388,7 +409,7 @@ int main(int argc, char* argv[]) {
     settings.s.servo_mode = SERVO_OFF;
     // Read in the influence functions from the "modefile" fits file.
     std::string modefile = config["modefile"].value_or("modes.fits");
-    if (!read_modes(modefile, control_a.influence_functions)) {
+    if (!read_modes(modefile, control_a.modes)) {
         error("Error reading modes file. Exiting.");
         return 1;
     }

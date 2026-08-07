@@ -22,6 +22,7 @@ def launch_in_xterm(title: str, argv: list[str], env):
     ], env=env)
 
 def main():
+    """Launch one Baldr RTC server per beam in separate xterm windows."""
     my_env = os.environ.copy()
     my_env["OPENBLAS_NUM_THREADS"] = "1"
     ap = argparse.ArgumentParser()

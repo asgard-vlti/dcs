@@ -1,11 +1,6 @@
 """
-Connect to the socket and save a fixed number of tip/tilt metrology points
-to a fits file (number as an optional argv input)
-
-Data will come in as 4 json lists of variable length:
-tx, ty, mx, my
-
-The "cnt" variable is returned each time.
+Save telemetry when baldr is running in faint mode.
+Also saves the settings at a slower rate (1 Hz) to a separate file.
 """
 
 import numpy as np
@@ -16,7 +11,6 @@ import sys
 import fcntl
 
 from dcs.ZMQutils import ZmqReq
-
 
 LOCK_FILE_PATH = "/tmp/asg.baldr_tt_telem.lock"
 

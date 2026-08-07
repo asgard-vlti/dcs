@@ -7,6 +7,8 @@
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
+#include <utility>
+
 namespace commander
 {
 
@@ -28,6 +30,7 @@ namespace detail
     struct Arg : UnamedArg
     {
         string name;
+        string description;
         optional<json> default_value;
 
         Arg() = default;
@@ -35,6 +38,7 @@ namespace detail
         Arg(string name):
             UnamedArg(),
             name(std::move(name)),
+            description(),
             default_value()
         {}
 
@@ -46,6 +50,22 @@ namespace detail
         }
 
     };
+
+    inline Arg arg(string name, string description)
+    {
+        Arg result(std::move(name));
+        result.description = std::move(description);
+        return result;
+    }
+
+    template<typename T>
+    Arg arg(string name, string description, T&& default_value)
+    {
+        Arg result(std::move(name));
+        result.description = std::move(description);
+        result.default_value = json(std::forward<T>(default_value));
+        return result;
+    }
 
 namespace literals
 {

@@ -12,7 +12,6 @@ Usage:
 
 import argparse
 import pathlib
-import sys
 from typing import Optional
 
 import numpy as np
@@ -214,18 +213,18 @@ class DMView(QtWidgets.QMainWindow):
                         )
 
 
-def _parse_args(argv):
+def _parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Low-bandwidth DM SHM viewer")
     parser.add_argument(
         "beam",
         nargs="+",
-        help="One or more beam indices used in dm<beam> shared-memory names",
+        help="One or more beam indices used in dm<beam> shared-memory names, -1 for all beams",
     )
     return parser.parse_args(argv)
 
 
 def main(argv=None):
-    args = _parse_args(sys.argv[1:] if argv is None else argv)
+    args = _parse_args(argv)
     beams = [str(beam) for beam in range(1, 5)] if args.beam == ["-1"] else args.beam
 
     app = QtWidgets.QApplication.instance()

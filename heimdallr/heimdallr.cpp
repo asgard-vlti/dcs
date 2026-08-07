@@ -627,51 +627,96 @@ COMMANDER_REGISTER(m)
     // You can register a function or any other callable object as
     // long as the signature is deductible from the type.
     m.def("linear_search", linear_search, "Execute a linear fringe search on a single beam (1,2,3 or 4)", 
-        "beam"_arg, "start"_arg, "stop"_arg, "rate"_arg=1.0, "search_dt_ms"_arg=200, "search_snr_threshold"_arg=10.0);
-    m.def("get_ps", get_ps, "Get the power spectrum in 2D", "filter"_arg="K1");
+        commander::arg("beam", "Beam number from 1 to 4."),
+        commander::arg("start", "Search start position in micrometres."),
+        commander::arg("stop", "Search stop position in micrometres."),
+        commander::arg("rate", "Delay-line rate used during the search.", 1.0),
+        commander::arg("search_dt_ms", "Interval between search measurements in milliseconds.", 200),
+        commander::arg("search_snr_threshold", "SNR threshold that completes the search.", 10.0));
+    m.def("get_ps", get_ps, "Get the power spectrum in 2D",
+        commander::arg("filter", "Spectral filter, either 'K1' or 'K2'.", "K1"));
     m.def("get_search_offset", get_search_offset, "Get the search offset in microns");
     m.def("get_gd_toml_offsets", get_gd_toml_offsets, "Get the GD phasor offsets for all baselines in microns, to 3 decimal places");
-    m.def("servo", set_servo_mode, "Set the servo mode", "mode"_arg="off");
-    m.def("offload", set_offload_mode, "Set the offload (slow servo) mode", "mode"_arg="off");
+    m.def("servo", set_servo_mode, "Set the servo mode",
+        commander::arg("mode", "One of 'off', 'simple', 'fight', 'lacour', or 'on'.", "off"));
+    m.def("offload", set_offload_mode, "Set the offload (slow servo) mode",
+        commander::arg("mode", "One of 'off', 'nested', 'gd', 'mod', or 'manual'.", "off"));
     // Settings routines...
-    m.def("offload_time", set_offload_time, "Set the offload time in ms", "time"_arg=1000);
+    m.def("offload_time", set_offload_time, "Set the offload time in ms",
+        commander::arg("time", "Offload interval in milliseconds, from 10 to 10000.", 1000));
     m.def("set_search_offset", set_search_offset, "Set the search offset in microns. \n This is added to the search position when starting a search.", 
-        "offset"_arg=std::vector<double>(N_TEL, 0.0));
+        commander::arg("offset", "Per-beam search offsets in micrometres; omitted beams are set to zero.", std::vector<double>(N_TEL, 0.0)));
     m.def("dl", set_delay_line, "Set a delay line value in microns", 
-        "beam"_arg, "value"_arg=0.0);
+        commander::arg("beam", "Beam number from 1 to 4."),
+        commander::arg("value", "Absolute delay-line position in micrometres.", 0.0));
     m.def("dls", set_delay_lines_wrapper, "Set a delay line value in microns", 
-        "dl1"_arg, "dl2"_arg, "dl3"_arg, "dl4"_arg);
-        m.def("gain", set_gain, "Set the gain for the servo loop", "gain"_arg=0.0);
-    m.def("fixed_dl", set_fixed_dl, "Set the fixed delay line value", "value"_arg=0);
-    m.def("ggain", set_ggain, "Set the gain for the GD servo loop", "gain"_arg=0.0);
-    m.def("offload_gd_gain", set_offload_gd_gain, "Set the gain when operating GD only in steps", "gain"_arg=0.0);
-    m.def("dl_type", set_delay_line_type, "Set the delay line type and initialize.", "type"_arg="piezo");
-    m.def("set_gd_threshold", set_gd_threshold, "Set GD SNR threshold", "value"_arg=5.0);
-    m.def("set_pd_threshold", set_pd_threshold, "Set PD SNR threshold", "value"_arg=4.5);
-    m.def("set_gd_search_reset", set_gd_search_reset, "Set GD search reset threshold", "value"_arg=5.0);
-    m.def("set_dit", set_dit, "Set the DIT in seconds", "dit"_arg=0.001);
+        commander::arg("dl1", "Beam 1 delay-line position in micrometres."),
+        commander::arg("dl2", "Beam 2 delay-line position in micrometres."),
+        commander::arg("dl3", "Beam 3 delay-line position in micrometres."),
+        commander::arg("dl4", "Beam 4 delay-line position in micrometres."));
+    m.def("gain", set_gain, "Set the gain for the servo loop",
+        commander::arg("gain", "Phase-delay proportional gain.", 0.0));
+    m.def("fixed_dl", set_fixed_dl, "Set the fixed delay line value",
+        commander::arg("value", "Fixed delay line: 0 for none, or 1 to 4.", 0));
+    m.def("ggain", set_ggain, "Set the gain for the GD servo loop",
+        commander::arg("gain", "Group-delay gain before boxcar normalization.", 0.0));
+    m.def("offload_gd_gain", set_offload_gd_gain, "Set the gain when operating GD only in steps",
+        commander::arg("gain", "Gain used by group-delay-only offloading.", 0.0));
+    m.def("dl_type", set_delay_line_type, "Set the delay line type and initialize.",
+        commander::arg("type", "Delay-line implementation: 'piezo', 'hfo', 'rmn', or 'off'.", "piezo"));
+    m.def("set_gd_threshold", set_gd_threshold, "Set GD SNR threshold",
+        commander::arg("value", "Group-delay SNR threshold.", 5.0));
+    m.def("set_pd_threshold", set_pd_threshold, "Set PD SNR threshold",
+        commander::arg("value", "Phase-delay SNR threshold.", 4.5));
+    m.def("set_gd_search_reset", set_gd_search_reset, "Set GD search reset threshold",
+        commander::arg("value", "Group-delay SNR threshold that resets fringe search.", 5.0));
+    m.def("set_dit", set_dit, "Set the DIT in seconds",
+        commander::arg("dit", "Detector integration time in seconds, no greater than 0.05.", 0.001));
     m.def("set_bad_pixels", set_bad_pixels, "Set the bad pixel map from 4 vectors", 
-        "k1x"_arg=std::vector<int>(), "k1y"_arg=std::vector<int>(), "k2x"_arg=std::vector<int>(), "k2y"_arg=std::vector<int>());
-    m.def("set_gd_boxcar", set_gd_boxcar, "Set the number of frames for the GD boxcar average", "n"_arg=32);
+        commander::arg("k1x", "X pixel coordinates to mask in the K1 image.", std::vector<int>()),
+        commander::arg("k1y", "Y pixel coordinates to mask in the K1 image.", std::vector<int>()),
+        commander::arg("k2x", "X pixel coordinates to mask in the K2 image.", std::vector<int>()),
+        commander::arg("k2y", "Y pixel coordinates to mask in the K2 image.", std::vector<int>()));
+    m.def("set_gd_boxcar", set_gd_boxcar, "Set the number of frames for the GD boxcar average",
+        commander::arg("n", "Number of frames in the group-delay average, from 1 to 1000.", 32));
     m.def("tweak_gd_offsets", tweak_gd_offsets, "Add offsets to beams 1,2,4 and project to baseline space", 
-        "offset1"_arg=0.0, "offset2"_arg=0.0, "offset4"_arg=0.0);
+        commander::arg("offset1", "Phase offset added to beam 1 in radians.", 0.0),
+        commander::arg("offset2", "Phase offset added to beam 2 in radians.", 0.0),
+        commander::arg("offset4", "Phase offset added to beam 4 in radians.", 0.0));
     m.def("set_gd_offsets", set_gd_offsets, "Set the GD offsets directly from a list of offsets for beams 1,2,4", 
-        "offset1"_arg=0.0, "offset2"_arg=0.0, "offset4"_arg=0.0);
-    m.def("beams_active", beams_active, "Set which beams are active", "b1"_arg=1,"b2"_arg=1,"b3"_arg=1,"b4"_arg=1);
+        commander::arg("offset1", "Absolute phase offset for beam 1 in radians.", 0.0),
+        commander::arg("offset2", "Absolute phase offset for beam 2 in radians.", 0.0),
+        commander::arg("offset4", "Absolute phase offset for beam 4 in radians.", 0.0));
+    m.def("beams_active", beams_active, "Set which beams are active",
+        commander::arg("b1", "Beam 1 state: 1 for active, 0 for inactive.", 1),
+        commander::arg("b2", "Beam 2 state: 1 for active, 0 for inactive.", 1),
+        commander::arg("b3", "Beam 3 state: 1 for active, 0 for inactive.", 1),
+        commander::arg("b4", "Beam 4 state: 1 for active, 0 for inactive.", 1));
     m.def("dlr", delay_line_relative_move, "Move the delay lines by a relative amount", 
-        "dl_move1"_arg=0.0, "dl_move2"_arg=0.0, "dl_move3"_arg=0.0, "dl_move4"_arg=0.0);
+        commander::arg("dl_move1", "Relative beam 1 delay-line move in micrometres.", 0.0),
+        commander::arg("dl_move2", "Relative beam 2 delay-line move in micrometres.", 0.0),
+        commander::arg("dl_move3", "Relative beam 3 delay-line move in micrometres.", 0.0),
+        commander::arg("dl_move4", "Relative beam 4 delay-line move in micrometres.", 0.0));
     m.def("search", set_search_params, "Set the fringe tracker search parameter", 
-        "delta"_arg=0.5, "turnaround"_arg=10);    
+        commander::arg("delta", "Search step in micrometres, greater than 0 and at most 10.", 0.5),
+        commander::arg("turnaround", "Number of steps before reversing direction, from 1 to 1000.", 10));
     // Special wag routines, and status.
-    m.def("set_itime", set_itime, "Set the target integration time", "itime"_arg=100);
+    m.def("set_itime", set_itime, "Set the target integration time",
+        commander::arg("itime", "Target integration time in seconds, from 0 to 1000.", 100));
     m.def("status", get_status, "Get the status of the system");
     m.def("settings", get_settings, "Get current system settings");
-    m.def("test", test, "Make a test pattern - fractional DM motion every n samples.", "beam"_arg, "value"_arg=0.0, "n"_arg=10);
+    m.def("test", test, "Make a test pattern - fractional DM motion every n samples.",
+        commander::arg("beam", "Beam number from 1 to 4."),
+        commander::arg("value", "Fractional DM piston applied by the test pattern.", 0.0),
+        commander::arg("n", "Number of samples between test-pattern changes.", 10));
     m.def("zero_gd_offsets", zero_gd_offsets, "Zero the group delay offsets i.e. track on this position");
-    m.def("foreground", set_foreground, "Set (1) or unset (0) foreground delay line offsets", "state"_arg=1);
+    m.def("foreground", set_foreground, "Set (1) or unset (0) foreground delay line offsets",
+        commander::arg("state", "1 applies foreground offsets; 0 removes them.", 1));
     m.def("expstatus", expstatus, "Get the exposure time status (success if complete)");
     m.def("default_gains", default_gains, "Set the gains to default values");
-    m.def("get_baseline_im", get_baseline_image, "Get a baseline image for K1 or K2 as an encoded string");
+    m.def("get_baseline_im", get_baseline_image, "Get a baseline image for K1 or K2 as an encoded string",
+        commander::arg("filter", "Spectral filter, either 'K1' or 'K2'."),
+        commander::arg("baseline", "Zero-based baseline index from 0 to 5."));
 }
 
 int quit(int error) {

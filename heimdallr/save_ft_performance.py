@@ -19,7 +19,6 @@ from dcs.ZMQutils import ZmqReq
 
 import threading
 
-
 LOCK_FILE_PATH = "/tmp/asg.heim_telem.lock"
 
 keys_of_interest = [
@@ -180,7 +179,9 @@ def main():
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    parser = argparse.ArgumentParser(description="FT performance data logging script")
+    parser = argparse.ArgumentParser(
+        description="Start logging the fringe tracker performance and settings."
+    )
     parser.add_argument(
         "--gdrate",
         type=int,

@@ -22,6 +22,7 @@ def launch_in_xterm(title: str, argv: list[str], env):
     ], env=env)
 
 def main():
+    """Launch one Baldr tip-tilt process per beam in separate xterm windows."""
     my_env = os.environ.copy()
     #Add environment variales here as needed.
     #my_env["OPENBLAS_NUM_THREADS"] = "1"
