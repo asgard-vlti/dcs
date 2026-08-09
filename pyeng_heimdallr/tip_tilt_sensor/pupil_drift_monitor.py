@@ -32,12 +32,24 @@ def main():
     dstream = shm("/dev/shm/hei_k1.im.shm")
     im_offset = 1000
 
+    nim = 50  # number of images to average
+
     img = dstream.get_data() - im_offset
+    imgs = []
+    for ii in range(nim):
+        imgs.append(dstream.get_data() - im_offset)
+
     UVC = hmd.dense.kpi.UVC
     uu, vv = np.append(UVC[:,0], -UVC[:,0]), np.append(UVC[:,1], -UVC[:,1])
 
-    cvis = hmd.get_raw_cvis(hmd.dense, img, full=True)
-    v2 = np.abs(cvis)**2
+    v2 = []
+    for ii in range(nim):
+        cvis = hmd.get_raw_cvis(hmd.dense, img, full=True)
+        v2.append(np.abs(cvis)**2)
+
+    v2 = np.array(v2)
+    v2 = np.mean(v2, axis=0)
+
     xy0 = hmd.sparse.kpi.VAC[:, :2]
     xy1 = hmd.infer_pupil_model(v2)
 
