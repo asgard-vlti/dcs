@@ -278,8 +278,11 @@ void servo_loop(){
                 norm_imsub[j] = (im_plus[j] - im_minus[width*width - 1 - j]) / sum_both;
             }
             im_mutex.unlock();
-            // Here we could compute the high-order modes based on norm_imsub
-            //!!! needs a reconstrutor.
+            // Here we compute the high-order modes based on norm_imsub, again with
+            // a leaky integrator.
+            if (settings.s.servo_mode == SERVO_HO) {
+                control_a.mode_amplitudes = (1-settings.s.hol) * control_a.mode_amplitudes - settings.s.hog * control_u.recon * norm_imsub;
+            } 
 
             if (settings.s.servo_mode != SERVO_OFF){
                 // Matrix multiply the high-order modes by the amplitudes to get the DM shape.

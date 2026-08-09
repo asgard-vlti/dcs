@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import numpy as np
 from astropy.io import fits
+from scipy.linalg import svd
 import time
 
 from dcs.ZMQutils import ZmqReq
@@ -103,7 +104,42 @@ def run_pokes_and_save(beam):
     hdu = fits.PrimaryHDU(data=ims)
     hdu.writeto(output_path, overwrite=True)
     print(f"Saved beam {beam} data to {output_path}")
-    return str(output_path)
+    
+    #Now make the reconstructor and save it
+    modes = np.zeros((_N_MODES, ims.shape[2], ims.shape[3]))
+    for i in range(_N_MODES):
+        flux = np.sum(ims[2*i+1, :, :, :]) + np.sum(ims[2*i+2, :, :, :])
+        modes[i] = ims[2*i+1, 0, :, :] - ims[2*i+1, 1, ::-1, ::-1] \
+                - ims[2*i+2, 0, :, :] + ims[2*i+2, 1, ::-1, ::-1]
+        modes[i] /= flux
+        im = modes.reshape(_N_MODES, -1).T
+
+    #Now compute the SVD of the interaction matrix. The singular values are the square roots of the eigenvalues of the interaction matrix. The number of modes that can be controlled is determined by the number of singular values that are above a certain threshold.
+    U, s, Vh = svd(im, full_matrices=False)
+    print("Singular values:", s)
+
+    #Let's remove the singular values below half the mean,
+    #and add this threshold to the singular values when
+    # computing the inverse
+    threshold = 0.5 * np.mean(s)
+    sinv = 1/(s + threshold)
+    sinv[s < threshold] = 0
+
+    recon = (Vh.T * sinv) @ U.T
+
+    # Save the reconstructor to a fits file
+    recon_path = beam_dir / f"{_RUN_TIMESTAMP}_recon.fits"
+    hdu = fits.PrimaryHDU(data=recon)
+    hdu.writeto(recon_path, overwrite=True)
+    print(f"Saved beam {beam} reconstructor to {recon_path}")
+
+    # Unless overwrite is false, save the reconstructor as the default for this beam, i.e. without timestamp.
+    if args.overwrite:
+        default_recon_path = beam_dir / "recon.fits"
+        hdu.writeto(default_recon_path, overwrite=True)
+        print(f"Saved beam {beam} reconstructor as default to {default_recon_path}")
+
+    return str(output_path), str(recon_path)
 
 
 def parse_args():
@@ -117,6 +153,7 @@ def parse_args():
     parser.add_argument("--amp", type=float, default=0.04)
     parser.add_argument("--n-modes", type=int, default=11)
     parser.add_argument("--settle-sec", type=float, default=1.0)
+    parser.add_argument("--overwrite", type=bool, default=True, help="Overwrite existing default file")
     return parser.parse_args()
 
 
