@@ -363,6 +363,9 @@ class MCSClient:
         msg = self.server_z.read_most_recent_msg()
         if not msg:
             return None
+        if "data" not in msg:
+            logging.info("ignoring non-script message: %s", msg)
+            return None
         if "beam" not in msg:
             data = msg["data"]
             for i, item in enumerate(data):
@@ -449,6 +452,10 @@ class MCSClient:
         if self.server_z.has_new_data:
             msg = self.server_z.read_most_recent_msg()
         else:
+            return
+
+        if "data" not in msg:
+            logging.info("ignoring non-script message: %s", msg)
             return
 
         # check if "beam" keyword exists, if so it is a single beam update
@@ -903,8 +910,9 @@ class MCSServer:
             return {}
 
         self.has_new_data = False
-
-        return self.data
+        data = self.data
+        self.data = {}
+        return data
 
     def fetch(self) -> Optional[Dict[str, Any]]:
         socks = dict(self.poller.poll(10))
@@ -930,6 +938,7 @@ class MCSServer:
             logging.info("recieved status message from WAG")
             stats = self.watchdog.collect_wd_status()
             self.z.send_payload(stats)
+            self.data = {}
         else:
             msg = json.loads(msg)
             logging.info(f"recieved status message from script: {msg}")

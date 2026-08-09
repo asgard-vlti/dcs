@@ -364,6 +364,7 @@ COMMANDER_REGISTER(m)
     m.def("set_coupling", set_coupling, "Set the tip/tilt coupling terms", "ttx_coupling"_arg=0.0, "tty_coupling"_arg=0.0);
     m.def("auto_coupling", auto_coupling, "Set the tip/tilt coupling terms based on observed tilt", "scale"_arg=1.0);
     m.def("badpix", set_bad_pixels, "Set the bad pixels", "x"_arg=std::vector<int>(), "y"_arg=std::vector<int>());
+    m.def("ndmr", set_ndmr, "Set the tsig length and nbreads", "tsig"_arg=1, "nbreads"_arg=1);
  }
 
 int main(int argc, char* argv[]) {
@@ -424,6 +425,8 @@ int main(int argc, char* argv[]) {
     double sin_angle = std::sin(angle * M_PI / 180.0);
     control_u.R << cos_angle, -sin_angle, sin_angle, cos_angle;
     info("R matrix: %f %f %f %f", control_u.R(0,0), control_u.R(0,1), control_u.R(1,0), control_u.R(1,1));
+    control_u.tsig_len = 1;
+    control_u.nbreads = 1;
 
 #ifndef SIMULATE
     // Initialise the DM
