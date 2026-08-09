@@ -48,7 +48,7 @@ _setup_logging()
 
 LOCK_FILE_PATH = "/tmp/asg.back_end_server.lock"
 
-
+# FIXME this is used in multiple places - refactor
 def acquire_process_lock(lock_path=LOCK_FILE_PATH):
     """Acquire a non-blocking process lock and record current PID in the lock file."""
     lock_file = open(lock_path, "a+")
@@ -767,6 +767,7 @@ class BackEndServer:
 
 def main():
     """Acquire the singleton lock and run the Asgard back-end server."""
+    # FIXME this is used in multiple places - refactor
     try:
         _instance_lock = acquire_process_lock()
     except RuntimeError as e:
