@@ -17,7 +17,9 @@ int *im_boxcar[N_BOXCAR];
 double ttx_boxcar[N_TT_BOXCAR], tty_boxcar[N_TT_BOXCAR];
 int tt_boxcar_ix=0;
 double *window, *subim;
-double *im_av, *im_plus, *im_minus, *norm_imsub;
+double *im_av, *im_plus, *im_minus;
+// Norm_imsub will be a width * width vector (width found out later)
+Eigen::Matrix<double, Eigen::Dynamic, 1> norm_imsub;
 float *im_plus_sum, *im_minus_sum;
 std::mutex im_mutex; 
 TTMet_save ttmet_save;   
@@ -63,7 +65,8 @@ void initialise_servo(){
     im_minus_sum = (float*) malloc(sizeof(float) * width * width);
     window = (double*) malloc(sizeof(double) * width * width);
     subim = (double*) malloc(sizeof(double) * width * width);
-    norm_imsub = (double*) malloc(sizeof(double) * width * width);
+    // Initialise the size of the norm_imsub vector to be width * width.
+    norm_imsub.resize(width * width);
      // Initialise the window to a super-Gaussian with a 1/e^2 width equal to the image size.
     int ssz = (int)width;
     for (int ii=0; ii<ssz; ii++) {
@@ -83,7 +86,7 @@ void initialise_servo(){
         subim[j]=0;
         im_plus_sum[j]=0;
         im_minus_sum[j]=0;
-        norm_imsub[j]=0;
+        norm_imsub(j)=0;
     } 
 
     // Set the tt boxcar averages to zero.
@@ -275,7 +278,7 @@ void servo_loop(){
             double sum_both=0;
             for (int j=0;j<width*width;j++) sum_both += im_plus[j] + im_minus[j];
             for (int j=0;j<width*width;j++) {
-                norm_imsub[j] = (im_plus[j] - im_minus[width*width - 1 - j]) / sum_both;
+                norm_imsub(j) = (im_plus[j] - im_minus[width*width - 1 - j]) / sum_both;
             }
             im_mutex.unlock();
             // Here we compute the high-order modes based on norm_imsub, again with
