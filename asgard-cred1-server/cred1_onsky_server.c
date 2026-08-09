@@ -96,10 +96,10 @@ typedef struct {
 // The status. 
 struct Status
 {
-    std::string cam_status;
-    unsigned int skipped_frames = 0, nbreads, tsig_len=2;
-    bool shm_error;
-    double fps;
+  std::string cam_status;
+  unsigned int skipped_frames = 0, nbreads, tsig_len[6]={2,2,2,2,5,5};
+  bool shm_error;
+  double fps;
 };
 
 //-------End of Commander structs------
@@ -1083,7 +1083,8 @@ Status get_status() {
   	status.nbreads = camconf->nbreads;
   else
   	status.nbreads = 1;
-  status.tsig_len = ROI[0].nrs;
+  for (int ii = 0; ii < nroi; ii++)
+    status.tsig_len[ii] = ROI[ii].nrs;
 
   return status;
 }
