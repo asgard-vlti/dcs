@@ -140,6 +140,7 @@ void servo_loop(){
             nerrors++;
             continue;
         }
+        
         // Check for missed frames
         if (subarray.md->cnt0 > cnt+2){
             info("Missed frames! Image: %llu Servo: %lu", (unsigned long long)subarray.md->cnt0, cnt);
@@ -149,6 +150,13 @@ void servo_loop(){
             nerrors++;
         }
         cnt++;
+
+        // In NDMR mode, the first pixel of the image contains the frame counter. 
+        // Data are not valid unless this is less than:
+        // control_u.nbreads - 1 - control_u.tsig_len
+        if ( (control_u.nbreads > 1) && (subarray->array.SI32[0] > (int)(control_u.nbreads - 1 - control_u.tsig_len)) ) {
+                continue;
+        }
 #ifdef PRINT_TIMING
         timespec then;
         clock_gettime(CLOCK_REALTIME, &then);

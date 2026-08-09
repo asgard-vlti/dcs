@@ -55,6 +55,8 @@ struct ControlU{
     double tx, ty;
     int ho_sign;
     int ho_ix;
+    int nbreads;
+    int tsig_len;
     Eigen::Matrix<double, N_ACTUATORS, 1> DM;
     Eigen::Matrix<double, 2,2> R; //Rotation matrix.
 };
