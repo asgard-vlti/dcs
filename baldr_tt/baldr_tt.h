@@ -59,6 +59,9 @@ struct ControlU{
     int tsig_len;
     Eigen::Matrix<double, N_ACTUATORS, 1> DM;
     Eigen::Matrix<double, 2,2> R; //Rotation matrix.
+    // We don't know the reconstructor size until we read it in from a file, 
+    // so we will use a dynamic matrix for it.
+    Eigen::Matrix<double, N_MODES, Eigen::Dynamic> recon;
 };
 
 // This is our knowledge of the DM modes

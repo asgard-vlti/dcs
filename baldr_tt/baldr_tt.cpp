@@ -113,10 +113,45 @@ bool read_modes(std::string filename, Eigen::Matrix<double, N_ACTUATORS, N_MODES
 //----------commander functions from here---------------
 
 bool load_reconstructor(std::string filename){
-    // This is a placeholder function for loading a reconstructor from a fits file. 
-    // The actual implementation will depend on the format of the reconstructor file, 
-    // which is not yet defined. For now, we will just print a message and return true.
-    info("Loading reconstructor from file: %s", filename.c_str());
+    // Load in the reconstructor to a Eigen matrix from a fitx file.
+    std::string recon_dir = config["recon_dir"].value_or("/data/custom/fdpr/beam1");
+    info("Loading reconstructor from file: %s/%s", recon_dir.c_str(), filename.c_str());
+
+    // Read the reconstructor from the fits file. The first step is 
+    // to read the dimensions of the reconstructor from the fits file.
+    fitsfile *fptr;   /* pointer to the FITS file, defined in fitsio.h */
+    int status = 0;   /* CFITSIO status value MUST be initialized to zero! */
+    int nfound;
+    long naxes[2] = {1,1};
+    if (fits_open_file(&fptr, (recon_dir + "/" + filename).c_str(), READONLY, &status)) {
+        error("Error opening file: %s/%s", recon_dir.c_str(), filename.c_str());
+        return false;
+    }
+    if (fits_read_keys_lng(fptr, "NAXIS", 1, 2, naxes, &nfound, &status)) {
+        error("Error reading NAXIS from file: %s/%s", recon_dir.c_str(), filename.c_str());
+        return false;
+    }
+    // The N_MODES is the fast axis.
+    if ((naxes[0] != N_MODES) || (naxes[1] != width*width)) {
+        error("Error: reconstructor file has wrong dimensions. Expected %dx%d, got %ldx%ld", N_MODES, width*width, naxes[0], naxes[1]);
+        return false;
+    }
+    const long nread = naxes[0] * naxes[1];
+    double *data = new double[nread];
+    if (fits_read_img(fptr, TDOUBLE, 1, nread, NULL, data, NULL, &status)) {
+        error("Error reading image data from file: %s/%s", recon_dir.c_str(), filename.c_str());
+        delete[] data;
+        return false;
+    }
+    // Fill the reconstructor matrix with the data from the fits file.
+    control_u.recon.resize(N_MODES, width*width);
+    for (long i = 0; i < naxes[1]; i++) {
+        for (long j = 0; j < naxes[0]; j++) {
+            control_u.recon((int)j, (int)i) = data[i*naxes[0] + j];
+        }
+    }
+    delete[] data;
+    fits_close_file(fptr, &status);
     return true;
 }
 
@@ -383,7 +418,19 @@ int main(int argc, char* argv[]) {
         info("Configuration file read: %s", config["name"].value_or("unknown"));
     }
     beam = config["beam"].value_or(1);
+    width = config["width"].value_or(21);
 
+    // Set the reconstructor directory baed on beam number, if not given.
+    if (!config["recon_dir"].has_value()) {
+        config["recon_dir"] = "/data/custom/fdpr/beam" + std::to_string(beam);
+    }
+    // Attempt to load the reconstructor from the recon_dir. Set to 
+    // all zeros if it fails.
+    std::string recon_file = config["recon_file"].value_or("recon.fits");
+    if (!load_reconstructor(recon_file)) {
+        info("Failed to load reconstructor. Setting to all zeros.");
+        control_u.recon.setZero();
+    }
     // Exit immediately if another instance of this server is running.
     char lockfile[256];
     sprintf(lockfile, "/tmp/asg.baldr_tt.%d.lock", beam);
@@ -406,7 +453,6 @@ int main(int argc, char* argv[]) {
             }
         }
     }
-    width = config["width"].value_or(15);
     settings.s.ttyo=0;
     settings.s.ttxo=0;
     settings.s.gauss_hwidth = config["gauss_hwidth"].value_or(3.0);
