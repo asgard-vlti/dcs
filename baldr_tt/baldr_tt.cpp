@@ -220,6 +220,12 @@ void set_coupling(double ttx_coupling, double tty_coupling){
     settings.mutex.unlock();
 }
 
+void set_ndmr(int tsig_len, int nbreads){
+    control_u.tsig_len = tsig_len;
+    control_u.nbreads = nbreads;
+    info("tsig length and nbreads updated to %d %d", tsig_len, nbreads);
+}
+
 void auto_coupling(double scale){
     // This function will set the tip/tilt coupling terms based on the observed tilt. 
     // The idea is that if we see a tilt in the image, we can estimate how much of that 
