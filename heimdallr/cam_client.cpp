@@ -48,7 +48,9 @@ void update_camera_status(const nlohmann::json& status) {
     std::lock_guard<std::mutex> lock(beam_mutex);
     control_u.dit = 1.0 / fps;
     control_u.nbreads = status["nbreads"].get<int>();
-    control_u.tsig_len = status["tsig_len"].get<int>();
+    //tsig_len is now a vector. We want the 5th element.
+    control_u.tsig_len = status["tsig_len"][4].get<int>();
+    //control_u.tsig_len = status["tsig_len"].get<int>();
     //std::cout << "Camera status updated: fps=" << fps << ", nbreads=" << control_u.nbreads << ", tsig_len=" << control_u.tsig_len << std::endl;   
 }
 
