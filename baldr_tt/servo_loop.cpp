@@ -154,7 +154,7 @@ void servo_loop(){
         // In NDMR mode, the first pixel of the image contains the frame counter. 
         // Data are not valid unless this is less than:
         // control_u.nbreads - 1 - control_u.tsig_len
-        if ( (control_u.nbreads > 1) && (subarray->array.SI32[0] > (int)(control_u.nbreads - 1 - control_u.tsig_len)) ) {
+        if ( (control_u.nbreads > 1) && (subarray.array.SI32[0] > (int)(control_u.nbreads - 1 - control_u.tsig_len)) ) {
                 continue;
         }
 #ifdef PRINT_TIMING

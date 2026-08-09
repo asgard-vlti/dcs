@@ -822,7 +822,7 @@ void* fetch_imgs(void *) {
   long nbpix_roi_tosave = ROI[0].npx * ROI[0].nbs / 2;
 
   int ii, jj, ri;  // ii,jj pixel indices, ri: ROI index
-  int tsig[5] = {2,1,0,-1,-2};  // {2,-1,-1} To be dynamically allocated from the JSON.
+  // int tsig[5] = {2,1,0,-1,-2};  // {2,-1,-1} To be dynamically allocated from the JSON.
   // !!! If changing this, also change ROI[ii].nrs = 3; on line 230.
 
   int seq_indices[9] = {0};   // frame indices part of current time sequence
@@ -946,7 +946,7 @@ void* fetch_imgs(void *) {
                 liveroi_ptr[jj*roi_xsz+ii] = camconf->offset;
                 for (int kk = 0; kk < ROI[ri].nrs; kk++) {
                   seq_img_ptr = shm_img->array.UI16 + seq_indices[kk] * nbpix_frm;  // live pointer
-                  liveroi_ptr[jj*roi_xsz+ii] += tsig[kk] * (int)seq_img_ptr[(jj+y0) * cam_xsz + ii+x0];
+                  liveroi_ptr[jj*roi_xsz+ii] += ROI[ri].tsig[kk] * (int)seq_img_ptr[(jj+y0) * cam_xsz + ii+x0];
                 }
               }
             }

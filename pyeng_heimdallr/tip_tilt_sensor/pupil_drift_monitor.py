@@ -41,7 +41,7 @@ def main():
     xy0 = hmd.sparse.kpi.VAC[:, :2]
     xy1 = hmd.infer_pupil_model(v2)
 
-    tstamp = datetime.utcnow().strftime("%Y%M%d_T%H:%M:%S_")
+    tstamp = datetime.utcnow().strftime("%Y%m%d_T%H:%M:%S_")
     # ----------------------
     f1, ax = plt.subplots()
     ax.scatter(uu, vv, c=v2, vmax=0.3)
