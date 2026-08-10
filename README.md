@@ -1,3 +1,9 @@
+## NOTE
+
+This is a test branch. I am aiming to see if the `git-fetch` command running on 
+`wag` is deleting remote branches by, e.g., forcing the remote to match the 
+bare repo on `wag`.
+
 # dcs
 Detector Control System for Heimdallr/Baldr
 
