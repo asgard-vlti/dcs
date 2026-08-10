@@ -41,6 +41,7 @@ jobs:
             pkg-config=0.29.1* \
             nlohmann-json3-dev=3.7.3* \
             libboost-all-dev=1.71.0.0* \
+            libeigen3-dev=3.3.7* \
             libzmq3-dev=4.3.2* \
             libfmt-dev=6.1.2* \
             libcfitsio-dev=3.470* \
