@@ -39,12 +39,13 @@ jobs:
             libb64-dev=1.2-5 \
             gcc-9 \
             g++-9 \
-            make \
+            make
 
       - name: Configure (top-level CMake)
-        run: export CMAKE_C_COMPILER=gcc-9
-             export CMAKE_CXX_COMPILER=g++-9
-             cmake -S . -B build
+        run: |
+          export CMAKE_C_COMPILER=gcc-9
+          export CMAKE_CXX_COMPILER=g++-9
+          cmake -S . -B build
 
       - name: Build
         run: cmake --build build
