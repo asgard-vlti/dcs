@@ -8,6 +8,9 @@
  * Once the start command is issued to the DM server shell, a thread monitors
  * the content of the different shared memory data structures, combines them
  * and then send an update command to the DM driver itself.
+ *
+ * This variant spawns ndm independent dms_refresh threads, one per DM,
+ * each writing to its DM as fast as possible.
  * ========================================================================= */
 
 #include <stdio.h>
@@ -56,29 +59,29 @@ int nch_prev    = 0;     // keep track of the # of channels before a change
 char dashline[80] =
   "-----------------------------------------------------------------------------";
 
-int ndm = 4; // the number of DMs to be connected
+int ndm = 2; // the number of DMs to be connected
 DM *hdms[4];  // the handles for the different deformable mirrors
 BMCRC rv;    // result of every interaction with the driver (check status)
 uint32_t *map_lut[4];  // the DM actuator mappings
 
 int simmode = 0;  // flag to set to "1" to not attempt to connect to the driver
-int timelog = 0;  // flag to set to "1" to log DM response timing
+int timelog = 1;  // flag to set to "1" to log DM response timing
 char drv_status[16] = "idle"; // to keep track of server status
 
 // order to be reshuffled when reassembling the instrument
 const char snumbers[4][BMC_SERIAL_NUMBER_LEN+1] = \
   {"17DW019#122", "17DW019#053", "17DW019#093", "17DW019#113"};
 
-pthread_t tid_refresh;
 pthread_t tid_loops[4];      // thread IDs for DM control loop
-unsigned int targs[4] = {1, 2, 3, 4}; // thread integer arguments
+pthread_t tid_refresh[4];    // one refresh thread per DM
+unsigned int targs[4] = {1, 2, 3, 4}; // thread integer arguments (1-based DM IDs)
 
 /* =========================================================================
  *                       function prototypes
  * ========================================================================= */
 int shm_setup();
 void* dm_control_loop(void *_dmid);
-void* dms_refresh(void *);
+void* dms_refresh(void *_dmid);
 double* map2D_2_cmd(double *map2D);
 void MakeOpen(int dmid, DM* hdm);
 
@@ -159,7 +162,6 @@ int shm_setup() {
 double* map2D_2_cmd(double *map2D) {
   int ii, jj;  // dummy indices
   double* cmd = (double*) malloc(nact * sizeof(double));
-  // FILE* fd;
 
   jj = 0;  // index of value to add to the command
   for (ii = 0; ii < nvact; ii++) {  // iterate over "virtual" actuators
@@ -209,41 +211,44 @@ void* dm_control_loop(void *_dmid) {
       shmarray[dmid-1][nch].array.D[ii] = tmp_map[ii];
     shmarray[dmid-1][nch].md->cnt1 = 0;
     shmarray[dmid-1][nch].md->cnt0++;
-    // ImageStreamIO_sempost(&shmarray[dmid-1][nch], -1);
     shmarray[dmid-1][nch].md->write = 0;  // signaling done writing
   }
   return NULL;
 }
 
 /* =========================================================================
- *                       DMs refresh cycle thread
+ *          Per-DM refresh thread: writes to a single DM as fast as possible
  * ========================================================================= */
-void* dms_refresh(void *) {
+void* dms_refresh(void *_dmid) {
+  unsigned int dmid = *((unsigned int *) _dmid);
+  unsigned int idx  = dmid - 1;  // zero-based index
   double *cmd;
-  struct timespec now; // clock readout
-  FILE* fd;
-  // char logname[200];
-  int kk;
+  struct timespec now;
+  char logname[200];
+  FILE *fd = NULL;
 
-  printf("From dms_refresh thread!\n");
-  if (timelog == 1)
-    fd = fopen("/home/asg/Progs/repos/dcs/asgard-dm-server/speed_record_dm%d.log", "w");  // Record DM interaction times
+  printf("dms_refresh thread started for DM %u\n", dmid);
 
-  while (keepgoing == 1) { // entering the DM update loop
-    for (kk = 0; kk < ndm; kk++) {
-      cmd = map2D_2_cmd(shmarray[kk][nch].array.D);
-      rv = BMCSetArray(hdms[kk], cmd, map_lut[kk]);  // send cmd to DM
-      if (rv) {
-		error("%s\n", BMCErrorString(rv));
-      }
-      free(cmd);
-    }
-    clock_gettime(CLOCK_REALTIME, &now);   // get time after issuing
-    if (timelog == 1)
+  if (timelog == 1) {
+    snprintf(logname, sizeof(logname),
+             "/home/asg/Progs/repos/dcs/asgard-dm-server/speed_record_dm%u.log", dmid);
+    fd = fopen(logname, "w");
+  }
+
+  while (keepgoing == 1) {
+    cmd = map2D_2_cmd(shmarray[idx][nch].array.D);
+    rv = BMCSetArray(hdms[idx], cmd, map_lut[idx]);
+    if (rv)
+      error("%s\n", BMCErrorString(rv));
+    free(cmd);
+
+    clock_gettime(CLOCK_REALTIME, &now);
+    if (fd != NULL)
       fprintf(fd, "%f\n", 1.0*now.tv_sec + 1e-9*now.tv_nsec);
   }
-  if (timelog == 1)
-    fclose(fd); // closing the timing log file
+
+  if (fd != NULL)
+    fclose(fd);
 
   return NULL;
 }
@@ -273,20 +278,22 @@ void start() {
     // trigger the shm monitoring threads
     for (kk = 0; kk < ndm; kk++) {
       pthread_create(&tid_loops[kk], &attr, dm_control_loop, &targs[kk]);
-      printf("Creating thread for DM ID = %d\n", kk+1);
+      printf("Creating dm_control_loop thread for DM ID = %d\n", kk+1);
     }
 
-    if (simmode != 1){
-      pthread_create(&tid_refresh, &attr, dms_refresh, NULL);
-      printf("Creating thread for dms_refresh\n");
-      pthread_getschedparam(tid_refresh, &policy, &param);
-      info("Thread priority: %d  Priority policy: %d", param.sched_priority, policy); 
+    if (simmode != 1) {
+      for (kk = 0; kk < ndm; kk++) {
+        pthread_create(&tid_refresh[kk], &attr, dms_refresh, &targs[kk]);
+        printf("Creating dms_refresh thread for DM ID = %d\n", kk+1);
+        pthread_getschedparam(tid_refresh[kk], &policy, &param);
+        info("DM %d refresh thread priority: %d  policy: %d", kk+1,
+             param.sched_priority, policy);
+      }
     }
-    
+
   } else
     warn("DM control loop already running!");
   sprintf(drv_status, "%s", "running");
-
 }
 
 void stop() {
@@ -407,8 +414,8 @@ void quit() {
     for (kk = 0; kk < ndm; kk++) {
       rv = BMCClose(hdms[kk]);
       if (rv) {
-		error("%s\n", BMCErrorString(rv));
-		error("Error %d closing the driver.", rv);
+	error("%s\n", BMCErrorString(rv));
+	error("Error %d closing the driver.", rv);
       }
     }
     for (ii = 0; ii < ndm; ii++) {
