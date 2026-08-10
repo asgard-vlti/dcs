@@ -37,9 +37,9 @@ jobs:
             libfftw3-single3=3.3.8-2ubuntu1 \
             libcfitsio-dev=3.470-3 \
             libb64-dev=1.2-5 \
-            gcc-9=9.4.0 \
-            g++-9=9.4.0 \
-            make=4.2.1 \
+            gcc-9 \
+            g++-9 \
+            make \
 
       - name: Configure (top-level CMake)
         run: cmake -B build
