@@ -421,8 +421,8 @@ int main(int argc, char* argv[]) {
     width = config["width"].value_or(21);
 
     // Set the reconstructor directory baed on beam number, if not given.
-    if (!config["recon_dir"].has_value()) {
-        config["recon_dir"] = "/data/custom/fdpr/beam" + std::to_string(beam);
+    if (!config["recon_dir"]) {
+        config.insert_or_assign("recon_dir", "/data/custom/fdpr/beam" + std::to_string(beam));
     }
     // Attempt to load the reconstructor from the recon_dir. Set to 
     // all zeros if it fails.
