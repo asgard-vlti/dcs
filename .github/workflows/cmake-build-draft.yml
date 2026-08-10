@@ -28,12 +28,14 @@ jobs:
             /^[^[:space:]]+\// {
               split($1, a, "/")
               pkg = a[1]
-              if (match($0, / now [^ ]+/)) {
-                ver = substr($0, RSTART + 5, RLENGTH - 5)
+              ver = $2
+              if (length(pkg) > 0 && length(ver) > 0) {
                 print pkg "=" ver
               }
             }
           ' 00_apt_packages_installed.txt | sort -u > /tmp/all-packages.txt
+          test -s /tmp/all-packages.txt
+          echo "Extracted $(wc -l < /tmp/all-packages.txt) package/version entries from 00_apt_packages_installed.txt"
           xargs -r -a /tmp/all-packages.txt -n 50 apt-get install -y --no-install-recommends
 
       - name: Configure (top-level CMake)
