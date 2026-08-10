@@ -25,6 +25,8 @@ jobs:
       # - tomlplusplus is not present in 00_apt_packages_installed.txt and is not installed here.
       - name: Install build dependencies
         run: |
+          export CMAKE_C_COMPILER=gcc-9
+          export CMAKE_CXX_COMPILER=g++-9
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
           apt-get install -y --no-install-recommends \
