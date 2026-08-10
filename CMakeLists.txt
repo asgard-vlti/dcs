@@ -7,6 +7,7 @@ add_subdirectory(baldr_jcr)
 add_subdirectory(commander)
 
 find_package(PkgConfig)
+find_package(Threads REQUIRED)
 
 add_library(ImageStreamIO)
 
@@ -21,5 +22,10 @@ target_sources(ImageStreamIO
         # libImageStreamIO/ImCreate_ft.c
         # libImageStreamIO/ImCreate_test.c
 
+)
+
+target_link_libraries(ImageStreamIO
+    PUBLIC
+        Threads::Threads
 )
 
