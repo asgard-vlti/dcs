@@ -17,7 +17,8 @@ extern "C" {
 toml::table config;
 
 // Servo parameters. These are the parameters that will be adjusted by the commander
-int beam=1, width=21;
+int beam=1, width=21, sz=0;
+std::string recon_dir = "";
 PIDSettings settings;
 RTStatus rt_status;
 ControlU control_u;
@@ -114,8 +115,7 @@ bool read_modes(std::string filename, Eigen::Matrix<double, N_ACTUATORS, N_MODES
 
 bool load_reconstructor(std::string filename){
     // Load in the reconstructor to a Eigen matrix from a fitx file.
-    std::string recon_dir = config["recon_dir"].value_or("/data/custom/fdpr/beam1");
-    info("Loading reconstructor from file: %s/%s", recon_dir.c_str(), filename.c_str());
+   info("Loading reconstructor from file: %s/%s", recon_dir.c_str(), filename.c_str());
 
     // Read the reconstructor from the fits file. The first step is 
     // to read the dimensions of the reconstructor from the fits file.
@@ -419,11 +419,24 @@ int main(int argc, char* argv[]) {
     }
     beam = config["beam"].value_or(1);
     width = config["width"].value_or(21);
+    
+#ifndef SIMULATE
+    // Initialise the DM
+    ImageStreamIO_openIm(&DM_low, ("dm" + std::to_string(beam) + "disp01").c_str()); 
+    ImageStreamIO_openIm(&DM_high, ("dm" + std::to_string(beam) + "disp02").c_str()); 
+    ImageStreamIO_openIm(&master_DM, ("dm" + std::to_string(beam)).c_str());
+
+    // Initialise the two forward Fourier transform objects
+    ImageStreamIO_openIm(&subarray, ("baldr" + std::to_string(beam)).c_str());
+#else
+    ImageStreamIO_openIm(&subarray, "sbaldr1");
+    info("Simulation mode!");
+#endif
+	sz =  subarray.md->size[0];
 
     // Set the reconstructor directory baed on beam number, if not given.
-    if (!config["recon_dir"].has_value()) {
-        config["recon_dir"] = "/data/custom/fdpr/beam" + std::to_string(beam);
-    }
+    recon_dir = config["recon_dir"].value_or("/data/custom/fdpr/beam" + std::to_string(beam));
+   
     // Attempt to load the reconstructor from the recon_dir. Set to 
     // all zeros if it fails.
     std::string recon_file = config["recon_file"].value_or("recon.fits");
@@ -480,19 +493,6 @@ int main(int argc, char* argv[]) {
     control_u.tsig_len = 1;
     control_u.nbreads = 1;
 
-#ifndef SIMULATE
-    // Initialise the DM
-    ImageStreamIO_openIm(&DM_low, ("dm" + std::to_string(beam) + "disp01").c_str()); 
-    ImageStreamIO_openIm(&DM_high, ("dm" + std::to_string(beam) + "disp02").c_str()); 
-    ImageStreamIO_openIm(&master_DM, ("dm" + std::to_string(beam)).c_str());
-
-    // Initialise the two forward Fourier transform objects
-    ImageStreamIO_openIm(&subarray, ("baldr" + std::to_string(beam)).c_str());
-#else
-    ImageStreamIO_openIm(&subarray, "sbaldr1");
-    info("Simulation mode!");
-   
-#endif
     // Start the main servo thread. 
     std::thread servo_thread(servo_loop);
     

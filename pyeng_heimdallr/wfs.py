@@ -219,6 +219,9 @@ class Heimdallr:
         self.norm1 = k1d.sum()
         self.norm2 = k2d.sum()
 
+        if (self.norm1 < 0) or (self.norm2 < 0): # avoid reset problem
+            return
+
         if self.norm1 != 0:
             self.hdlr1.extract_data(k1d)
         if self.norm2 != 0:

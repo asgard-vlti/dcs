@@ -112,6 +112,7 @@ def run_pokes_and_save(beam):
         modes[i] = ims[2*i+1, 0, :, :] - ims[2*i+1, 1, ::-1, ::-1] \
                 - ims[2*i+2, 0, :, :] + ims[2*i+2, 1, ::-1, ::-1]
         modes[i] /= flux
+        modes[i] /= _AMP
         im = modes.reshape(_N_MODES, -1).T
 
     #Now compute the SVD of the interaction matrix. The singular values are the square roots of the eigenvalues of the interaction matrix. The number of modes that can be controlled is determined by the number of singular values that are above a certain threshold.
@@ -125,11 +126,11 @@ def run_pokes_and_save(beam):
     sinv = 1/(s + threshold)
     sinv[s < threshold] = 0
 
-    recon = (Vh.T * sinv) @ U.T
+    recon = (Vh.T * sinv) @ U.T 
 
     # Save the reconstructor to a fits file
     recon_path = beam_dir / f"{_RUN_TIMESTAMP}_recon.fits"
-    hdu = fits.PrimaryHDU(data=recon)
+    hdu = fits.PrimaryHDU(data=recon.T)
     hdu.writeto(recon_path, overwrite=True)
     print(f"Saved beam {beam} reconstructor to {recon_path}")
 
