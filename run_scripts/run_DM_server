@@ -1,0 +1,2 @@
+#!/bin/bash
+setsid /usr/local/bin/asgard_DM_server --socket tcp://*:6666 1>>/home/asg/logs/DM_server/log.txt 2>&1 &

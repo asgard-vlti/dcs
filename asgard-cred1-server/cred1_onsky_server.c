@@ -96,10 +96,10 @@ typedef struct {
 // The status. 
 struct Status
 {
-    std::string cam_status;
-    unsigned int skipped_frames = 0, nbreads, tsig_len=2;
-    bool shm_error;
-    double fps;
+  std::string cam_status;
+  unsigned int skipped_frames = 0, nbreads, tsig_len[6]={2,2,2,2,5,5};
+  bool shm_error;
+  double fps;
 };
 
 //-------End of Commander structs------
@@ -1083,7 +1083,8 @@ Status get_status() {
   	status.nbreads = camconf->nbreads;
   else
   	status.nbreads = 1;
-  status.tsig_len = ROI[0].nrs;
+  for (int ii = 0; ii < nroi; ii++)
+    status.tsig_len[ii] = ROI[ii].nrs;
 
   return status;
 }
@@ -1123,7 +1124,7 @@ void update_fps(float fps) {
 
   if (keepgoing == 1) {
     keepgoing = 0; // to interrupt the fetching process
-    usleep(100000); // sleep for 100ms
+    usleep(500000); // sleep for 500ms
     wasrunning = 1; //
   }
   sprintf(cmd_cli, "set fps %.2f", fps);
@@ -1359,7 +1360,7 @@ void set_ndmr_mode(unsigned int _mode) {
   if (keepgoing == 1) {
     keepgoing = 0;  // interrupt the acquisition
     wasrunning = 1; // keep that in mind
-    usleep(100000); // sleep for 100ms
+    usleep(500000); // sleep for 500ms
   }
 
   if (_mode <= 2) {  // ------ engineering mode -----

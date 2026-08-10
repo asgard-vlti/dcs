@@ -1,0 +1,2 @@
+#!/bin/bash
+setsid /home/asg/.conda/envs/asgard/bin/back-end-server 1>> /home/asg/logs/back_end_server/log.txt 2>&1 &

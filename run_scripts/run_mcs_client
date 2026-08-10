@@ -1,0 +1,2 @@
+#!/bin/bash
+setsid /home/asg/.conda/envs/asgard/bin/mcs-client 1>> /home/asg/logs/mcs_client/log.txt 2>&1 &
