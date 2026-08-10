@@ -1,0 +1,39 @@
+name: CMake Build Check
+
+on:
+  push:
+    # branches:
+    #   - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  cmake-build:
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Versions pinned to what it currently on mimir
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential=12.8ubuntu1.1 \
+            pkg-config=0.29.1-0ubuntu4 \
+            nlohmann-json3-dev=3.7.3-1 \
+            libboost-program-options-dev=1.71.0.0ubuntu2 \
+            libcfitsio-dev=3.470-3 \
+            libfmt-dev=6.1.2+ds-2 \
+            libzmq3-dev=4.3.2-2ubuntu1 \
+            libb64-dev=1.2-5
+
+      - name: Configure (top-level CMake)
+        run: cmake -B build
+
+      - name: Build
+        run: cmake --build build
