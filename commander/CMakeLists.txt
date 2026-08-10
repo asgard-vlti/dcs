@@ -4,6 +4,11 @@ target_compile_features(Commander PRIVATE cxx_std_17)
 
 target_compile_options(Commander PRIVATE -Wall -Wextra -Wpedantic)
 
+target_include_directories(Commander
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 
 target_sources(Commander
     PRIVATE
@@ -15,9 +20,4 @@ target_sources(Commander
         src/server.cpp
         src/module.cpp
         src/utils.cpp
-
-    PUBLIC
-        FILE_SET HEADERS
-        BASE_DIRS
-            ./include
 )

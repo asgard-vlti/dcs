@@ -10,21 +10,16 @@ find_package(PkgConfig)
 
 add_library(ImageStreamIO)
 
+target_include_directories(ImageStreamIO
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/libImageStreamIO
+)
+
 target_sources(ImageStreamIO
     PRIVATE
         libImageStreamIO/ImageStreamIO.c
         # libImageStreamIO/ImCreate_ft.c
         # libImageStreamIO/ImCreate_test.c
-    
-    PUBLIC
-        FILE_SET HEADERS
-        BASE_DIRS
-            libImageStreamIO
-        FILES
-            libImageStreamIO/ImageStreamIO.h
-            libImageStreamIO/ImageStruct.h
-            # libImageStreamIO/ImageStreamIOError.h
-            libImageStreamIO/commander_structs.h
 
 )
 
