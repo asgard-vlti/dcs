@@ -44,7 +44,7 @@ jobs:
       - name: Configure (top-level CMake)
         run: export CMAKE_C_COMPILER=gcc-9
              export CMAKE_CXX_COMPILER=g++-9
-             cmake -B build
+             cmake -S . -B build
 
       - name: Build
         run: cmake --build build
