@@ -56,13 +56,13 @@ int nch_prev    = 0;     // keep track of the # of channels before a change
 char dashline[80] =
   "-----------------------------------------------------------------------------";
 
-int ndm = 4; // the number of DMs to be connected
+int ndm = 2; // the number of DMs to be connected
 DM *hdms[4];  // the handles for the different deformable mirrors
 BMCRC rv;    // result of every interaction with the driver (check status)
 uint32_t *map_lut[4];  // the DM actuator mappings
 
 int simmode = 0;  // flag to set to "1" to not attempt to connect to the driver
-int timelog = 0;  // flag to set to "1" to log DM response timing
+int timelog = 1;  // flag to set to "1" to log DM response timing
 char drv_status[16] = "idle"; // to keep track of server status
 
 // order to be reshuffled when reassembling the instrument
@@ -191,7 +191,7 @@ void* dm_control_loop(void *_dmid) {
     for (ii = 0; ii < nvact; ii++) {
       tmp_map[ii] = 0.0; // init temp sum array
       for (kk = 0; kk < nch; kk++) {
-	tmp_map[ii] += shmarray[dmid-1][kk].array.D[ii];
+        tmp_map[ii] += shmarray[dmid-1][kk].array.D[ii];
       }
     }
 
@@ -222,10 +222,12 @@ void* dms_refresh(void *) {
   double *cmd;
   struct timespec now; // clock readout
   FILE* fd;
+  // char logname[200];
   int kk;
 
-  if (timelog)
-    fd = fopen("speed_record.log", "w");  // Record DM interaction times
+  printf("From dms_refresh thread!\n");
+  if (timelog == 1)
+    fd = fopen("/home/asg/Progs/repos/dcs/asgard-dm-server/speed_record_dm%d.log", "w");  // Record DM interaction times
 
   while (keepgoing == 1) { // entering the DM update loop
     for (kk = 0; kk < ndm; kk++) {
@@ -237,10 +239,10 @@ void* dms_refresh(void *) {
       free(cmd);
     }
     clock_gettime(CLOCK_REALTIME, &now);   // get time after issuing
-    if (timelog)
+    if (timelog == 1)
       fprintf(fd, "%f\n", 1.0*now.tv_sec + 1e-9*now.tv_nsec);
   }
-  if (timelog)
+  if (timelog == 1)
     fclose(fd); // closing the timing log file
 
   return NULL;
@@ -271,10 +273,12 @@ void start() {
     // trigger the shm monitoring threads
     for (kk = 0; kk < ndm; kk++) {
       pthread_create(&tid_loops[kk], &attr, dm_control_loop, &targs[kk]);
+      printf("Creating thread for DM ID = %d\n", kk+1);
     }
 
     if (simmode != 1){
       pthread_create(&tid_refresh, &attr, dms_refresh, NULL);
+      printf("Creating thread for dms_refresh\n");
       pthread_getschedparam(tid_refresh, &policy, &param);
       info("Thread priority: %d  Priority policy: %d", param.sched_priority, policy); 
     }
