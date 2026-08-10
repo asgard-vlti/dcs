@@ -46,6 +46,8 @@ jobs:
             libfmt-dev=6.1.2* \
             libcfitsio-dev=3.470* \
             libb64-dev=1.2* \
+            gcc=4:9.3.0* \
+            g++=4:9.3.0* \
             gcc-9=9.4.0* \
             g++-9=9.4.0* \
             tar=1.30* \
