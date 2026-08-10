@@ -24,6 +24,7 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends \
             build-essential=12.8ubuntu1.1 \
+            cmake=3.16.3-1ubuntu1 \
             pkg-config=0.29.1-0ubuntu4 \
             nlohmann-json3-dev=3.7.3-1 \
             libboost-program-options-dev=1.71.0.0ubuntu2 \
