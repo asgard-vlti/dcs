@@ -26,29 +26,37 @@ jobs:
       # Versions pinned to what is currently on mimir.
       # README dependency mapping to apt packages:
       # - cppzmq -> libzmq3-dev
-      # - fftw -> libfftw3-dev for headers, plus runtime libs from 00_apt_packages_installed.txt
+      # - fftw -> build FFTW 3.3.10 from source to match the target machine's manual install
       # - tomlplusplus is not present in 00_apt_packages_installed.txt and is not installed here.
-      # libfftw3-dev is not present in 00_apt_packages_installed.txt, so it cannot be pinned from that snapshot.
-      # Turns out it has been MANUALLY built and installed at version 3.3.10, so use apt to simulate that
       - name: Install build dependencies
         run: |
           export DEBIAN_FRONTEND=noninteractive
+          export FFTW_VERSION=3.3.10
           apt-get update
           apt-get install -y --no-install-recommends \
-            cmake=3.16.3-1ubuntu1.20.04.1 \
-            pkg-config=0.29.1-0ubuntu4 \
-            nlohmann-json3-dev=3.7.3-1 \
-            libboost-all-dev=1.71.0.0ubuntu2 \
-            libzmq3-dev=4.3.2-2ubuntu1 \
-            libfmt-dev=6.1.2+ds-2 \
-            libfftw3-dev=3.3.10 \
-            libfftw3-double3=3.3.8-2ubuntu1 \
-            libfftw3-single3=3.3.8-2ubuntu1 \
-            libcfitsio-dev=3.470-3 \
-            libb64-dev=1.2-5 \
-            gcc-9 \
-            g++-9 \
-            make
+            cmake=3.16.3* \
+            ca-certificates=20240203* \
+            curl=7.68.0* \
+            pkg-config=0.29.1* \
+            nlohmann-json3-dev=3.7.3* \
+            libboost-all-dev=1.71.0.0* \
+            libzmq3-dev=4.3.2* \
+            libfmt-dev=6.1.2* \
+            libcfitsio-dev=3.470* \
+            libb64-dev=1.2* \
+            gcc-9=9.4.0* \
+            g++-9=9.4.0* \
+            tar=1.30* \
+            gzip=1.10* \
+            make=4.2.1*
+          curl -fsSL "https://www.fftw.org/fftw-${FFTW_VERSION}.tar.gz" -o /tmp/fftw.tar.gz
+          tar -xzf /tmp/fftw.tar.gz -C /tmp
+          cd "/tmp/fftw-${FFTW_VERSION}"
+          ./configure --prefix=/usr/local CC=gcc-9 --disable-doc --disable-fortran
+          make -j"$(nproc)"
+          make install
+          echo /usr/local/lib > /etc/ld.so.conf.d/fftw-local.conf
+          ldconfig
 
       - name: Configure (top-level CMake)
         run: |
