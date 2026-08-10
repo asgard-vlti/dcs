@@ -27,11 +27,12 @@ jobs:
       # README dependency mapping to apt packages:
       # - cppzmq -> libzmq3-dev
       # - fftw -> build FFTW 3.3.10 from source to match the target machine's manual install
-      # - tomlplusplus is not present in 00_apt_packages_installed.txt and is not installed here.
+      # - tomlplusplus -> install single-header toml.hpp v3.4.0 to /usr/local/include
       - name: Install build dependencies
         run: |
           export DEBIAN_FRONTEND=noninteractive
           export FFTW_VERSION=3.3.10
+          export TOMLPP_VERSION=v3.4.0
           apt-get update
           apt-get install -y --no-install-recommends \
             cmake=3.16.3* \
@@ -57,6 +58,7 @@ jobs:
           make install
           echo /usr/local/lib > /etc/ld.so.conf.d/fftw-local.conf
           ldconfig
+          curl -fsSL "https://raw.githubusercontent.com/marzer/tomlplusplus/${TOMLPP_VERSION}/toml.hpp" -o /usr/local/include/toml.hpp
 
       - name: Configure (top-level CMake)
         run: |
