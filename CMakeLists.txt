@@ -60,6 +60,7 @@ if(DCS_BUILD_LEGACY_MAKE_TARGETS)
 
     add_custom_target(dcs_make_baldr_tt
         COMMAND ${DCS_MAKE_EXECUTABLE} -C ${CMAKE_CURRENT_SOURCE_DIR}/baldr_tt clean all
+                "CFLAGS=-std=c++17 -Wall -Wextra -ggdb -O1 -I../libImageStreamIO -I../commander/include -I/usr/include/eigen3"
         USES_TERMINAL
         VERBATIM
     )
