@@ -21,17 +21,20 @@ jobs:
       # Versions pinned to what it currently on mimir
       - name: Install build dependencies
         run: |
+          export DEBIAN_FRONTEND=noninteractive
           apt-get update
-          apt-get install -y --no-install-recommends \
-            build-essential=12.8ubuntu1.1 \
-            cmake=3.16.3-1ubuntu1 \
-            pkg-config=0.29.1-0ubuntu4 \
-            nlohmann-json3-dev=3.7.3-1 \
-            libboost-program-options-dev=1.71.0.0ubuntu2 \
-            libcfitsio-dev=3.470-3 \
-            libfmt-dev=6.1.2+ds-2 \
-            libzmq3-dev=4.3.2-2ubuntu1 \
-            libb64-dev=1.2-5
+          awk '
+            /^Listing\.\.\./ { next }
+            /^[^[:space:]]+\// {
+              split($1, a, "/")
+              pkg = a[1]
+              if (match($0, / now [^ ]+/)) {
+                ver = substr($0, RSTART + 5, RLENGTH - 5)
+                print pkg "=" ver
+              }
+            }
+          ' 00_apt_packages_installed.txt | sort -u > /tmp/all-packages.txt
+          xargs -r -a /tmp/all-packages.txt -n 50 apt-get install -y --no-install-recommends
 
       - name: Configure (top-level CMake)
         run: cmake -B build
