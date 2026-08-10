@@ -26,8 +26,10 @@ jobs:
       # Versions pinned to what is currently on mimir.
       # README dependency mapping to apt packages:
       # - cppzmq -> libzmq3-dev
-      # - fftw -> libfftw3-double3 + libfftw3-single3 (as present in 00_apt_packages_installed.txt)
+      # - fftw -> libfftw3-dev for headers, plus runtime libs from 00_apt_packages_installed.txt
       # - tomlplusplus is not present in 00_apt_packages_installed.txt and is not installed here.
+      # libfftw3-dev is not present in 00_apt_packages_installed.txt, so it cannot be pinned from that snapshot.
+      # Turns out it has been MANUALLY built and installed at version 3.3.10, so use apt to simulate that
       - name: Install build dependencies
         run: |
           export DEBIAN_FRONTEND=noninteractive
@@ -39,6 +41,7 @@ jobs:
             libboost-all-dev=1.71.0.0ubuntu2 \
             libzmq3-dev=4.3.2-2ubuntu1 \
             libfmt-dev=6.1.2+ds-2 \
+            libfftw3-dev=3.3.10 \
             libfftw3-double3=3.3.8-2ubuntu1 \
             libfftw3-single3=3.3.8-2ubuntu1 \
             libcfitsio-dev=3.470-3 \
