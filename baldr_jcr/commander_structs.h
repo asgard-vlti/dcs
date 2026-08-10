@@ -67,7 +67,7 @@ template <> struct adl_serializer<Result> {
     static void from_json(const json& j, Result& p) {
         p = Result();
         j.at("status_code").get_to(p.status_code);
-        j.at("data").get_to(p.data);
+        p.data = j.at("data");
     }
    };
 template <> struct adl_serializer<MeasBase64> {
