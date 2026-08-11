@@ -781,7 +781,7 @@ if __name__ == "__main__":
     parser.add_argument("--clipcom", help="value to clip commands to", type=float)
 
     parser.add_argument(
-        "--poke", help="value to poke each mode, try 0.01", type=float, default=0.1
+        "--poke", help="value to poke each mode, try 0.01", type=float, default=POKE
     )
 
     parser.add_argument("--nmodes", help="maximum mode index to control", type=int)
