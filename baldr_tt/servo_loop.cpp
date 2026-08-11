@@ -10,7 +10,6 @@
 
 long unsigned int cnt=0, cnt_since_init=0;
 long unsigned int nerrors=0;
-int sz=0;
 int *im_boxcar[N_BOXCAR];
 // Boxcar average of the tip/tilt response to
 // the focus modulation. 
@@ -53,7 +52,6 @@ void initialise_servo(){
     if (subarray.md->naxis != 2) {
         throw std::runtime_error("Subarray is not 2D");
     }
-    sz = subarray.md->size[0];
     if (subarray.md->size[1] != sz) {
         throw std::runtime_error("Subarray is not square");
     }

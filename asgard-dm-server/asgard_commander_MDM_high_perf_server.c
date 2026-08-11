@@ -56,13 +56,13 @@ int nch_prev    = 0;     // keep track of the # of channels before a change
 char dashline[80] =
   "-----------------------------------------------------------------------------";
 
-int ndm = 2; // the number of DMs to be connected
+int ndm = 4; // the number of DMs to be connected
 DM *hdms[4];  // the handles for the different deformable mirrors
 BMCRC rv;    // result of every interaction with the driver (check status)
 uint32_t *map_lut[4];  // the DM actuator mappings
 
 int simmode = 0;  // flag to set to "1" to not attempt to connect to the driver
-int timelog = 1;  // flag to set to "1" to log DM response timing
+int timelog = 0;  // flag to set to "1" to log DM response timing
 char drv_status[16] = "idle"; // to keep track of server status
 
 // order to be reshuffled when reassembling the instrument
