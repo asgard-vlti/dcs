@@ -31,6 +31,7 @@ _SETTLE_SEC = 1.0
 _N_ITER = 1
 _OUTPUT_ROOT = DEFAULT_OUTPUT_ROOT
 _RUN_TIMESTAMP = None
+args=None
 
 
 def get_zmq_socket(beam, host=DEFAULT_HOST):
@@ -157,15 +158,14 @@ def parse_args():
     parser.add_argument("--overwrite", type=bool, default=True, help="Overwrite existing default file")
     return parser.parse_args()
 
+def main():
+    global args, _AMP, _N_MODES, _N_MODES, _SETTLE_SEC, _N_ITER, _RUN_TIMESTAMP
 
-if __name__ == "__main__":
     args = parse_args()
-
     _AMP = args.amp
     _N_MODES = args.n_modes
     _SETTLE_SEC = args.settle_sec
     _N_ITER = args.n_iter
-    
     _RUN_TIMESTAMP = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
 
     if args.beam == -1:
@@ -183,3 +183,6 @@ if __name__ == "__main__":
                     print(f"Beam {beam_id} failed: {exc}")
     else:
         run_pokes_and_save(args.beam)
+        
+if __name__ == "__main__":
+	main()

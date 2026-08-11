@@ -38,6 +38,7 @@ find-fringes = "pyeng_heimdallr.find_fringes:main"
 move-hpol = 'pyeng_heimdallr.move_hpol:main'
 h-pupil-track = 'pyeng_heimdallr.tip_tilt_sensor.pupil_drift_monitor:main'
 dcs-run-scripts = "run_scripts.install:main"
+baldrtt-recon = "baldr_tt.save_recon:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["dcs", "minimal_baldr_python_rtc"]

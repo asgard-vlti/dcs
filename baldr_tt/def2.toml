@@ -15,7 +15,7 @@ py = 15
 
 #Width with respect to the central pixel. Must be odd!
 width = 23
-focus_amp = 0.03
+focus_amp = 0.02
 
 #Tip/tilt Gaussian weight 1/e^2 half width
 gauss_hwidth = 3.5
@@ -25,7 +25,7 @@ ttg = 0.5
 ttl = 0.005
 # High-order gain - normalised to unity 
 hog = 0.5
-hol = 0.02
+hol = 0.05
 # Flux threshold
 flux_threshold = 1000
 #Badpix
