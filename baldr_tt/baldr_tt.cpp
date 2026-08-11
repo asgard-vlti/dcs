@@ -255,11 +255,7 @@ void set_coupling(double ttx_coupling, double tty_coupling){
     settings.mutex.unlock();
 }
 
-void set_ndmr(int tsig_len, int nbreads){
-    control_u.tsig_len = tsig_len;
-    control_u.nbreads = nbreads;
-    info("tsig length and nbreads updated to %d %d", tsig_len, nbreads);
-}
+
 
 void auto_coupling(double scale){
     // This function will set the tip/tilt coupling terms based on the observed tilt. 
@@ -405,7 +401,6 @@ COMMANDER_REGISTER(m)
     m.def("set_coupling", set_coupling, "Set the tip/tilt coupling terms", "ttx_coupling"_arg=0.0, "tty_coupling"_arg=0.0);
     m.def("auto_coupling", auto_coupling, "Set the tip/tilt coupling terms based on observed tilt", "scale"_arg=1.0);
     m.def("badpix", set_bad_pixels, "Set the bad pixels", "x"_arg=std::vector<int>(), "y"_arg=std::vector<int>());
-    m.def("ndmr", set_ndmr, "Set the tsig length and nbreads", "tsig"_arg=1, "nbreads"_arg=1);
  }
 
 int main(int argc, char* argv[]) {
@@ -493,6 +488,9 @@ int main(int argc, char* argv[]) {
     control_u.tsig_len = 1;
     control_u.nbreads = 1;
 
+    // Start the camera client to keep dit, nbreads and tsig_len in sync.
+    start_camera_client();
+
     // Start the main servo thread. 
     std::thread servo_thread(servo_loop);
     
@@ -518,6 +516,8 @@ int main(int argc, char* argv[]) {
     // join the servo thread
     settings.s.servo_mode = SERVO_STOP;
     servo_thread.join();
+
+    stop_camera_client();
 
     unacquire_single_instance_lock();
     return 0;

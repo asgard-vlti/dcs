@@ -53,6 +53,7 @@ typedef std::complex<double> dcomp;
 // Variables for actuation.
 struct ControlU{
     double tx, ty;
+    double dit;    // detector integration time in seconds
     int ho_sign;
     int ho_ix;
     int nbreads;
@@ -158,5 +159,9 @@ extern TTMet_save ttmet_save;
 // Main thread function for fringe tracking.
 void servo_loop();
 
+extern std::mutex control_u_mutex;
+
+void start_camera_client();
+void stop_camera_client();
 
 
