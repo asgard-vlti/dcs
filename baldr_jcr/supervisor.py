@@ -28,10 +28,10 @@ MEAS_SCALE = 1 / 1000
 CNT_MIN: int = 3  # minimum number of measurements to wait after applying poke
 
 BEAM_TO_PORT = {
-    1: 17474,  # 6671
-    2: 6672,
-    3: 6673,
-    4: 6671,  # <- should this be 6674?
+    1: 6662,
+    2: 6663,
+    3: 6664,
+    4: 6665,  
 }
 
 DEFAULT_BEAM = 1
