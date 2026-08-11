@@ -310,6 +310,8 @@ class HeimdallrAA:
                 cmd = f"moverel {axes[beam-1][3]} {uv_cmd[3]}"
                 self._send_and_get_response(cmd)
 
+            self._send_internal_complete()
+
     # helper methods for pupil alignment fitting
     @staticmethod
     def fit_func(x, m, a, b, c):
@@ -615,6 +617,18 @@ class HeimdallrAA:
 
         self.send_and_recv_ack(msg)
 
+    def _send_internal_complete(self):
+        """
+        Signal that the script is complete in internal mode
+        """
+        msg = {
+            "origin": "s_h-autoalign",
+            "data": [
+                {"hdlr_complete": 1},
+            ],
+        }
+        self.send_and_recv_ack(msg)
+
     def send_and_recv_ack(self, msg):
         # recieve ack
         print(f"sending {msg}")
@@ -688,6 +702,7 @@ def main():
         "--plot",
         type=bool,
         default=False,
+        action="store_true",
         help="if results should be plotted to the screen when done (only valid for pa)",
     )
 

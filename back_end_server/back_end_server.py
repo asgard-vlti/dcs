@@ -182,6 +182,8 @@ class BackEndServer:
             return self.abort()
         elif command_name == "expstatus":
             return self.expstatus(command)
+        elif command_name == "make_dark":
+            return self.make_dark(command)
         elif command_name.startswith("bld_"):
             # Fire-and-forget RTS
             return self.handle_bld_rts(command)
@@ -229,6 +231,7 @@ class BackEndServer:
                 # "bld_close_lo": 'close_baldr_LO ""',
                 # "bld_close_ho": 'close_baldr_HO ""',
                 # when using minimal
+                # NOTE: this is currently no-op in this mode
                 "bld_open_lo": "servo off",
                 "bld_open_ho": "servo off",
                 "bld_close_lo": "servo off",
@@ -517,21 +520,37 @@ class BackEndServer:
         command_name = command.get("name", "").lower()
         # parameters = command.get("parameters", [])
         if command_name == "s_h-autoalign":
+            # Command requires alignment method
+            if _param_value(command.get("parameters", []), "align") is None:
+                return self.create_response("ERROR: align parameter is required")
+
+            cmd = [
+                "/home/asg/.conda/envs/asgard/bin/h-autoalign",
+                "-a",
+                _param_value(command.get("parameters", []), "-a"), 
+            ]
+
+            # Only deviate from script defaults if requested
+            if _param_value(command.get("parameters", []), "output") is not None:
+                cmd += ["-o", str(_param_value(command.get("parameters", []), "output"))]
+            if _param_value(command.get("parameters", []), "beam") is not None:
+                cmd += ["-b", str(_param_value(command.get("parameters", []), "beam"))]
+            if _param_value(command.get("parameters", []), "ncubes") is not None:
+                cmd += ["-n", str(_param_value(command.get("parameters", []), "ncubes"))]
+            if _param_value(command.get("parameters", []), "tpause") is not None:
+                cmd += ["-t", str(_param_value(command.get("parameters", []), "tpause"))]
+            if _param_value(command.get("parameters", []), "save_path") is not None:
+                cmd += ["-s", str(_param_value(command.get("parameters", []), "save_path"))]
+
+            logging.info(" ".join(cmd))
             process = subprocess.Popen(
-                [
-                    "/home/asg/.conda/envs/asgard/bin/h-autoalign",
-                    "-a",
-                    "ia",
-                    "-o",
-                    "mcs",
-                    "-b",
-                    "K1",
-                ],
+                cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
             _log_subprocess_output(process, prefix=command_name)
             logging.info("Started s_h-autoalign script process.")
+    
         elif command_name == "s_h-shutter":
             # command requires beam_time and dark_time parameters
             if _param_value(command.get("parameters", []), "beam-time") is None:
@@ -546,7 +565,7 @@ class BackEndServer:
                 "--dark-time",
                 str(_param_value(command.get("parameters", []), "dark-time")),
             ]
-            logging.info(cmd)
+            logging.info(" ".join(cmd))
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -647,6 +666,36 @@ class BackEndServer:
             # TODO
             print("ADCs not in use. Please zero them maually!")
             return self.create_response("OK")
+        elif command_name == "s_find-fringes":
+            cmd = [
+                "/home/asg/.conda/envs/asgard/bin/find-fringes",
+            ]
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            logging.info("Started s_find-fringes script process.")
+        elif command_name == "s_h-pupil-track":
+            cmd = [
+                "/home/asg/.conda/envs/asgard/bin/h-pupil-track",
+            ]
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            logging.info("Started h-pupil-track script process.")
+        elif command_name == "s_h-tilts":
+            cmd = [
+                "/home/asg/.conda/envs/asgard/bin/h-tilts",
+            ]
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            logging.info("Started h-tilts script process.")
         else:
             logging.error(f"Unknown script command '{command_name}'")
             return self.create_response(
@@ -763,6 +812,16 @@ class BackEndServer:
             return self.create_response(f"ERROR: hdlr response: {res}")
 
         return self.create_response(res)
+
+    def make_dark(self, command):
+        # Implement make_dark logic here
+        self.servers["cam_server"].send_string("make_dark")
+        res = self.servers["cam_server"].recv_string()
+
+        if res.upper().startswith("ERROR"):
+            return self.create_response(f"ERROR: hdlr response: {res}")
+
+        return self.create_response("OK")
 
 
 def main():
