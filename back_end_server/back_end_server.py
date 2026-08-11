@@ -666,6 +666,16 @@ class BackEndServer:
             # TODO
             print("ADCs not in use. Please zero them maually!")
             return self.create_response("OK")
+        elif command_name == "s_find-fringes":
+            cmd = [
+                "/home/asg/.conda/envs/asgard/bin/find-fringes",
+            ]
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            logging.info("Started s_find-fringes script process.")
         else:
             logging.error(f"Unknown script command '{command_name}'")
             return self.create_response(
