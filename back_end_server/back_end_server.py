@@ -676,6 +676,26 @@ class BackEndServer:
                 stderr=subprocess.PIPE,
             )
             logging.info("Started s_find-fringes script process.")
+        elif command_name == "s_h-pupil-track":
+            cmd = [
+                "/home/asg/.conda/envs/asgard/bin/h-pupil-track",
+            ]
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            logging.info("Started h-pupil-track script process.")
+        elif command_name == "s_h-tilts":
+            cmd = [
+                "/home/asg/.conda/envs/asgard/bin/h-tilts",
+            ]
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            logging.info("Started h-tilts script process.")
         else:
             logging.error(f"Unknown script command '{command_name}'")
             return self.create_response(
