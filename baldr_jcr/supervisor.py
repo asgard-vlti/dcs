@@ -788,9 +788,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    action_performed = False
+
     if args.init is not None:
         print("initing!")
         socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
+        action_performed = True
         try:
             reset(socket, init=True)
         except RuntimeError:
@@ -804,6 +807,8 @@ This is correct behaviour if the RTC is not yet running.
     if args.clipcom is not None:
         socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
         set_com_clip(socket, clip_val=args.clipcom)
+        action_performed = True
+
 
     # TODO: Change this pipeline to only create one socket (but only crash if the
     # client needs to be online)
@@ -824,6 +829,7 @@ This is correct behaviour if the RTC is not yet running.
         for i, t in enumerate(np.linspace(0, 2 * np.pi, DIST_LEN + 1)[:-1]):
             disturbance[:, i] = 0.1 * np.sin(xx_flat + t)
         update_com_dist_buffer(disturbance, socket=socket)
+        action_performed = True
 
     if args.disturboff is not None:
         # The default disturbance is a sine wave that sweeps accross the dm
@@ -831,6 +837,7 @@ This is correct behaviour if the RTC is not yet running.
         socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
         disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
         update_com_dist_buffer(disturbance, socket=socket)
+        action_performed = True
 
     if args.polc is not None:
         socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
@@ -845,6 +852,7 @@ This is correct behaviour if the RTC is not yet running.
         else:
             leak = 1.0
         set_polc_gain(socket, ewma_gain=gain, ewma_leak=leak)
+        action_performed = True
     elif args.leaky is not None:
         socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
         if args.recompute is not None:
@@ -858,12 +866,18 @@ This is correct behaviour if the RTC is not yet running.
         else:
             leak = 0.95
         set_leaky_gain_leak(socket, gain=gain, leak=leak)
+        action_performed = True
     else:
         if args.gain is not None:
             raise ValueError("gain must only be set if also passing --polc or --leaky")
         if args.leak is not None:
             raise ValueError("leak must only be set if also passing --leaky")
 
+    if not action_performed:
+        print("""
+WARNING: no actions were taken during the execution of this program.
+This is probably unintentional. Check your command line arguments!
+""")
     # socket = get_zmq_socket(beam=args.beam, host=DEFAULT_HOST)
     # create_meas_offset(socket=socket, push=True)
 
