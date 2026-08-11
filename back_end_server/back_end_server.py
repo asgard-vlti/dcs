@@ -520,21 +520,38 @@ class BackEndServer:
         command_name = command.get("name", "").lower()
         # parameters = command.get("parameters", [])
         if command_name == "s_h-autoalign":
+            # Command requires alignment method
+            if _param_value(command.get("parameters", []), "align") is None:
+                return self.create_response("ERROR: align parameter is required")
+            # Make defaults for other parameters match the h-autoalign script defaults
+            # Plot not available via this command
+
+            cmd = [
+                "/home/asg/.conda/envs/asgard/bin/h-autoalign",
+                "-a",
+                _param_value(command.get("parameters", []), "-a"), 
+            ]
+
+            if _param_value(command.get("parameters", []), "output") is not None:
+                cmd += ["-o", str(_param_value(command.get("parameters", []), "output"))]
+            if _param_value(command.get("parameters", []), "beam") is not None:
+                cmd += ["-b", str(_param_value(command.get("parameters", []), "beam"))]
+            if _param_value(command.get("parameters", []), "ncubes") is not None:
+                cmd += ["-n", str(_param_value(command.get("parameters", []), "ncubes"))]
+            if _param_value(command.get("parameters", []), "tpause") is not None:
+                cmd += ["-t", str(_param_value(command.get("parameters", []), "tpause"))]
+            if _param_value(command.get("parameters", []), "save-path") is not None:
+                cmd += ["-s", str(_param_value(command.get("parameters", []), "save-path"))]
+
+            logging.info(" ".join(cmd))
             process = subprocess.Popen(
-                [
-                    "/home/asg/.conda/envs/asgard/bin/h-autoalign",
-                    "-a",
-                    "ia",
-                    "-o",
-                    "mcs",
-                    "-b",
-                    "K1",
-                ],
+                cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
             _log_subprocess_output(process, prefix=command_name)
             logging.info("Started s_h-autoalign script process.")
+    
         elif command_name == "s_h-shutter":
             # command requires beam_time and dark_time parameters
             if _param_value(command.get("parameters", []), "beam-time") is None:
@@ -549,7 +566,7 @@ class BackEndServer:
                 "--dark-time",
                 str(_param_value(command.get("parameters", []), "dark-time")),
             ]
-            logging.info(cmd)
+            logging.info(" ".join(cmd))
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
