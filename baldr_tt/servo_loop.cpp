@@ -1,5 +1,4 @@
 #include "baldr_tt.h"
-#include <commander/commander.h>
 //#define PRINT_TIMING
 //#define PRINT_TIMING_ALL
 //#define DEBUG

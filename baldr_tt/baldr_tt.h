@@ -21,6 +21,7 @@
 #include <chrono>
 #include <fitsio.h>
 #include <semaphore.h>
+#include <commander/commander.h>
 
 //----------Defines-----------
 //#define SIMULATE

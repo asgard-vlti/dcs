@@ -414,7 +414,7 @@ class BackEndServer:
                 server.send_string("foreground 0")
                 server.recv_string()
                 time.sleep(0.1)
-                server.send_string("offload_time 10")
+                server.send_string("offload_time 20")
                 server.recv_string()
                 time.sleep(0.1)
                 #!!! Let's allow the user to set this.
