@@ -298,6 +298,7 @@ void servo_loop(){
         }
 
         // Done with critical parts. Update the boxcar average
+        // !!! This doesn't work in NDMR mode, as we skip some cnt
         int ix = cnt % N_BOXCAR;
         for (int i=0;i<sz*sz;i++) {
             im_av[i] -= (double)im_boxcar[ix][i];
