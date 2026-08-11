@@ -7,6 +7,7 @@
 #define DARK_OFFSET 1000
 #define DM_MAX_R 5.0
 #define N_TT_BOXCAR 840 // A very composite number
+#define MAX_TILT 0.8
 
 long unsigned int cnt=0, cnt_since_init=0;
 long unsigned int nerrors=0;
@@ -32,6 +33,7 @@ void set_dm_tilt_foc(double tx_in, double ty_in, double focus){
     // This allows us to correct for any rotation between the DM and the image.
     double tx = control_u.R(0,0)*tx_in + control_u.R(0,1)*ty_in;
     double ty = control_u.R(1,0)*tx_in + control_u.R(1,1)*ty_in;
+
     // Set DM tip/tilt and focus terms.
     for (int j=0; j<12; j++)
         for (int i=0; i<12; i++)
@@ -189,9 +191,21 @@ void servo_loop(){
         // If the flux is above the threshold, compute the new DM settings and update the DM image. 
         // Otherwise, skip the DM update and just wait for the next frame.
         if (rt_status.s.flux > settings.s.flux_threshold) {
-            // Compute the new DM settings. For now, just a simple proportional controller on the tip/tilt, and a focus term that is proportional to the flux (this is just to test that the focus term is working).
+            // Compute the new DM settings. For now, just a simple proportional controller on the tip/tilt, 
+            // and a focus term that is proportional to the flux (this is just to test that the focus term is working).
             add_tx = settings.s.ttg * rt_status.s.tx / PIX_PER_TT;
             add_ty = settings.s.ttg * rt_status.s.ty / PIX_PER_TT;
+            // Threshold add_tx and add_ty to MAX_TILT/2
+            if (add_tx > MAX_TILT/2) {
+                add_tx = MAX_TILT/2;
+            } else if (add_tx < -MAX_TILT/2) {
+                add_tx = -MAX_TILT/2;
+            }
+            if (add_ty > MAX_TILT/2) {
+                add_ty = MAX_TILT/2;
+            } else if (add_ty < -MAX_TILT/2) {
+                add_ty = -MAX_TILT/2;
+            }
         } else {
             add_tx = 0.0;
             add_ty = 0.0;
@@ -199,7 +213,19 @@ void servo_loop(){
         rt_status.mutex.unlock();
         control_u.tx = (1-settings.s.ttl) * (control_u.tx - settings.s.ttxo) + add_tx;
         control_u.ty = (1-settings.s.ttl) * (control_u.ty - settings.s.ttyo) + add_ty;
-        
+
+        // Threshold the tip/tilt to be within the maximum allowed range of +/- MAX_TILT.
+        if (control_u.tx > MAX_TILT) {
+            control_u.tx = MAX_TILT;
+        } else if (control_u.tx < -MAX_TILT) {
+            control_u.tx = -MAX_TILT;
+        }
+        if (control_u.ty > MAX_TILT) {
+            control_u.ty = MAX_TILT;
+        } else if (control_u.ty < -MAX_TILT) {
+            control_u.ty = -MAX_TILT;
+        }
+
         // Based on where we are in the modulation, set the high-order modes to be 
         // either positive or negative - relevant for the next image.
         control_u.ho_ix = (control_u.ho_ix + 1) % HO_CYCLE;
