@@ -523,8 +523,6 @@ class BackEndServer:
             # Command requires alignment method
             if _param_value(command.get("parameters", []), "align") is None:
                 return self.create_response("ERROR: align parameter is required")
-            # Make defaults for other parameters match the h-autoalign script defaults
-            # Plot not available via this command
 
             cmd = [
                 "/home/asg/.conda/envs/asgard/bin/h-autoalign",
@@ -532,6 +530,7 @@ class BackEndServer:
                 _param_value(command.get("parameters", []), "-a"), 
             ]
 
+            # Only deviate from script defaults if requested
             if _param_value(command.get("parameters", []), "output") is not None:
                 cmd += ["-o", str(_param_value(command.get("parameters", []), "output"))]
             if _param_value(command.get("parameters", []), "beam") is not None:
@@ -540,8 +539,8 @@ class BackEndServer:
                 cmd += ["-n", str(_param_value(command.get("parameters", []), "ncubes"))]
             if _param_value(command.get("parameters", []), "tpause") is not None:
                 cmd += ["-t", str(_param_value(command.get("parameters", []), "tpause"))]
-            if _param_value(command.get("parameters", []), "save-path") is not None:
-                cmd += ["-s", str(_param_value(command.get("parameters", []), "save-path"))]
+            if _param_value(command.get("parameters", []), "save_path") is not None:
+                cmd += ["-s", str(_param_value(command.get("parameters", []), "save_path"))]
 
             logging.info(" ".join(cmd))
             process = subprocess.Popen(
