@@ -182,6 +182,8 @@ class BackEndServer:
             return self.abort()
         elif command_name == "expstatus":
             return self.expstatus(command)
+        elif command_name == "make_dark":
+            return self.make_dark(command)
         elif command_name.startswith("bld_"):
             # Fire-and-forget RTS
             return self.handle_bld_rts(command)
@@ -229,6 +231,7 @@ class BackEndServer:
                 # "bld_close_lo": 'close_baldr_LO ""',
                 # "bld_close_ho": 'close_baldr_HO ""',
                 # when using minimal
+                # NOTE: this is currently no-op in this mode
                 "bld_open_lo": "servo off",
                 "bld_open_ho": "servo off",
                 "bld_close_lo": "servo off",
@@ -763,6 +766,16 @@ class BackEndServer:
             return self.create_response(f"ERROR: hdlr response: {res}")
 
         return self.create_response(res)
+
+    def make_dark(self, command):
+        # Implement make_dark logic here
+        self.servers["cam_server"].send_string("make_dark")
+        res = self.servers["cam_server"].recv_string()
+
+        if res.upper().startswith("ERROR"):
+            return self.create_response(f"ERROR: hdlr response: {res}")
+
+        return self.create_response("OK")
 
 
 def main():
