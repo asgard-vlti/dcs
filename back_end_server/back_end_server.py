@@ -667,8 +667,16 @@ class BackEndServer:
             print("ADCs not in use. Please zero them maually!")
             return self.create_response("OK")
         elif command_name == "s_find-fringes":
+            for req_param in ["band", "srange", "step"]:
+                if _param_value(command.get("parameters", []), req_param) is None:
+                    return self.create_response(
+                        f"ERROR: {req_param} parameter is required"
+                    )
             cmd = [
                 "/home/asg/.conda/envs/asgard/bin/find-fringes",
+                str(_param_value(command.get("parameters", []), "band")),
+                str(_param_value(command.get("parameters", []), "srange")),
+                str(_param_value(command.get("parameters", []), "step")),
             ]
             process = subprocess.Popen(
                 cmd,
