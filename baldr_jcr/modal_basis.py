@@ -88,8 +88,6 @@ class Fourier(ModalBasis):
     def sample(self, i: int, x: float, y: float) -> float:
         n = math.floor(i / 2) + 2
         p, q = self.spiral_coords(n)
-        if x == -1 and y == -1:
-            print(i, n, p, q)
         freq_x: float = 1.0 * np.pi * p / 2
         freq_y: float = 1.0 * np.pi * q / 2
         remainder = i % 2
