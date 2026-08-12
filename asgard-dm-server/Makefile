@@ -1,7 +1,7 @@
 CC=g++
 
 CFLAGS  = -std=c++17 -W -Wall -Wextra
-LDFLAGS = -lcommander -lpthread -lzmq -lImageStreamIO -lboost_program_options -lfmt
+LDFLAGS = -lcommander -lpthread -lzmq -lImageStreamIO -lboost_program_options -lfmt -lcfitsio
 EXEC    = asgard_DM_server
 # OBJECTS = asgard_commander_MDM_server.o
 OBJECTS = asgard_commander_MDM_high_perf_server.o

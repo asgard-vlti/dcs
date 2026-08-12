@@ -35,6 +35,7 @@
 
 #include <commander/commander.h>
 #include <ImageStreamIO.h>
+#include <fitsio.h>
 
 #include <BMCApi.h>  // the new API for the MultiDM!
 
@@ -71,7 +72,26 @@ const char snumbers[4][BMC_SERIAL_NUMBER_LEN+1] = \
 
 pthread_t tid_refresh;
 pthread_t tid_loops[4];      // thread IDs for DM control loop
+pthread_t tid_save_disk;     // thread ID for the periodic save flush
 unsigned int targs[4] = {1, 2, 3, 4}; // thread integer arguments
+
+#define SAVE_BUFFER_LEN_DEFAULT 10000
+#define SAVE_RECORD_ACTUATORS 140
+#define SAVE_RECORD_DMS 4
+
+typedef struct {
+  time_t sec;
+  long nsec;
+  uint16_t cmds[SAVE_RECORD_DMS][SAVE_RECORD_ACTUATORS];
+} dm_save_record_t;
+
+static int save_mode_flag = 0;
+static int save_buffer_len = SAVE_BUFFER_LEN_DEFAULT;
+static int save_buffer_capacity = SAVE_BUFFER_LEN_DEFAULT * 2;
+static int save_buffer_count = 0;
+static dm_save_record_t *save_buffer = NULL;
+static pthread_mutex_t save_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int save_thread_active = 0;
 
 /* =========================================================================
  *                       function prototypes
@@ -81,6 +101,11 @@ void* dm_control_loop(void *_dmid);
 void* dms_refresh(void *);
 double* map2D_2_cmd(double *map2D);
 void MakeOpen(int dmid, DM* hdm);
+static void init_save_buffer();
+static int save_fits_chunk(const dm_save_record_t *records, int nrecords);
+static void flush_save_buffer();
+static void* save_buffer_to_disk(void *arg);
+void save_mode(int mode);
 
 /* =========================================================================
  *                           DM setup function
@@ -215,6 +240,198 @@ void* dm_control_loop(void *_dmid) {
   return NULL;
 }
 
+static void init_save_buffer() {
+  if (save_buffer != NULL)
+    return;
+
+  save_buffer = (dm_save_record_t *) calloc((size_t) save_buffer_capacity,
+                                           sizeof(dm_save_record_t));
+  if (save_buffer == NULL) {
+    error("Unable to allocate DM save buffer.");
+    save_buffer_capacity = 0;
+  }
+}
+
+static int save_fits_chunk(const dm_save_record_t *records, int nrecords) {
+  if (nrecords <= 0 || records == NULL)
+    return 0;
+
+  struct stat st;
+  struct tm ut;
+  char dirname[128];
+  char filename[256];
+  char *literal_filename = NULL;
+  fitsfile *fptr = NULL;
+  int status = 0;
+  uint16_t *flat = NULL;
+  long naxes[2] = {nrecords, ndm * nact};
+  int ii, jj, kk;
+
+  if (mkdir("/data", 0777) != 0 && errno != EEXIST)
+    warn("Unable to create /data directory for DM archive.");
+
+  ut = *gmtime(&records[0].sec);
+  snprintf(dirname, sizeof(dirname), "/data/%02d%02d%02d",
+           (ut.tm_year + 1900) % 100, ut.tm_mon + 1, ut.tm_mday);
+  if (mkdir(dirname, 0777) != 0 && errno != EEXIST)
+    warn("Unable to create DM archive directory %s.", dirname);
+
+  snprintf(filename, sizeof(filename), "%s/dms_T%02d:%02d:%02d.fits",
+           dirname, ut.tm_hour, ut.tm_min, ut.tm_sec);
+  literal_filename = filename;
+  flat = (uint16_t *) calloc((size_t) nrecords * ndm * nact, sizeof(uint16_t));
+  if (flat == NULL) {
+    error("Unable to allocate FITS payload for DM archive.");
+    return -1;
+  }
+
+  for (ii = 0; ii < nrecords; ii++) {
+    for (jj = 0; jj < ndm; jj++) {
+      for (kk = 0; kk < nact; kk++) {
+        flat[ii * (ndm * nact) + jj * nact + kk] = records[ii].cmds[jj][kk];
+      }
+    }
+  }
+
+  fits_create_file(&fptr, literal_filename, &status);
+  if (status) {
+    fits_report_error(stderr, status);
+    free(flat);
+    return -1;
+  }
+
+  fits_create_img(fptr, USHORT_IMG, 2, naxes, &status);
+  if (status) {
+    fits_report_error(stderr, status);
+    fits_close_file(fptr, &status);
+    free(flat);
+    return -1;
+  }
+
+  fits_write_img(fptr, TUSHORT, 1, (long) (nrecords * ndm * nact), flat, &status);
+  if (status) {
+    fits_report_error(stderr, status);
+    fits_close_file(fptr, &status);
+    free(flat);
+    return -1;
+  }
+
+  fits_update_key(fptr, TLONG, "TSEC", (void *) &records[0].sec,
+                  "Unix timestamp seconds", &status);
+  fits_update_key(fptr, TLONG, "TNUSEC", (void *) &records[0].nsec,
+                  "Unix timestamp nanoseconds", &status);
+  fits_update_key(fptr, TLONG, "NRECORDS", (void *) &nrecords,
+                  "Number of archived records", &status);
+  fits_close_file(fptr, &status);
+  free(flat);
+
+  (void) st;
+  return 0;
+}
+
+static void flush_save_buffer() {
+  dm_save_record_t *chunk = NULL;
+  int chunk_size = 0;
+  int remaining = 0;
+
+  if (save_buffer == NULL || save_buffer_count <= 0)
+    return;
+
+  chunk_size = save_buffer_len / 2;
+  if (chunk_size <= 0)
+    chunk_size = 1;
+  if (chunk_size > save_buffer_count)
+    chunk_size = save_buffer_count;
+
+  chunk = (dm_save_record_t *) malloc((size_t) chunk_size * sizeof(dm_save_record_t));
+  if (chunk == NULL) {
+    error("Unable to allocate DM save chunk.");
+    return;
+  }
+
+  memcpy(chunk, save_buffer, (size_t) chunk_size * sizeof(dm_save_record_t));
+  remaining = save_buffer_count - chunk_size;
+  if (remaining > 0)
+    memmove(save_buffer, save_buffer + chunk_size,
+            (size_t) remaining * sizeof(dm_save_record_t));
+  save_buffer_count = remaining;
+  save_fits_chunk(chunk, chunk_size);
+  free(chunk);
+}
+
+static void* save_buffer_to_disk(void *arg) {
+  (void) arg;
+
+  while (save_mode_flag == 1) {
+    usleep(500000);
+    pthread_mutex_lock(&save_mutex);
+    if (save_buffer_count >= save_buffer_len / 2) {
+      int chunk_size = save_buffer_len / 2;
+      dm_save_record_t *chunk = NULL;
+      int remaining = 0;
+
+      if (chunk_size > save_buffer_count)
+        chunk_size = save_buffer_count;
+      chunk = (dm_save_record_t *) malloc((size_t) chunk_size * sizeof(dm_save_record_t));
+      if (chunk != NULL) {
+        memcpy(chunk, save_buffer, (size_t) chunk_size * sizeof(dm_save_record_t));
+        remaining = save_buffer_count - chunk_size;
+        if (remaining > 0)
+          memmove(save_buffer, save_buffer + chunk_size,
+                  (size_t) remaining * sizeof(dm_save_record_t));
+        save_buffer_count = remaining;
+        pthread_mutex_unlock(&save_mutex);
+        save_fits_chunk(chunk, chunk_size);
+        free(chunk);
+        continue;
+      }
+    }
+    pthread_mutex_unlock(&save_mutex);
+  }
+
+  pthread_mutex_lock(&save_mutex);
+  if (save_buffer_count > 0) {
+    int chunk_size = save_buffer_count;
+    dm_save_record_t *chunk = NULL;
+    chunk = (dm_save_record_t *) malloc((size_t) chunk_size * sizeof(dm_save_record_t));
+    if (chunk != NULL) {
+      memcpy(chunk, save_buffer, (size_t) chunk_size * sizeof(dm_save_record_t));
+      save_buffer_count = 0;
+      pthread_mutex_unlock(&save_mutex);
+      save_fits_chunk(chunk, chunk_size);
+      free(chunk);
+      return NULL;
+    }
+  }
+  pthread_mutex_unlock(&save_mutex);
+  return NULL;
+}
+
+void save_mode(int mode) {
+  if (mode != 0 && mode != 1) {
+    warn("save_mode expects 0 or 1.");
+    return;
+  }
+
+  save_mode_flag = mode;
+  if (mode == 1) {
+    init_save_buffer();
+    if (!save_thread_active) {
+      save_thread_active = 1;
+      pthread_create(&tid_save_disk, NULL, save_buffer_to_disk, NULL);
+    }
+    info("DM command archiving enabled.");
+  } else {
+    if (save_thread_active) {
+      pthread_join(tid_save_disk, NULL);
+      save_thread_active = 0;
+      tid_save_disk = 0;
+    }
+    flush_save_buffer();
+    info("DM command archiving disabled.");
+  }
+}
+
 /* =========================================================================
  *                       DMs refresh cycle thread
  * ========================================================================= */
@@ -239,6 +456,38 @@ void* dms_refresh(void *) {
       free(cmd);
     }
     clock_gettime(CLOCK_REALTIME, &now);   // get time after issuing
+    if (save_mode_flag == 1) {
+      dm_save_record_t record;
+      int ii;
+      memset(&record, 0, sizeof(record));
+      record.sec = now.tv_sec;
+      record.nsec = now.tv_nsec;
+      for (kk = 0; kk < ndm; kk++) {
+        double *cmd_snapshot = map2D_2_cmd(shmarray[kk][nch].array.D);
+        for (ii = 0; ii < nact; ii++) {
+          double v = cmd_snapshot[ii];
+          if (v < 0.0)
+            v = 0.0;
+          if (v > 1.0)
+            v = 1.0;
+          record.cmds[kk][ii] = (uint16_t) lrint(v * 65535.0);
+        }
+        free(cmd_snapshot);
+      }
+      pthread_mutex_lock(&save_mutex);
+      if (save_buffer == NULL)
+        init_save_buffer();
+      if (save_buffer != NULL && save_buffer_count < save_buffer_capacity) {
+        save_buffer[save_buffer_count++] = record;
+      } else if (save_buffer != NULL) {
+        save_buffer_capacity *= 2;
+        save_buffer = (dm_save_record_t *) realloc(save_buffer,
+                                                  (size_t) save_buffer_capacity * sizeof(dm_save_record_t));
+        if (save_buffer != NULL)
+          save_buffer[save_buffer_count++] = record;
+      }
+      pthread_mutex_unlock(&save_mutex);
+    }
     if (timelog == 1)
       fprintf(fd, "%f\n", 1.0*now.tv_sec + 1e-9*now.tv_nsec);
   }
@@ -436,6 +685,8 @@ COMMANDER_REGISTER(m) {
   using namespace co::literals;
   m.def("start", start, "Starts monitoring shared memory data structures.");
   m.def("stop", stop, "Stops monitoring shared memory data structures.");
+  m.def("save", save_mode, "Turns DM command archiving on or off.",
+        co::arg("mode", "Set to 1 to archive commands and timestamps, 0 to disable."));
   m.def("status", status, "Returns status of the DM server.");
   m.def("get_nch", get_nch, "Returns the number of virtual channels per DM.");
   m.def("set_nch", set_nch, "Updates the number of virtual channels per DM.",
