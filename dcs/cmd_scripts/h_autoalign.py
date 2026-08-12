@@ -706,7 +706,6 @@ def main():
     parser.add_argument(
         "-p",
         "--plot",
-        type=bool,
         default=False,
         action="store_true",
         help="if results should be plotted to the screen when done (only valid for pa)",
