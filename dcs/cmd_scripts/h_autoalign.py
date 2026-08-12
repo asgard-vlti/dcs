@@ -523,7 +523,7 @@ class HeimdallrAA:
                 optimal_offset_x2=optimal_offset_x2,
             )
 
-        if send_hdlr_complete::
+        if send_hdlr_complete:
             self._send_internal_complete()
         
         return {
