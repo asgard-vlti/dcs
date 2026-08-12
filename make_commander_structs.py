@@ -48,6 +48,7 @@ with open(output_file, 'w') as f:
             print(f"Struct: {struct_name}")
             # Get the fields of the struct.
             fields = []
+            json_fields = set()
             for field in structs[structs.index(line) + 1:]:
                 if field.startswith("};"):
                     break
@@ -57,10 +58,14 @@ with open(output_file, 'w') as f:
                 # If the field is a comment, skip it.
                 if field.startswith("//") or field.startswith("{"):
                     continue
+                is_json_field_type = "nlohmann::json" in field or field.strip().startswith("json ")
                 field_strings = field.split(",")
                 # Get the name of the field.
                 for this_string in field_strings:
-                    fields += [this_string.split(" ")[-1]]
+                    field_name = this_string.split(" ")[-1].strip()
+                    fields += [field_name]
+                    if is_json_field_type:
+                        json_fields.add(field_name)
                     print(f"Field: {fields[-1]}")
             # Write the struct to the output file.
             f.write(f"template <> struct adl_serializer<{struct_name}> {{\n")
@@ -74,7 +79,10 @@ with open(output_file, 'w') as f:
             f.write(f"        p = {struct_name}();\n")
             # Write the fields to the output file.
             for field in fields:
-                f.write(f"        j.at(\"{field}\").get_to(p.{field});\n")
+                if field in json_fields:
+                    f.write(f"        p.{field} = j.at(\"{field}\");\n")
+                else:
+                    f.write(f"        j.at(\"{field}\").get_to(p.{field});\n")
             f.write("    }\n")
             f.write("   };\n")
     f.write("}\n")

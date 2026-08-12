@@ -1,0 +1,73 @@
+name: CMake Build Check
+
+on:
+  push:
+    # branches:
+    #   - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  cmake-build:
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up newer CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.23.0'
+
+      # Versions pinned to what is currently on mimir.
+      # README dependency mapping to apt packages:
+      # - cppzmq -> libzmq3-dev
+      # - fftw -> build FFTW 3.3.10 from source to match the target machine's manual install
+      # - tomlplusplus -> install single-header toml.hpp v3.4.0 to /usr/local/include
+      - name: Install build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          export FFTW_VERSION=3.3.10
+          export TOMLPP_VERSION=v3.4.0
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            cmake=3.16.3* \
+            ca-certificates=20240203* \
+            curl=7.68.0* \
+            pkg-config=0.29.1* \
+            nlohmann-json3-dev=3.7.3* \
+            libboost-all-dev=1.71.0.0* \
+            libeigen3-dev=3.3.7* \
+            libzmq3-dev=4.3.2* \
+            libfmt-dev=6.1.2* \
+            libcfitsio-dev=3.470* \
+            libb64-dev=1.2* \
+            gcc=4:9.3.0* \
+            g++=4:9.3.0* \
+            gcc-9=9.4.0* \
+            g++-9=9.4.0* \
+            tar=1.30* \
+            gzip=1.10* \
+            make=4.2.1*
+          curl -fsSL "https://www.fftw.org/fftw-${FFTW_VERSION}.tar.gz" -o /tmp/fftw.tar.gz
+          tar -xzf /tmp/fftw.tar.gz -C /tmp
+          cd "/tmp/fftw-${FFTW_VERSION}"
+          ./configure --prefix=/usr/local CC=gcc-9 --disable-doc --disable-fortran
+          make -j"$(nproc)"
+          make install
+          echo /usr/local/lib > /etc/ld.so.conf.d/fftw-local.conf
+          ldconfig
+          curl -fsSL "https://raw.githubusercontent.com/marzer/tomlplusplus/${TOMLPP_VERSION}/toml.hpp" -o /usr/local/include/toml.hpp
+
+      - name: Configure (top-level CMake)
+        run: |
+          export CC=gcc-9
+          export CXX=g++-9
+          cmake -S . -B build
+
+      - name: Build (top-level CMake)
+        run: cmake --build build
