@@ -9,6 +9,8 @@ import argparse
 import math
 import threading
 
+import dcs.ZMQutils
+
 # ----------------------------------------------------------------------
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -35,6 +37,18 @@ def main():
     args = parse_args()
     print(args)
 
+    mcs_client = dcs.ZMQutils.ZmqReq("tcp://192.168.100.2:7019")
+
+    def send_and_recv_ack(self, msg):
+        # recieve ack
+        print(f"sending {msg}")
+        resp = mcs_client.send_payload(msg, decode_ascii=False)
+        if resp is None or resp.get("ok") == False:
+            print(resp)
+            print("Failed to send offsets to MCS")
+        else:
+            print("msg acked")
+
     wfs = Heimdallr()
     t = threading.Thread(target=wfs.loop)
     t.start()
@@ -55,6 +69,14 @@ def main():
             srange=args.srange,
             step=args.step,
             band=args.band.upper())
+
+    msg = {
+        "origin": "find_fringes",
+        "data": [
+            {"hdlr_complete": 1},
+        ],
+    }
+    send_and_recv_ack(mcs_client, msg)
 
     wfs.stop()
 
