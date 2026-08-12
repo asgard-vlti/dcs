@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -264,15 +265,23 @@ static int save_fits_chunk(const dm_save_record_t *records, int nrecords) {
   fitsfile *fptr = NULL;
   int status = 0;
   uint16_t *flat = NULL;
-  long naxes[2] = {nrecords, ndm * nact};
+  long *ts = NULL;
+  long naxes[2] = {ndm * nact, nrecords};
+  long fpixel = 1;
+  long nrows = (long) nrecords;
+  long ncols = 2;
+  long nrecords_long = (long) nrecords;
+  char *ttype[2] = {"TSEC", "TNUSEC"};
+  char *tform[2] = {"1J", "1J"};
+  char *tunit[2] = {"s", "ns"};
   int ii, jj, kk;
 
   if (mkdir("/data", 0777) != 0 && errno != EEXIST)
     warn("Unable to create /data directory for DM archive.");
 
   ut = *gmtime(&records[0].sec);
-  snprintf(dirname, sizeof(dirname), "/data/%02d%02d%02d",
-           (ut.tm_year + 1900) % 100, ut.tm_mon + 1, ut.tm_mday);
+  snprintf(dirname, sizeof(dirname), "/data/%04d%02d%02d",
+           ut.tm_year + 1900, ut.tm_mon + 1, ut.tm_mday);
   if (mkdir(dirname, 0777) != 0 && errno != EEXIST)
     warn("Unable to create DM archive directory %s.", dirname);
 
@@ -280,12 +289,17 @@ static int save_fits_chunk(const dm_save_record_t *records, int nrecords) {
            dirname, ut.tm_hour, ut.tm_min, ut.tm_sec);
   literal_filename = filename;
   flat = (uint16_t *) calloc((size_t) nrecords * ndm * nact, sizeof(uint16_t));
-  if (flat == NULL) {
+  ts = (long *) calloc((size_t) 2 * (size_t) nrecords, sizeof(long));
+  if (flat == NULL || ts == NULL) {
     error("Unable to allocate FITS payload for DM archive.");
+    free(flat);
+    free(ts);
     return -1;
   }
 
   for (ii = 0; ii < nrecords; ii++) {
+    ts[ii] = (long) records[ii].sec;
+    ts[nrecords + ii] = (long) records[ii].nsec;
     for (jj = 0; jj < ndm; jj++) {
       for (kk = 0; kk < nact; kk++) {
         flat[ii * (ndm * nact) + jj * nact + kk] = records[ii].cmds[jj][kk];
@@ -297,6 +311,7 @@ static int save_fits_chunk(const dm_save_record_t *records, int nrecords) {
   if (status) {
     fits_report_error(stderr, status);
     free(flat);
+    free(ts);
     return -1;
   }
 
@@ -305,25 +320,44 @@ static int save_fits_chunk(const dm_save_record_t *records, int nrecords) {
     fits_report_error(stderr, status);
     fits_close_file(fptr, &status);
     free(flat);
+    free(ts);
     return -1;
   }
 
-  fits_write_img(fptr, TUSHORT, 1, (long) (nrecords * ndm * nact), flat, &status);
+  fits_write_img(fptr, TUSHORT, fpixel, (long) (nrecords * ndm * nact), flat, &status);
   if (status) {
     fits_report_error(stderr, status);
     fits_close_file(fptr, &status);
     free(flat);
+    free(ts);
     return -1;
   }
 
-  fits_update_key(fptr, TLONG, "TSEC", (void *) &records[0].sec,
-                  "Unix timestamp seconds", &status);
-  fits_update_key(fptr, TLONG, "TNUSEC", (void *) &records[0].nsec,
-                  "Unix timestamp nanoseconds", &status);
-  fits_update_key(fptr, TLONG, "NRECORDS", (void *) &nrecords,
+  fits_create_tbl(fptr, BINARY_TBL, nrows, ncols, ttype, tform, tunit,
+                  "DM_RECORD_TIME", &status);
+  if (status) {
+    fits_report_error(stderr, status);
+    fits_close_file(fptr, &status);
+    free(flat);
+    free(ts);
+    return -1;
+  }
+
+  fits_write_col(fptr, TLONG, 1, 1, 1, nrows, ts, &status);
+  fits_write_col(fptr, TLONG, 2, 1, 1, nrows, ts + nrecords, &status);
+  if (status) {
+    fits_report_error(stderr, status);
+    fits_close_file(fptr, &status);
+    free(flat);
+    free(ts);
+    return -1;
+  }
+
+  fits_update_key(fptr, TLONG, "NRECORDS", &nrecords_long,
                   "Number of archived records", &status);
   fits_close_file(fptr, &status);
   free(flat);
+  free(ts);
 
   (void) st;
   return 0;
