@@ -678,6 +678,7 @@ class BackEndServer:
                 str(_param_value(command.get("parameters", []), "srange")),
                 str(_param_value(command.get("parameters", []), "step")),
             ]
+            logging.info(cmd)
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
