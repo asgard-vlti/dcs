@@ -45,7 +45,6 @@ def main():
         resp = mcs_client.send_payload(msg, decode_ascii=False)
         if resp is None or resp.get("ok") == False:
             print(resp)
-            print("Failed to send offsets to MCS")
         else:
             print("msg acked")
 
@@ -70,15 +69,15 @@ def main():
             step=args.step,
             band=args.band.upper())
 
-    msg = {
-        "origin": "find_fringes",
-        "data": [
-            {"hdlr_complete": 1},
-        ],
-    }
-    send_and_recv_ack(mcs_client, msg)
-
     wfs.stop()
+
+    msg = {
+            "origin": "find_fringes",
+            "data": [
+                {"hdlr_complete": 1},
+            ],
+        }
+    send_and_recv_ack(mcs_client, msg)
 
 # ----------------------------------------------------------------------
 # ----------------------------------------------------------------------
