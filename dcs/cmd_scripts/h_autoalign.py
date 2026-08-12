@@ -68,7 +68,7 @@ class HeimdallrAA:
 
         self.output = output
 
-        if self.output == "mcs":
+        if self.output in ["mcs", "internal"]:
             self.mcs_client = dcs.ZMQutils.ZmqReq("tcp://192.168.100.2:7019")
 
     @staticmethod
@@ -523,7 +523,7 @@ class HeimdallrAA:
                 optimal_offset_x2=optimal_offset_x2,
             )
 
-        if send_hdlr_complete::
+        if send_hdlr_complete:
             self._send_internal_complete()
         
         return {
@@ -706,7 +706,6 @@ def main():
     parser.add_argument(
         "-p",
         "--plot",
-        type=bool,
         default=False,
         action="store_true",
         help="if results should be plotted to the screen when done (only valid for pa)",
