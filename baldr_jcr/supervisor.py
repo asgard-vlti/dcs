@@ -172,7 +172,7 @@ class Beam:
 
     @property
     def file_prefix(self) -> str:
-        return path.join(BALDR_ROOT, "B{self.beam_id}_")
+        return path.join(BALDR_ROOT, "") # f"B{self.beam_id}_")
 
     @staticmethod
     def check_name(name: str):
@@ -213,6 +213,7 @@ class Beam:
         for name in ARRAY_NAMES:
             if init:
                 self.writefits(name=name, array=None)
+        for name in ARRAY_NAMES:
             if push_rtc:
                 self.request(name)
 
@@ -352,7 +353,7 @@ class Beam:
         """
 
         ### Build mode_to_com projection
-        mode_to_com = modal_basis.Zernike().modes_on_unit_disk(
+        mode_to_com = MODAL_BASIS.modes_on_unit_disk(
             nsamplex=N_ACTX, nmodes=N_MODES
         )
 
@@ -409,7 +410,7 @@ class Beam:
         code will sometimes refer to N_MODES (a constant) and nmodes (a variable).
         """
         ### Build mode_to_com projection
-        mode_to_com = modal_basis.Zernike().modes_on_unit_disk(
+        mode_to_com = MODAL_BASIS.modes_on_unit_disk(
             nsamplex=N_ACTX, nmodes=N_MODES
         )
 
