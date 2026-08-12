@@ -363,7 +363,6 @@ int main(int argc, char *argv[])
   LOAD_FROM_FILE(com_offset, command offset vector for feedback loop)
   LOAD_FROM_FILE(com_to_meas, interaction matrix)
   ctrl.delay = config["delay"].value_or(1.8);
-  printf("delay: %0.3f\n", ctrl.delay);
 
   // Read in the influence functions from the "modefile" fits file.
   std::string modefile = config["modefile"].value_or("modes.fits");

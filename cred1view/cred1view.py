@@ -191,6 +191,7 @@ class MyMainWidget(QtWidgets.QWidget):
         )
         self.cmB_cbar.activated[str].connect(self.update_cbar)
 
+        self.pB_updt_roi = QtWidgets.QPushButton("Update ROI", self)
         self.apply_layout()
 
     # =========================================================================
@@ -281,6 +282,10 @@ class MyMainWidget(QtWidgets.QWidget):
         self.cmB_cbar.setGeometry(QRect(x0, y0, btw, clh))
         self.cmB_cbar.activated[str].connect(self.update_cbar)
         self.cmB_cbar.setCurrentIndex(0)
+
+        x0, y0 = 2*pad+btw, 300
+        self.pB_updt_roi.setGeometry(QRect(x0, y0, btw, clh))
+        self.pB_updt_roi.clicked.connect(self.update_roi_boxes)
         self.update_cbar()
 
     # =========================================================
@@ -337,6 +342,22 @@ class MyMainWidget(QtWidgets.QWidget):
     def test(self):
         pass
         print("Test success!")
+
+    # =========================================================
+    def update_roi_boxes(self):
+        # re-read the configuration file
+        with open("/home/asg/.config/cred1_split.json") as file:
+            self.split_config = json.load(file)
+
+        # update the position of the boxes on screen
+        for ii, roi in enumerate(self.split_config):
+            x0, y0 = self.split_config[roi]["x0"], self.split_config[roi]["y0"]
+            if roi.startswith("baldr"):
+                img_height = self.imsize[0]
+                full_img_height = 256
+                y0 -= full_img_height - img_height
+            xsz, ysz = self.split_config[roi]["xsz"], self.split_config[roi]["ysz"]
+            self.oboxes[ii].setPos(x0, y0)
 
     # =========================================================
     def update_cbar(self):

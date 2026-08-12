@@ -186,14 +186,15 @@ class MyMainWidget(QWidget):
             self.tt_modes[ii] /= self.tt_modes[ii][amask].std()
 
         self.RESP1 = np.array(  # the DM response
-            [[10.71,  0.00,  0.00,  0.00, -4.51,  0.00,  0.00,  0.00],
-             [ 0.00,  9.36,  0.00,  0.00,  0.00, -1.35,  0.00,  0.00],
-             [ 0.00,  0.00,  9.79,  0.00,  0.00,  0.00, -2.50,  0.00],
-             [ 0.00,  0.00,  0.00,  3.34,  0.00,  0.00,  0.00,  8.05],
-             [-2.68,  0.00,  0.00,  0.00, -8.70,  0.00,  0.00,  0.00],
-             [ 0.00, -0.97,  0.00,  0.00,  0.00, -9.25,  0.00,  0.00],
-             [ 0.00,  0.00, -0.23,  0.00,  0.00,  0.00, -2.03,  0.00],
-             [ 0.00,  0.00,  0.00,  7.07,  0.00,  0.00,  0.00, -7.20]])
+            [[ 10.51,   0.00,   0.00,   0.00,  -4.74,   0.00,   0.00,   0.00],
+             [  0.00,  13.74,   0.00,   0.00,   0.00,  -0.09,   0.00,   0.00],
+             [  0.00,   0.00,  12.02,   0.00,   0.00,   0.00,  -0.60,   0.00],
+             [  0.00,   0.00,   0.00,   9.06,   0.00,   0.00,   0.00,   8.76],
+             [ -2.57,   0.00,   0.00,   0.00, -11.06,   0.00,   0.00,   0.00],
+             [  0.00,  -0.92,   0.00,   0.00,   0.00, -12.72,   0.00,   0.00],
+             [  0.00,   0.00,  -0.82,   0.00,   0.00,   0.00, -13.09,   0.00],
+             [  0.00,   0.00,   0.00,   7.59,   0.00,   0.00,   0.00,  -6.82]]
+        )
 
         print("-----------------------")
         print(np.array2string(self.RESP1, precision=2,
@@ -309,7 +310,7 @@ class MyMainWidget(QWidget):
             print("numerical value required")
             self.in_gain.setText(f"{self.gain}")
             return
-        if 0.1 > gain > 0:
+        if 0.5 > gain > 0:
             self.gain = gain
             log(f"set gain = {self.gain}")
         else:
@@ -420,7 +421,7 @@ class MyMainWidget(QWidget):
         self.hmd.apodize_data(img/self.nav)
         wft = self.hmd.get_pupil_wft(img, pfilter=True)
         return self.hmd.wft_to_ttxy(wft)
-            
+
     # =========================================================================
     def log_data(self):
         for ii in range(self.hmd.nbm):
@@ -452,8 +453,8 @@ class MyMainWidget(QWidget):
             self.sems[ii].post_sems(1)
 
     # =========================================================================
-    def calibrate_dms(self, a0=0.01):
-        self.trigger_reset()
+    def calibrate_dms(self, a0=0.05):
+        # self.trigger_reset()
         ref_ttx, ref_tty = self.get_signal()
 
         nbm = self.hmd.nbm

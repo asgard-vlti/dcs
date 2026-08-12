@@ -3,7 +3,7 @@ CC=g++
 CFLAGS  = -std=c++17 -Wall -Wextra -ggdb -O1 -I../libImageStreamIO -I../commander/include
 LDFLAGS = -L../libImageStreamIO -L../lib -lcommander -lm -lzmq -lImageStreamIO -lb64 -lpthread -lboost_program_options -lfmt -lfftw3 -lcfitsio
 EXEC    = baldr_tt
-OBJECTS = baldr_tt.o servo_loop.o
+OBJECTS = baldr_tt.o servo_loop.o cam_client.o
 
 # PREFIX is environment variable, but if it is not set, then set default value
 ifeq ($(PREFIX),)
@@ -17,7 +17,10 @@ all: $(EXEC)
 baldr_tt: $(OBJECTS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
-%.o: %.cpp baldr_tt.h
+commander_structs.h: baldr_tt.h
+	/usr/bin/env python ../make_commander_structs.py baldr_tt.h commander_structs.h
+
+%.o: %.cpp baldr_tt.h commander_structs.h
 	$(CC) -o $@ -c $< $(CFLAGS)
 
 clean:

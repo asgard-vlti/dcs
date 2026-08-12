@@ -1,4 +1,5 @@
-#include "heimdallr.h"
+// Adapted from ../heimdallr/cam_client.cpp
+#include "baldr_tt.h"
 #include <nlohmann/json.hpp>
 #include <zmq.hpp>
 #include <chrono>
@@ -8,11 +9,14 @@
 #define POLL_PERIOD_MS 500
 #define TIMEOUT_MS 2000
 
+std::mutex control_u_mutex;
+
 namespace {
 
 std::atomic<bool> keep_cam_polling{false};
 std::thread cam_poll_thread;
 std::string status_string = "status";
+
 std::string cam_endpoint() {
     return "tcp://mimir:" + std::to_string(CAM_PORT);
 }
@@ -45,19 +49,18 @@ void update_camera_status(const nlohmann::json& status) {
         return;
     }
 
-    std::lock_guard<std::mutex> lock(beam_mutex);
-    control_u.dit = 1.0 / fps;
+    std::lock_guard<std::mutex> lock(control_u_mutex);
+    control_u.dit     = 1.0 / fps;
     control_u.nbreads = status["nbreads"].get<int>();
-    //tsig_len is now a vector. We want the 5th element.
-    control_u.tsig_len = status["tsig_len"][4].get<int>();
-    //control_u.tsig_len = status["tsig_len"].get<int>();
-    //std::cout << "Camera status updated: fps=" << fps << ", nbreads=" << control_u.nbreads << ", tsig_len=" << control_u.tsig_len << std::endl;   
+    // tsig_len is a vector; select the element for this beam (0-based)
+    control_u.tsig_len = status["tsig_len"][beam - 1].get<int>();
 }
 
 void camera_poll_loop() {
     zmq::context_t context(1);
     zmq::socket_t socket(context, zmq::socket_type::req);
     create_cam_socket(socket);
+
     while (keep_cam_polling.load()) {
         bool need_reconnect = false;
 
@@ -72,7 +75,9 @@ void camera_poll_loop() {
                 auto status = nlohmann::json::parse(payload, nullptr, false);
                 if (!status.is_discarded()) {
                     update_camera_status(status);
-                } else info("Json ERROR!!!");
+                } else {
+                    info("Camera client: JSON parse error");
+                }
             }
         } catch (const zmq::error_t&) {
             need_reconnect = true;
@@ -81,7 +86,7 @@ void camera_poll_loop() {
         }
 
         if (need_reconnect && keep_cam_polling.load()) {
-	        info("Reconnecting");
+            info("Camera client: reconnecting");
             reconnect_cam_socket(socket, context);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(POLL_PERIOD_MS));

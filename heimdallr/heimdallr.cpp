@@ -764,7 +764,7 @@ int main(int argc, char* argv[]) {
     settings.s.servo_mode=SERVO_OFF;
     settings.s.offload_mode=OFFLOAD_OFF;
     settings.s.delay_line_type="off";
-    settings.s.offload_time_ms=10;
+    settings.s.offload_time_ms=20;
     settings.s.fixed_dl=3;
     settings.s.search_offset = {0.0, 0.0, 0.0, 0.0};
     settings.s.target_itime=0.0;

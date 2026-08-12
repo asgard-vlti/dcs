@@ -9,6 +9,7 @@
 #include <variant>
 #include <vector>
 #include <string>
+#include <sstream>
 
 #include <commander/server/interactive.h>
 #include <commander/server/single_command.h>
@@ -17,7 +18,18 @@
 
 namespace po = boost::program_options;
 
-template <> struct fmt::formatter<boost::program_options::options_description> : ostream_formatter {};
+template <> struct fmt::formatter<boost::program_options::options_description> {
+    constexpr auto parse(format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    template <typename FormatContext>
+    auto format(const boost::program_options::options_description& value, FormatContext& ctx) const {
+        std::ostringstream oss;
+        oss << value;
+        return fmt::format_to(ctx.out(), "{}", oss.str());
+    }
+};
 
 namespace commander
 {

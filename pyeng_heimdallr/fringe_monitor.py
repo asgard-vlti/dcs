@@ -284,10 +284,10 @@ class MyMainWidget(QWidget):
         for ii in range(4):
             self.pBs_scan_hpol[ii].setGeometry(
                 QRect(btx, 500+30*ii, 50, clh))
-            self.dspB_hpol_p0[ii].setGeometry(
-                QRect(btx + 50, 500+30*ii, 60, clh))
-            self.dspB_hpol_p1[ii].setGeometry(
-                QRect(btx + 110, 500+30*ii, 60, clh))
+            # self.dspB_hpol_p0[ii].setGeometry(
+            #     QRect(btx + 50, 500+30*ii, 60, clh))
+            # self.dspB_hpol_p1[ii].setGeometry(
+            #     QRect(btx + 110, 500+30*ii, 60, clh))
             self.pB_hpol_jump_pos[ii].setGeometry(
                 QRect(btx + 170, 500+30*ii, 50, clh))
             self.pB_hpol_jump_neg[ii].setGeometry(
@@ -409,30 +409,45 @@ class MyMainWidget(QWidget):
     # =========================================================================
     def scan_hpol(self, ii):
         def scan():
+            # self.hpol_scan_thread = GenericThread(
+            #     self.wfs.hpol_pos_scan,
+            #     beamid=ii+1, pmin=self.dspB_hpol_p0[ii].value(),
+            #     pmax=self.dspB_hpol_p1[ii].value(),
+            #     srange=self.srange_val, step=self.scan_step)
             self.hpol_scan_thread = GenericThread(
-                self.wfs.hpol_pos_scan,
-                beamid=ii+1, pmin=self.dspB_hpol_p0[ii].value(),
-                pmax=self.dspB_hpol_p1[ii].value(),
-                srange=self.srange_val, step=self.scan_step)
+                self.wfs.hpol_pos_scan_1D,
+                beamid=ii+1)
             self.hpol_scan_thread.start()
         return scan
 
     # =========================================================================
     def jump_HPOL_pos(self, ii):
         def jump():
-            pos = self.wfs.get_hpol_pos(ii + 1)
-            new_pos = pos + self.hpol_step
-            log(f"HPOL{ii+1}: jump {pos} --> {new_pos}")
-            self.wfs.move_hpol(new_pos, ii+1)
+            bid = ii + 1
+            gain = 0.11
+            hpol0 = self.wfs.get_hpol_pos(bid)
+            hfo0 = self.wfs.get_dl_pos(bid)
+            hpol1 = hpol0 + self.hpol_step
+            hfo1 = hfo0 + gain * self.hpol_step
+            log(f"HPOL{bid}: jump {hpol0} --> {hpol1}")
+            log(f"HFO{bid}: jump {hfo0} --> {hfo1}")
+            self.wfs.move_hpol(hpol1, bid)
+            self.wfs.move_dl(hfo1, bid)
         return jump
 
     # =========================================================================
     def jump_HPOL_neg(self, ii):
         def jump():
-            pos = self.wfs.get_hpol_pos(ii + 1)
-            new_pos = pos - self.hpol_step
-            log(f"HPOL{ii+1}: jump {pos} --> {new_pos}")
-            self.wfs.move_hpol(new_pos, ii+1)
+            bid = ii + 1
+            gain = 0.11
+            hpol0 = self.wfs.get_hpol_pos(bid)
+            hfo0 = self.wfs.get_dl_pos(bid)
+            hpol1 = hpol0 - self.hpol_step
+            hfo1 = hfo0 - gain * self.hpol_step
+            log(f"HPOL{bid}: jump {hpol0} --> {hpol1}")
+            log(f"HFO{bid}: jump {hfo0} --> {hfo1}")
+            self.wfs.move_hpol(hpol1, bid)
+            self.wfs.move_dl(hfo1, bid)
         return jump
 
     # =========================================================================

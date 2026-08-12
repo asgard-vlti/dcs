@@ -17,7 +17,7 @@ import asgard_alignment.controllino as co
 # ----------------------------------------
 # pupil geometry design
 try:
-	hcoords = np.loadtxt("N1_hole_coordinates.txt")
+    hcoords = np.loadtxt("N1_hole_coordinates.txt")
 except:
     hcoords = np.loadtxt(os.getenv("HOME") + "/Progs/repos/dcs/pyeng_heimdallr/N1_hole_coordinates.txt")
 
@@ -41,7 +41,6 @@ im_offset = 1000.0
 ogain = 3.5  # DM optical gain (in microns / control unit)
 oscale = 1e6 / (4 * np.pi * ogain)  # phase to microns conversion factor (* wl)
 
-
 # ------------------------------------------------
 # a simple unwrapping procedure for RT processing?
 # ------------------------------------------------
@@ -53,6 +52,35 @@ def unwrap(val, prev):
     else:
         return val + 2 * np.pi
 
+def closes(mat, row):
+    '''Identifies a matrix row that cancels the second argument'''
+    for ii, trow in enumerate(mat):
+        if (trow - row).dot(trow - row) == 0:
+            return ii, -1
+        if (trow + row).dot(trow + row) == 0:
+            return ii, 1
+    return 0, 0
+
+def closure_matrix(blm):
+    '''Builds the closure-phase matrix for the provided BLM '''
+    cpm = []
+    nbr = blm.shape[0]
+    for ii, row in enumerate(blm):
+        for jj in range(ii+1, nbr):
+            prod = row.dot(blm[jj])
+            if prod != 0:
+                sign2 = -np.sign(prod)
+                combo = row + sign2 * blm[jj]
+                kk, sign3 = closes(blm, combo)
+                if sign3 != 0:
+                    cp1, cp2 = [0]*nbr, [0]*nbr
+                    cp1[ii], cp2[ii] = 1.0, -1.0
+                    cp1[jj], cp2[jj] = 1.0 * sign2, -1.0 * sign2
+                    cp1[kk], cp2[kk] = 1.0 * sign3, -1.0 * sign3
+                    if (cp1 not in cpm) and (cp2 not in cpm):
+                        cpm.append(cp1)
+    return np.array(cpm).astype(int)
+
 
 def log(message="", logfile=default_log, echo=True):
     """-----------------------------------------------------------------------
@@ -63,7 +91,7 @@ def log(message="", logfile=default_log, echo=True):
     with open(logfile, "a") as mylog:
         mylog.write(myline + "\n")
     if echo:
-        print(myline)
+        print(myline, end="")
 
 
 class Heimdallr:
@@ -73,8 +101,9 @@ class Heimdallr:
         self.chn = 4  # channel number dedicated to Heimdallr
         self.xsz = 32
         self.dd = dist(self.xsz, self.xsz, between_pix=True)
-        self.apod = np.exp(-((self.dd / 10) ** 4))
-
+        self.apod1 = np.exp(-((self.dd / 10) ** 4)) # K1 apodization
+        self.apod2 = np.exp(-((self.dd / 11) ** 4)) # K2 apodization
+        self.bgm = self.apod1  < 1e-3  # background mask
         self.nbl = 6  # number of baselines
         self.ncp = 3  # number of closure-phases
 
@@ -93,23 +122,13 @@ class Heimdallr:
 
         self.hdlr1 = IWFS(array=hcoords)
         self.hdlr2 = IWFS(array=hcoords)
-
-        # hard-coded closure-phase matrix
-        self.CPM = np.array(
-            [
-                [0, 0, 0, 1, -1, -1],
-                [1, -1, 0, 0, 0, -1],
-                [1, 0, -1, -1, 0, 0],
-                [-1, 1, 0, 0, 0, 1],
-            ]
-        )
+        self.CPM = closure_matrix(self.hdlr1.kpi.BLM)
 
         # phase and group delay to be measured relative to beam 3
         # so a custom PINV is requested here
         self.PINV = np.round(
             np.linalg.pinv(np.delete(self.hdlr1.kpi.BLM, 2, axis=1)), 2
         )
-
         # self.PINV = np.round(np.linalg.pinv(self.hdlr1.kpi.BLM), 2)
 
         self.hdlr1.update_img_properties(
@@ -192,11 +211,16 @@ class Heimdallr:
     def calc_wfs_data(self):
         k1d = self.Ks.get_latest_data(self.semid).astype(float) - im_offset
         k2d = self.Kl.get_latest_data(self.semid).astype(float) - im_offset
-        k1d *= self.apod
-        k2d *= self.apod
+        k1d -= np.min(k1d[self.bgm])
+        k2d -= np.min(k2d[self.bgm])  # to prevent against dark drift
+        k1d *= self.apod1
+        k2d *= self.apod2
         # img = recenter(data, verbose=False)
         self.norm1 = k1d.sum()
         self.norm2 = k2d.sum()
+
+        if (self.norm1 < 0) or (self.norm2 < 0): # avoid reset problem
+            return
 
         if self.norm1 != 0:
             self.hdlr1.extract_data(k1d)
@@ -311,17 +335,12 @@ class Heimdallr:
     # =========================================================================
     def get_hpol_pos(self, beamid=1):
         """Get the HPOL stepper motor position for the requested beam ID #"""
-        # print(self.hpol_IDs[beamid-1])
-        # return self.cc.where(self.hpol_IDs[beamid-1])
-
         self.socket.send_string(f"read HPOL{beamid}")
-
         return int(self.socket.recv_string().strip())
 
     # =========================================================================
     def move_hpol(self, pos, beamid=1):
         """Move the HPOL stepper motor to *pos*  the requested beam ID #"""
-        # self.cc.amove(self.hpol_IDs[beamid-1], pos)
         self.socket.send_string(f"moveabs HPOL{beamid} {float(pos)}")
         self.socket.recv_string()
 
@@ -422,14 +441,14 @@ class Heimdallr:
                     time.sleep(0.5)
                     break
 
-        print(f"Done! Best pos is {best_pos:.2f} um for v = {best_vis:.2f}\n")
+        print(f"Done! Best pos is {best_pos:.2f} um for v = {best_vis:.2f}")
         print(f"The scan went from {steps[0]:.2f} um to {steps[-1]:.2f}\n")
         if thorough:
             print("Return to starting HFO position")
             self.move_dl(x0, beamid)
         else:
             self.move_dl(best_pos, beamid)
-        time.sleep(2)
+        time.sleep(0.5)
         return best_pos, best_vis
 
     # =========================================================================
@@ -500,14 +519,57 @@ class Heimdallr:
         time.sleep(2)
 
     # =========================================================================
+    def hpol_pos_scan_1D(self, beamid):
+        """-------------------------------------------------------------------
+        HPOL optimization scan
+
+        The idea is to do a HPOL scan and compensate with corresponding HFO
+        to stay on the fringe
+
+        At the end, bring back HFO and HPOL to their original spot.
+        -------------------------------------------------------------------"""
+        ssize = 25   # step size for HPOL
+        gain = 0.11  # HFO microns per HPOL ADU
+
+        utcnow = datetime.utcnow()
+        tstamp = utcnow.strftime("%Y%m%d_%H:%M:%S")
+        logname = ddir + f"log_{tstamp}_HPOL{beamid}_1D_scan.log"
+
+        log(f"---- HPOL{beamid} 1D SCAN sequence starting ----")
+        x0_hpol = self.get_hpol_pos(beamid)  # initial position
+        x0_hfo = self.get_dl_pos(beamid)
+
+        hpol_pos_all = x0_hpol + ssize * np.linspace(-4, 4, 9)
+        hfo_pos_all = x0_hfo + ssize * gain * np.linspace(-4, 4, 9)
+
+        for ii, hpol_pos in enumerate(hpol_pos_all):
+            self.move_hpol(hpol_pos, beamid)
+            self.move_dl(hfo_pos_all[ii], beamid)
+            log(f"HPOL{beamid} pos = {hpol_pos}", logfile=logname)
+            log(f"HFO{beamid}  pos = {hfo_pos_all[ii]}", logfile=logname)
+            if self.abort is True:
+                log(f"---- HPOL{beamid} 1D SCAN aborted ----")
+                time.sleep(0.5)
+                self.abort = False
+                break
+            time.sleep(0.5)  # this is a TEST!
+
+        print(f"HPOL{beamid} back to initial position {x0_hpol}")
+        print(f"HFO{beamid} back to initial position {x0_hfo}")
+        self.move_hpol(x0_hpol, beamid)
+        self.move_dl(x0_hfo, beamid)
+
+    # =========================================================================
     def hpol_pos_scan(self, beamid, pmin, pmax, srange=100.0, step=5.0):
         """-------------------------------------------------------------------
-        HPOL optimal position procedure
+        HPOL optimal position procedure identification
 
         The idea is as follows: doing a ramp of HPOL commands.
         At each step, scan corresponding HFO and log output.
 
         At the end, bring back HFO and HPOL to their original spot.
+
+        This is the original (long) 2D scan approach.
         -------------------------------------------------------------------"""
         ssize = 25  # step size for HPOL
         pos_all = np.linspace(pmin, pmax, int((pmax - pmin) / ssize + 1))

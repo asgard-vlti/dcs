@@ -1,6 +1,5 @@
 #define TOML_IMPLEMENTATION
 #include "baldr_tt.h"
-#include <commander/commander.h>
 #include <math.h>
 #include <unistd.h>
 #include <pthread.h>
@@ -17,7 +16,8 @@ extern "C" {
 toml::table config;
 
 // Servo parameters. These are the parameters that will be adjusted by the commander
-int beam=1, width=21;
+int beam=1, width=21, sz=0;
+std::string recon_dir = "";
 PIDSettings settings;
 RTStatus rt_status;
 ControlU control_u;
@@ -113,10 +113,44 @@ bool read_modes(std::string filename, Eigen::Matrix<double, N_ACTUATORS, N_MODES
 //----------commander functions from here---------------
 
 bool load_reconstructor(std::string filename){
-    // This is a placeholder function for loading a reconstructor from a fits file. 
-    // The actual implementation will depend on the format of the reconstructor file, 
-    // which is not yet defined. For now, we will just print a message and return true.
-    info("Loading reconstructor from file: %s", filename.c_str());
+    // Load in the reconstructor to a Eigen matrix from a fitx file.
+   info("Loading reconstructor from file: %s/%s", recon_dir.c_str(), filename.c_str());
+
+    // Read the reconstructor from the fits file. The first step is 
+    // to read the dimensions of the reconstructor from the fits file.
+    fitsfile *fptr;   /* pointer to the FITS file, defined in fitsio.h */
+    int status = 0;   /* CFITSIO status value MUST be initialized to zero! */
+    int nfound;
+    long naxes[2] = {1,1};
+    if (fits_open_file(&fptr, (recon_dir + "/" + filename).c_str(), READONLY, &status)) {
+        error("Error opening file: %s/%s", recon_dir.c_str(), filename.c_str());
+        return false;
+    }
+    if (fits_read_keys_lng(fptr, "NAXIS", 1, 2, naxes, &nfound, &status)) {
+        error("Error reading NAXIS from file: %s/%s", recon_dir.c_str(), filename.c_str());
+        return false;
+    }
+    // The N_MODES is the fast axis.
+    if ((naxes[0] != N_MODES) || (naxes[1] != width*width)) {
+        error("Error: reconstructor file has wrong dimensions. Expected %dx%d, got %ldx%ld", N_MODES, width*width, naxes[0], naxes[1]);
+        return false;
+    }
+    const long nread = naxes[0] * naxes[1];
+    double *data = new double[nread];
+    if (fits_read_img(fptr, TDOUBLE, 1, nread, NULL, data, NULL, &status)) {
+        error("Error reading image data from file: %s/%s", recon_dir.c_str(), filename.c_str());
+        delete[] data;
+        return false;
+    }
+    // Fill the reconstructor matrix with the data from the fits file.
+    control_u.recon.resize(N_MODES, width*width);
+    for (long i = 0; i < naxes[1]; i++) {
+        for (long j = 0; j < naxes[0]; j++) {
+            control_u.recon((int)j, (int)i) = data[i*naxes[0] + j];
+        }
+    }
+    delete[] data;
+    fits_close_file(fptr, &status);
     return true;
 }
 
@@ -213,12 +247,32 @@ void set_focus_offset(double offset){
     settings.mutex.unlock();
 }
 
+void set_coupling(double ttx_coupling, double tty_coupling){
+    settings.mutex.lock();
+    settings.s.ttx_coupling = ttx_coupling;
+    settings.s.tty_coupling = tty_coupling;
+    settings.mutex.unlock();
+}
+
+void auto_coupling(double scale){
+    // This function will set the tip/tilt coupling terms based on the observed tilt. 
+    // The idea is that if we see a tilt in the image, we can estimate how much of that 
+    // is due to the focus modulation, and set the coupling terms accordingly.
+    rt_status.mutex.lock();
+    double ttx_coupling = settings.s.ttx_coupling + scale * rt_status.s.ttx_avg / settings.s.focus_amp;
+    double tty_coupling = settings.s.tty_coupling + scale * rt_status.s.tty_avg / settings.s.focus_amp;
+    rt_status.mutex.unlock();
+    set_coupling(ttx_coupling, tty_coupling);
+}
+
 Status get_status() {
     rt_status.mutex.lock();
     Status s = rt_status.s;
     rt_status.mutex.unlock();
     s.tx = std::round(s.tx*1000)/1000.0;
     s.ty = std::round(s.ty*1000)/1000.0;
+    s.ttx_avg = std::round(s.ttx_avg*1000)/1000.0;
+    s.tty_avg = std::round(s.tty_avg*1000)/1000.0;
     s.flux = std::round(s.flux*10)/10.0;
     s.cnt = cnt % 10000; 
     return s;
@@ -303,8 +357,8 @@ ImAvgs poke_mode(int mode_ix, double amplitude){
     im_avgs.width = width;
 
     // Set the control_u DM command to be the poke of the given mode and amplitude.
-    control_a.modes.setZero();
-    control_a.modes(mode_ix) = amplitude;
+    control_a.mode_amplitudes.setZero();
+    control_a.mode_amplitudes(mode_ix) = amplitude;
     info("Poking mode %d with amplitude %f", mode_ix, amplitude);
 
     // Wait 10ms for DM to settle, then set the im_plus_sum 
@@ -341,6 +395,9 @@ COMMANDER_REGISTER(m)
     m.def("ttmet", get_ttmet, "Get the saved tip/tilt metrology", "last_cnt"_arg=0);
     m.def("poke", poke_mode, "Poke the DM with a given mode and amplitude", "mode_ix"_arg=0, "amplitude"_arg=0.1);
     m.def("recon", load_reconstructor, "Load a reconstructor from a fits file", "filename"_arg="recon.fits");
+    m.def("set_coupling", set_coupling, "Set the tip/tilt coupling terms", "ttx_coupling"_arg=0.0, "tty_coupling"_arg=0.0);
+    m.def("auto_coupling", auto_coupling, "Set the tip/tilt coupling terms based on observed tilt", "scale"_arg=1.0);
+    m.def("badpix", set_bad_pixels, "Set the bad pixels", "x"_arg=std::vector<int>(), "y"_arg=std::vector<int>());
  }
 
 int main(int argc, char* argv[]) {
@@ -353,7 +410,32 @@ int main(int argc, char* argv[]) {
         info("Configuration file read: %s", config["name"].value_or("unknown"));
     }
     beam = config["beam"].value_or(1);
+    width = config["width"].value_or(21);
+    
+#ifndef SIMULATE
+    // Initialise the DM
+    ImageStreamIO_openIm(&DM_low, ("dm" + std::to_string(beam) + "disp01").c_str()); 
+    ImageStreamIO_openIm(&DM_high, ("dm" + std::to_string(beam) + "disp02").c_str()); 
+    ImageStreamIO_openIm(&master_DM, ("dm" + std::to_string(beam)).c_str());
 
+    // Initialise the two forward Fourier transform objects
+    ImageStreamIO_openIm(&subarray, ("baldr" + std::to_string(beam)).c_str());
+#else
+    ImageStreamIO_openIm(&subarray, "sbaldr1");
+    info("Simulation mode!");
+#endif
+	sz =  subarray.md->size[0];
+
+    // Set the reconstructor directory baed on beam number, if not given.
+    recon_dir = config["recon_dir"].value_or("/data/custom/fdpr/beam" + std::to_string(beam));
+   
+    // Attempt to load the reconstructor from the recon_dir. Set to 
+    // all zeros if it fails.
+    std::string recon_file = config["recon_file"].value_or("recon.fits");
+    if (!load_reconstructor(recon_file)) {
+        info("Failed to load reconstructor. Setting to all zeros.");
+        control_u.recon.setZero();
+    }
     // Exit immediately if another instance of this server is running.
     char lockfile[256];
     sprintf(lockfile, "/tmp/asg.baldr_tt.%d.lock", beam);
@@ -376,7 +458,8 @@ int main(int argc, char* argv[]) {
             }
         }
     }
-    width = config["width"].value_or(15);
+    settings.s.ttyo=0;
+    settings.s.ttxo=0;
     settings.s.gauss_hwidth = config["gauss_hwidth"].value_or(3.0);
     settings.s.ttg = config["ttg"].value_or(0.01);
     settings.s.ttl = config["ttl"].value_or(0.01);
@@ -388,7 +471,7 @@ int main(int argc, char* argv[]) {
     settings.s.servo_mode = SERVO_OFF;
     // Read in the influence functions from the "modefile" fits file.
     std::string modefile = config["modefile"].value_or("modes.fits");
-    if (!read_modes(modefile, control_a.influence_functions)) {
+    if (!read_modes(modefile, control_a.modes)) {
         error("Error reading modes file. Exiting.");
         return 1;
     }
@@ -399,20 +482,12 @@ int main(int argc, char* argv[]) {
     double sin_angle = std::sin(angle * M_PI / 180.0);
     control_u.R << cos_angle, -sin_angle, sin_angle, cos_angle;
     info("R matrix: %f %f %f %f", control_u.R(0,0), control_u.R(0,1), control_u.R(1,0), control_u.R(1,1));
+    control_u.tsig_len = 1;
+    control_u.nbreads = 1;
 
-#ifndef SIMULATE
-    // Initialise the DM
-    ImageStreamIO_openIm(&DM_low, ("dm" + std::to_string(beam) + "disp01").c_str()); 
-    ImageStreamIO_openIm(&DM_high, ("dm" + std::to_string(beam) + "disp02").c_str()); 
-    ImageStreamIO_openIm(&master_DM, ("dm" + std::to_string(beam)).c_str());
+    // Start the camera client to keep dit, nbreads and tsig_len in sync.
+    start_camera_client();
 
-    // Initialise the two forward Fourier transform objects
-    ImageStreamIO_openIm(&subarray, ("baldr" + std::to_string(beam)).c_str());
-#else
-    ImageStreamIO_openIm(&subarray, "sbaldr1");
-    info("Simulation mode!");
-   
-#endif
     // Start the main servo thread. 
     std::thread servo_thread(servo_loop);
     
@@ -438,6 +513,8 @@ int main(int argc, char* argv[]) {
     // join the servo thread
     settings.s.servo_mode = SERVO_STOP;
     servo_thread.join();
+
+    stop_camera_client();
 
     unacquire_single_instance_lock();
     return 0;

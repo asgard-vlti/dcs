@@ -1,18 +1,24 @@
 #include "baldr_tt.h"
-#include <commander/commander.h>
 //#define PRINT_TIMING
 //#define PRINT_TIMING_ALL
 //#define DEBUG
 //#define DEBUG_FILTER6
 #define DARK_OFFSET 1000
 #define DM_MAX_R 5.0
+#define N_TT_BOXCAR 840 // A very composite number
+#define MAX_TILT 0.8
 
 long unsigned int cnt=0, cnt_since_init=0;
 long unsigned int nerrors=0;
-int sz=0;
 int *im_boxcar[N_BOXCAR];
+// Boxcar average of the tip/tilt response to
+// the focus modulation. 
+double ttx_boxcar[N_TT_BOXCAR], tty_boxcar[N_TT_BOXCAR];
+int tt_boxcar_ix=0;
 double *window, *subim;
-double *im_av, *im_plus, *im_minus, *norm_imsub;
+double *im_av, *im_plus, *im_minus;
+// Norm_imsub will be a width * width vector (width found out later)
+Eigen::Matrix<double, Eigen::Dynamic, 1> norm_imsub;
 float *im_plus_sum, *im_minus_sum;
 std::mutex im_mutex; 
 TTMet_save ttmet_save;   
@@ -26,6 +32,7 @@ void set_dm_tilt_foc(double tx_in, double ty_in, double focus){
     // This allows us to correct for any rotation between the DM and the image.
     double tx = control_u.R(0,0)*tx_in + control_u.R(0,1)*ty_in;
     double ty = control_u.R(1,0)*tx_in + control_u.R(1,1)*ty_in;
+
     // Set DM tip/tilt and focus terms.
     for (int j=0; j<12; j++)
         for (int i=0; i<12; i++)
@@ -46,7 +53,6 @@ void initialise_servo(){
     if (subarray.md->naxis != 2) {
         throw std::runtime_error("Subarray is not 2D");
     }
-    sz = subarray.md->size[0];
     if (subarray.md->size[1] != sz) {
         throw std::runtime_error("Subarray is not square");
     }
@@ -58,7 +64,8 @@ void initialise_servo(){
     im_minus_sum = (float*) malloc(sizeof(float) * width * width);
     window = (double*) malloc(sizeof(double) * width * width);
     subim = (double*) malloc(sizeof(double) * width * width);
-    norm_imsub = (double*) malloc(sizeof(double) * width * width);
+    // Initialise the size of the norm_imsub vector to be width * width.
+    norm_imsub.resize(width * width);
      // Initialise the window to a super-Gaussian with a 1/e^2 width equal to the image size.
     int ssz = (int)width;
     for (int ii=0; ii<ssz; ii++) {
@@ -78,8 +85,16 @@ void initialise_servo(){
         subim[j]=0;
         im_plus_sum[j]=0;
         im_minus_sum[j]=0;
-        norm_imsub[j]=0;
+        norm_imsub(j)=0;
     } 
+
+    // Set the tt boxcar averages to zero.
+    rt_status.s.ttx_avg=0;
+    rt_status.s.tty_avg=0;
+    for (int j=0;j<N_TT_BOXCAR;j++){
+        ttx_boxcar[j]=0;
+        tty_boxcar[j]=0;
+    }
 
     // Allocate memory for the boxcar averages and set to zero.
     for (int i=0;i<N_BOXCAR;i++){
@@ -127,6 +142,7 @@ void servo_loop(){
             nerrors++;
             continue;
         }
+        
         // Check for missed frames
         if (subarray.md->cnt0 > cnt+2){
             info("Missed frames! Image: %llu Servo: %lu", (unsigned long long)subarray.md->cnt0, cnt);
@@ -136,6 +152,13 @@ void servo_loop(){
             nerrors++;
         }
         cnt++;
+
+        // In NDMR mode, the first pixel of the image contains the frame counter. 
+        // Data are not valid unless this is less than:
+        // control_u.nbreads - 1 - control_u.tsig_len
+        if ( (control_u.nbreads > 1) && (subarray.array.SI32[0] > (int)(control_u.nbreads - 1 - control_u.tsig_len)) ) {
+                continue;
+        }
 #ifdef PRINT_TIMING
         timespec then;
         clock_gettime(CLOCK_REALTIME, &then);
@@ -167,9 +190,21 @@ void servo_loop(){
         // If the flux is above the threshold, compute the new DM settings and update the DM image. 
         // Otherwise, skip the DM update and just wait for the next frame.
         if (rt_status.s.flux > settings.s.flux_threshold) {
-            // Compute the new DM settings. For now, just a simple proportional controller on the tip/tilt, and a focus term that is proportional to the flux (this is just to test that the focus term is working).
-            add_tx = settings.s.ttg * rt_status.s.tx;
-            add_ty = settings.s.ttg * rt_status.s.ty;
+            // Compute the new DM settings. For now, just a simple proportional controller on the tip/tilt, 
+            // and a focus term that is proportional to the flux (this is just to test that the focus term is working).
+            add_tx = settings.s.ttg * rt_status.s.tx / PIX_PER_TT;
+            add_ty = settings.s.ttg * rt_status.s.ty / PIX_PER_TT;
+            // Threshold add_tx and add_ty to MAX_TILT/2
+            if (add_tx > MAX_TILT/2) {
+                add_tx = MAX_TILT/2;
+            } else if (add_tx < -MAX_TILT/2) {
+                add_tx = -MAX_TILT/2;
+            }
+            if (add_ty > MAX_TILT/2) {
+                add_ty = MAX_TILT/2;
+            } else if (add_ty < -MAX_TILT/2) {
+                add_ty = -MAX_TILT/2;
+            }
         } else {
             add_tx = 0.0;
             add_ty = 0.0;
@@ -177,7 +212,19 @@ void servo_loop(){
         rt_status.mutex.unlock();
         control_u.tx = (1-settings.s.ttl) * (control_u.tx - settings.s.ttxo) + add_tx;
         control_u.ty = (1-settings.s.ttl) * (control_u.ty - settings.s.ttyo) + add_ty;
-        
+
+        // Threshold the tip/tilt to be within the maximum allowed range of +/- MAX_TILT.
+        if (control_u.tx > MAX_TILT) {
+            control_u.tx = MAX_TILT;
+        } else if (control_u.tx < -MAX_TILT) {
+            control_u.tx = -MAX_TILT;
+        }
+        if (control_u.ty > MAX_TILT) {
+            control_u.ty = MAX_TILT;
+        } else if (control_u.ty < -MAX_TILT) {
+            control_u.ty = -MAX_TILT;
+        }
+
         // Based on where we are in the modulation, set the high-order modes to be 
         // either positive or negative - relevant for the next image.
         control_u.ho_ix = (control_u.ho_ix + 1) % HO_CYCLE;
@@ -185,10 +232,12 @@ void servo_loop(){
         if (control_u.ho_ix == HO_CYCLE - 1) {
             control_u.ho_sign *= -1;
         }
-        
-        // Set the DM if we are in the appropriate mode.
+
+        // Set the DM if we are in the appropriate mode. Add in the coupling terms to the tip/tilt.
         if ((settings.s.servo_mode == SERVO_HO) || (settings.s.servo_mode == SERVO_TT)) 
-            set_dm_tilt_foc(control_u.tx, control_u.ty, settings.s.focus_offset + settings.s.focus_amp * control_u.ho_sign);
+            set_dm_tilt_foc(control_u.tx + settings.s.ttx_coupling * settings.s.focus_amp * control_u.ho_sign / PIX_PER_TT, 
+            				control_u.ty + settings.s.tty_coupling * settings.s.focus_amp * control_u.ho_sign / PIX_PER_TT, 
+            				settings.s.focus_offset + settings.s.focus_amp * control_u.ho_sign);
         else
             set_dm_tilt_foc(settings.s.ttxo, settings.s.ttyo, settings.s.focus_offset);
 
@@ -208,6 +257,9 @@ void servo_loop(){
 
         im_mutex.lock();
         if (control_u.ho_ix > 0) {
+            // Remove the part of the boxcar average that is being replaced.
+            rt_status.s.ttx_avg -= ttx_boxcar[tt_boxcar_ix];
+            rt_status.s.tty_avg -= tty_boxcar[tt_boxcar_ix];
             if (last_ho_sign > 0) {
                 // Clear the plus image at the start of the plus phase.
                 if (control_u.ho_ix==1) for (int j=0;j<width*width;j++) im_plus[j]=0; 
@@ -218,6 +270,9 @@ void servo_loop(){
                 if (control_u.ho_ix == (HO_CYCLE-1)) {
                     for (int j=0;j<width*width;j++) im_plus_sum[j] += im_plus[j];
                 }
+                // Save the tip/tilt boxcar average for the current ho_ix.
+                ttx_boxcar[tt_boxcar_ix] = rt_status.s.tx/N_TT_BOXCAR;
+                tty_boxcar[tt_boxcar_ix] = rt_status.s.ty/N_TT_BOXCAR;
             } else {
                 // Clear the minus image at the start of the minus phase.
                 if (control_u.ho_ix==1) for (int j=0;j<width*width;j++) im_minus[j]=0; 
@@ -228,7 +283,14 @@ void servo_loop(){
                 if (control_u.ho_ix == (HO_CYCLE-1)) {
                     for (int j=0;j<width*width;j++) im_minus_sum[j] += im_minus[j];
                 }
+                // Save the tip/tilt boxcar average for the current ho_ix.
+                ttx_boxcar[tt_boxcar_ix] = -rt_status.s.tx/N_TT_BOXCAR;
+                tty_boxcar[tt_boxcar_ix] = -rt_status.s.ty/N_TT_BOXCAR;
             }
+            // Update the boxcar average of the tip/tilt response to the focus modulation.
+            rt_status.s.ttx_avg += ttx_boxcar[tt_boxcar_ix];
+            rt_status.s.tty_avg += tty_boxcar[tt_boxcar_ix];
+            tt_boxcar_ix = (tt_boxcar_ix + 1) % N_TT_BOXCAR;
         } 
         im_mutex.unlock();
 
@@ -239,15 +301,18 @@ void servo_loop(){
             double sum_both=0;
             for (int j=0;j<width*width;j++) sum_both += im_plus[j] + im_minus[j];
             for (int j=0;j<width*width;j++) {
-                norm_imsub[j] = (im_plus[j] - im_minus[width*width - 1 - j]) / sum_both;
+                norm_imsub(j) = (im_plus[j] - im_minus[width*width - 1 - j]) / sum_both;
             }
             im_mutex.unlock();
-            // Here we could compute the high-order modes based on norm_imsub
-            //!!! needs a reconstrutor.
+            // Here we compute the high-order modes based on norm_imsub, again with
+            // a leaky integrator.
+            if (settings.s.servo_mode == SERVO_HO) {
+                control_a.mode_amplitudes = (1-settings.s.hol) * control_a.mode_amplitudes - settings.s.hog * control_u.recon * norm_imsub;
+            } 
 
             if (settings.s.servo_mode != SERVO_OFF){
-                // Multiply the high-order modes by the influence functions to get the DM shape.
-                control_u.DM = control_a.influence_functions * control_a.modes;
+                // Matrix multiply the high-order modes by the amplitudes to get the DM shape.
+                control_u.DM = control_a.modes * control_a.mode_amplitudes;
                 // Update the DM image with the new high-order shape.
                 for (int i=0; i<N_ACTUATORS; i++) 
                     DM_high.array.D[i] = control_u.DM(i);
@@ -256,6 +321,7 @@ void servo_loop(){
         }
 
         // Done with critical parts. Update the boxcar average
+        // !!! This doesn't work in NDMR mode, as we skip some cnt
         int ix = cnt % N_BOXCAR;
         for (int i=0;i<sz*sz;i++) {
             im_av[i] -= (double)im_boxcar[ix][i];

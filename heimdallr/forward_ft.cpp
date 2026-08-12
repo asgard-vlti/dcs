@@ -212,7 +212,6 @@ void ForwardFt::loop() {
                  continue;
             }
 
-
             // Copy the data from the IMAGE subarray to the subimage
 #ifdef PRINT_TIMING
             clock_gettime(CLOCK_REALTIME, &then);

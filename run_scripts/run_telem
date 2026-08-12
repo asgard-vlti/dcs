@@ -1,0 +1,3 @@
+#!/bin/bash
+setsid /home/asg/.conda/envs/asgard/bin/save-ft-performance 1>> /home/asg/logs/heim_telem/log.txt 2>&1 &
+setsid /home/asg/.conda/envs/asgard/bin/save-tt-performance 1>> /home/asg/logs/baldr_tt_telem/log.txt 2>&1 &

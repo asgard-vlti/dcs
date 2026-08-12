@@ -6,7 +6,7 @@
 #include "./baldr.h"
 #include "commander/commander.h"
 #include "baldr.h"
-#define PRINT_TIMING
+// #define PRINT_TIMING
 
 #ifdef PRINT_TIMING
 #include <chrono>

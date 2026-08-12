@@ -21,6 +21,7 @@
 #include <chrono>
 #include <fitsio.h>
 #include <semaphore.h>
+#include <commander/commander.h>
 
 //----------Defines-----------
 //#define SIMULATE
@@ -40,22 +41,35 @@
 #define SERVO_HO 2
 #define SERVO_STOP -1
 
+// 0.4 on MDM = 30 pix on beams 1, 2, 3 and (roughly) 4.
+// 0.2 gives a left to right amplitude of 0.7, while in my code, 1.0 would be +/- 1.0 (i.e. 2.0 total left to right) while 0.2 would be 0.4.
+// i.e. the MDM has more tilt by a ratio 0.7/0.4 =1.75 
+// MDM 0.4 = my tilt 0.4 * 1.75 = 0.7  = 30 pix.
+// So the hardware gain should be 30/0.7 = 43
+#define PIX_PER_TT 43.0 
+
 //----- Structures and typedefs------
 typedef std::complex<double> dcomp;
 
 // Variables for actuation.
 struct ControlU{
     double tx, ty;
+    double dit;    // detector integration time in seconds
     int ho_sign;
     int ho_ix;
+    int nbreads;
+    int tsig_len;
     Eigen::Matrix<double, N_ACTUATORS, 1> DM;
     Eigen::Matrix<double, 2,2> R; //Rotation matrix.
+    // We don't know the reconstructor size until we read it in from a file, 
+    // so we will use a dynamic matrix for it.
+    Eigen::Matrix<double, N_MODES, Eigen::Dynamic> recon;
 };
 
 // This is our knowledge of the DM modes
 struct ControlA{
-    Eigen::Matrix<double, N_MODES, 1> modes;
-    Eigen::Matrix<double, N_ACTUATORS, N_MODES> influence_functions;
+    Eigen::Matrix<double, N_MODES, 1> mode_amplitudes;
+    Eigen::Matrix<double, N_ACTUATORS, N_MODES> modes;
 };
 
 struct TTMet_save{
@@ -77,7 +91,7 @@ struct EncodedImage
 // key variables.
 struct Status
 {
-    double flux, tx, ty;
+    double flux, tx, ty, ttx_avg, tty_avg;
     int cnt;
 };
 
@@ -87,6 +101,7 @@ struct Settings
     double ttg, ttl, hog, hol, focus_amp, flux_threshold;
     double gauss_hwidth;
     double ttxo, ttyo, focus_offset;
+    double ttx_coupling, tty_coupling;
     int px, py;
     int servo_mode;
 };
@@ -145,5 +160,9 @@ extern TTMet_save ttmet_save;
 // Main thread function for fringe tracking.
 void servo_loop();
 
+extern std::mutex control_u_mutex;
+
+void start_camera_client();
+void stop_camera_client();
 
 

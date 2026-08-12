@@ -22,6 +22,8 @@ template <> struct adl_serializer<Status> {
         j["flux"] = p.flux;
         j["tx"] = p.tx;
         j["ty"] = p.ty;
+        j["ttx_avg"] = p.ttx_avg;
+        j["tty_avg"] = p.tty_avg;
         j["cnt"] = p.cnt;
     }
     static void from_json(const json& j, Status& p) {
@@ -29,6 +31,8 @@ template <> struct adl_serializer<Status> {
         j.at("flux").get_to(p.flux);
         j.at("tx").get_to(p.tx);
         j.at("ty").get_to(p.ty);
+        j.at("ttx_avg").get_to(p.ttx_avg);
+        j.at("tty_avg").get_to(p.tty_avg);
         j.at("cnt").get_to(p.cnt);
     }
    };
@@ -45,6 +49,8 @@ template <> struct adl_serializer<Settings> {
         j["ttxo"] = p.ttxo;
         j["ttyo"] = p.ttyo;
         j["focus_offset"] = p.focus_offset;
+        j["ttx_coupling"] = p.ttx_coupling;
+        j["tty_coupling"] = p.tty_coupling;
         j["px"] = p.px;
         j["py"] = p.py;
         j["servo_mode"] = p.servo_mode;
@@ -61,6 +67,8 @@ template <> struct adl_serializer<Settings> {
         j.at("ttxo").get_to(p.ttxo);
         j.at("ttyo").get_to(p.ttyo);
         j.at("focus_offset").get_to(p.focus_offset);
+        j.at("ttx_coupling").get_to(p.ttx_coupling);
+        j.at("tty_coupling").get_to(p.tty_coupling);
         j.at("px").get_to(p.px);
         j.at("py").get_to(p.py);
         j.at("servo_mode").get_to(p.servo_mode);

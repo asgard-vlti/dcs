@@ -310,6 +310,8 @@ class HeimdallrAA:
                 cmd = f"moverel {axes[beam-1][3]} {uv_cmd[3]}"
                 self._send_and_get_response(cmd)
 
+            self._send_internal_complete()
+
     # helper methods for pupil alignment fitting
     @staticmethod
     def fit_func(x, m, a, b, c):
@@ -347,7 +349,7 @@ class HeimdallrAA:
         self._send_and_get_response(cmd)
         time.sleep(0.5)
 
-    def autoalign_pupil(self, beam):
+    def autoalign_pupil(self, beam, send_hdlr_complete=True):
 
         mv_time = 2.5
 
@@ -521,6 +523,9 @@ class HeimdallrAA:
                 optimal_offset_x2=optimal_offset_x2,
             )
 
+        if send_hdlr_complete::
+            self._send_internal_complete()
+        
         return {
             "meas_locs_x": measurement_locs_x,
             "meas_locs_y": measurement_locs_x,
@@ -537,9 +542,12 @@ class HeimdallrAA:
         # just like autoalign_3_pupil but for all beams
         datas = {}
         for beam in range(1, 5):
-            datas[beam] = self.autoalign_pupil(beam)
+            datas[beam] = self.autoalign_pupil(beam,
+                                               send_hdlr_complete=False)
             # open all shutters
             self.open_all_shutters()
+
+        self._send_internal_complete()
 
         if plot:
             self.plot_autoalign_pupil_all(datas)
@@ -615,6 +623,18 @@ class HeimdallrAA:
 
         self.send_and_recv_ack(msg)
 
+    def _send_internal_complete(self):
+        """
+        Signal that the script is complete in internal mode
+        """
+        msg = {
+            "origin": "s_h-autoalign",
+            "data": [
+                {"hdlr_complete": 1},
+            ],
+        }
+        self.send_and_recv_ack(msg)
+
     def send_and_recv_ack(self, msg):
         # recieve ack
         print(f"sending {msg}")
@@ -688,6 +708,7 @@ def main():
         "--plot",
         type=bool,
         default=False,
+        action="store_true",
         help="if results should be plotted to the screen when done (only valid for pa)",
     )
 
