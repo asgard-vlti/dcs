@@ -68,7 +68,7 @@ class HeimdallrAA:
 
         self.output = output
 
-        if self.output == "mcs":
+        if self.output in ["mcs", "internal"]:
             self.mcs_client = dcs.ZMQutils.ZmqReq("tcp://192.168.100.2:7019")
 
     @staticmethod
