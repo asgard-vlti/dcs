@@ -71,6 +71,11 @@ ARRAY_SHAPES = {
     "com_offset": (N_ACTUATORS,),
     "com_to_meas": (N_PIXELS, N_ACTUATORS),
 }
+
+MODAL_BASIS = modal_basis.Fourier()
+# MODAL_BASIS = modal_basis.Zonal()
+# MODAL_BASIS = modal_basis.Zernike()
+
 # make sure that all named arrays have an entry in this dict:
 for array_name in ARRAY_NAMES:
     assert array_name in ARRAY_SHAPES.keys()
@@ -305,6 +310,7 @@ class Beam:
             # inject it to matrix
             mode_to_meas[:, i] = meas
         self.flatten_offsets()
+        fits.writeto("DEBUG_mode_to_meas.fits", mode_to_meas, overwrite=True)
         return (mode_to_meas, -ref_meas)
 
     @staticmethod
@@ -376,11 +382,13 @@ class Beam:
         # TODO
 
         # produce com imat
+        if nmodes is None:
+            nmodes = N_MODES
         com_to_meas = (
-            mode_to_meas
+            mode_to_meas[:, :nmodes]
             @ np.linalg.solve(
-                mode_to_com.T @ mode_to_com + beta * np.eye(mode_to_com.shape[1]),
-                mode_to_com.T,
+                mode_to_com[:, :nmodes].T @ mode_to_com[:, :nmodes] + beta * np.eye(nmodes),
+                mode_to_com[:, :nmodes].T,
             )
             / MEAS_SCALE
         )
