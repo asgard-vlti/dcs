@@ -17,7 +17,7 @@ import modal_basis
 
 # TODO: NOT REALLY SAFE: These parameters are defined both in baldr.h and here,
 # I should find a way to merge these into a single source of truth.
-N_MODES = 100
+N_MODES = 100  # TODO: change to 144, also in baldr.cpp
 WIDTH = 15
 N_PIXELS = WIDTH * WIDTH
 FILTER_LEN = 1
@@ -31,6 +31,10 @@ ALPHA: float = 500.0
 BETA: float = 0.0
 MEAS_SCALE: float = 1 / 1000
 CNT_MIN: int = 3  # minimum number of measurements to wait after applying poke
+
+MODAL_BASIS = modal_basis.Fourier()
+# MODAL_BASIS = modal_basis.Zonal()
+# MODAL_BASIS = modal_basis.Zernike()
 
 BEAM_TO_PORT = {
     1: 6662,
@@ -570,6 +574,7 @@ def measure_interaction_matrix(
         # inject it to matrix
         mode_to_meas[:, i] = meas
     flatten_offsets(socket)
+    fits.writeto("DEBUG_mode_to_meas.fits", mode_to_meas, overwrite=True)
     return (mode_to_meas, -ref_meas)
 
 
@@ -619,7 +624,7 @@ def create_polc_matrices(
     """
 
     ### Build mode_to_com projection
-    mode_to_com = modal_basis.Zernike().modes_on_unit_disk(
+    mode_to_com = MODAL_BASIS.modes_on_unit_disk(
         nsamplex=N_ACTX, nmodes=N_MODES
     )
 
@@ -643,11 +648,13 @@ def create_polc_matrices(
     # TODO
 
     # produce com imat
+    if nmodes is None:
+        nmodes = N_MODES
     com_to_meas = (
-        mode_to_meas
+        mode_to_meas[:, :nmodes]
         @ np.linalg.solve(
-            mode_to_com.T @ mode_to_com + beta * np.eye(mode_to_com.shape[1]),
-            mode_to_com.T,
+            mode_to_com[:, :nmodes].T @ mode_to_com[:, :nmodes] + beta * np.eye(nmodes),
+            mode_to_com[:, :nmodes].T,
         )
         / MEAS_SCALE
     )
@@ -676,7 +683,7 @@ def create_leaky_matrices(
     code will sometimes refer to N_MODES (a constant) and nmodes (a variable).
     """
     ### Build mode_to_com projection
-    mode_to_com = modal_basis.Zernike().modes_on_unit_disk(
+    mode_to_com = MODAL_BASIS.modes_on_unit_disk(
         nsamplex=N_ACTX, nmodes=N_MODES
     )
 
