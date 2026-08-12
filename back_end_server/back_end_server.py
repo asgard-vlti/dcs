@@ -527,7 +527,7 @@ class BackEndServer:
             cmd = [
                 "/home/asg/.conda/envs/asgard/bin/h-autoalign",
                 "-a",
-                _param_value(command.get("parameters", []), "-a"), 
+                _param_value(command.get("parameters", []), "align"), 
             ]
 
             # Only deviate from script defaults if requested

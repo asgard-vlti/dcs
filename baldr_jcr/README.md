@@ -17,7 +17,7 @@ python supervisor.py 1 --init  # initialise beam 1 arrays
 After initialising these arrays, you should be able to launch the RTC using the `baldr`
 command, for example:
 ```bash
-./build/baldr_jcr/baldr ./baldr_jcr/def1.toml --socket=tcp://localhost:17474
+./build/baldr_jcr/baldr ./baldr_jcr/def1.toml --socket=tcp://localhost:6662
 ```
 
 With the RTC running, you can interact with it via the supervisor. To see a list
