@@ -360,7 +360,7 @@ def main():
         model_img = generate_zwfs_model_image(
             "AT",
             "H3",
-            centre=pupil_center,
+            centre=pupil_center + (32 - 1) / 2,
             include_cold_stop=True,
         )
         loss_args = (model_img, pupil_mask, 0.1)
