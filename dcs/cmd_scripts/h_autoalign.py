@@ -68,7 +68,7 @@ class HeimdallrAA:
 
         self.output = output
 
-        if self.output == "mcs":
+        if self.output in ["mcs", "internal"]:
             self.mcs_client = dcs.ZMQutils.ZmqReq("tcp://192.168.100.2:7019")
 
     @staticmethod
@@ -349,7 +349,7 @@ class HeimdallrAA:
         self._send_and_get_response(cmd)
         time.sleep(0.5)
 
-    def autoalign_pupil(self, beam):
+    def autoalign_pupil(self, beam, send_hdlr_complete=True):
 
         mv_time = 2.5
 
@@ -523,6 +523,9 @@ class HeimdallrAA:
                 optimal_offset_x2=optimal_offset_x2,
             )
 
+        if send_hdlr_complete:
+            self._send_internal_complete()
+        
         return {
             "meas_locs_x": measurement_locs_x,
             "meas_locs_y": measurement_locs_x,
@@ -539,9 +542,12 @@ class HeimdallrAA:
         # just like autoalign_3_pupil but for all beams
         datas = {}
         for beam in range(1, 5):
-            datas[beam] = self.autoalign_pupil(beam)
+            datas[beam] = self.autoalign_pupil(beam,
+                                               send_hdlr_complete=False)
             # open all shutters
             self.open_all_shutters()
+
+        self._send_internal_complete()
 
         if plot:
             self.plot_autoalign_pupil_all(datas)
@@ -700,7 +706,6 @@ def main():
     parser.add_argument(
         "-p",
         "--plot",
-        type=bool,
         default=False,
         action="store_true",
         help="if results should be plotted to the screen when done (only valid for pa)",

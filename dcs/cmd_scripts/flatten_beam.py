@@ -47,6 +47,145 @@ TARGET_TO_FLAT_NAME = {
 }
 
 
+# units are: depth [fraction of pi], diameter [microns]
+phasemask_parameters = {
+    # "J1": {"depth": 0.5, "diameter": 54},
+    # "J2": {"depth": 0.5, "diameter": 44},
+    # "J3": {"depth": 0.5, "diameter": 36},
+    # "J4": {"depth": 0.5, "diameter": 32},
+    # "J5": {"depth": 0.5, "diameter": 65},
+    "H5": {"depth": 0.5, "diameter": 68},
+    "H4": {"depth": 0.5, "diameter": 53},
+    "H3": {"depth": 0.5, "diameter": 44},
+    "H2": {"depth": 0.5, "diameter": 37},
+    "H1": {"depth": 0.5, "diameter": 31},
+}
+
+
+def generate_zwfs_model_image(
+    case,  # one of ["AT", "UT", "Lab"]
+    phasemask,  # one of ["J1-5", "H1-5"]
+    centre,
+    include_cold_stop=True,
+    n_pix_pupil=256,
+    n_pix_final=32,
+):
+    # validate all inputs
+    if case not in ["AT", "UT", "Lab"]:
+        raise ValueError(f"Invalid case: {case}. Must be one of ['AT', 'UT', 'Lab']")
+    if phasemask not in phasemask_parameters.keys():
+        raise ValueError(
+            f"Invalid phasemask: {phasemask}. Must be one of {phasemask_parameters.keys()}"
+        )
+
+    if phasemask.startswith("J"):
+        wavelength_wfs = 1.25e-6
+    elif phasemask.startswith("H"):
+        wavelength_wfs = 1.65e-6
+
+    phasemask_diam = phasemask_parameters[phasemask]["diameter"] * 1e-6
+    phasemask_depth = phasemask_parameters[phasemask]["depth"]
+
+    lab_diam = 12e-3
+
+    if case == "AT":
+        telescope_diameter = 1.8
+        secondary_diameter = 0.14
+        aperture = hcipy.make_obstructed_circular_aperture(
+            pupil_diameter=telescope_diameter,
+            central_obscuration_ratio=secondary_diameter / telescope_diameter,
+            num_spiders=4,
+            spider_width=0.01,
+        )
+    if case == "UT":
+        telescope_diameter = 8.2
+        secondary_diameter = 1.1
+        aperture = hcipy.make_obstructed_circular_aperture(
+            pupil_diameter=telescope_diameter,
+            central_obscuration_ratio=secondary_diameter / telescope_diameter,
+            num_spiders=4,
+            spider_width=0.01,
+        )
+    if case == "Lab":
+        telescope_diameter = 8.2
+        secondary_diameter = 1.1
+        aperture = hcipy.make_obstructed_circular_aperture(
+            pupil_diameter=telescope_diameter,
+            central_obscuration_ratio=secondary_diameter / telescope_diameter,
+            num_spiders=0,
+        )
+
+    # convert centre from pixels to physical units
+    centre = centre.copy()
+    centre -= np.array([(n_pix_final - 1) / 2, (n_pix_final - 1) / 2])
+    centre = 2 * centre * telescope_diameter / n_pix_final
+
+    pupil_grid = hcipy.make_pupil_grid(n_pix_pupil, 2 * telescope_diameter)
+    pupil_grid = pupil_grid.shift(-centre)
+    pupil = hcipy.evaluate_supersampled(aperture, pupil_grid, 6)
+
+    # hcipy.imshow_field(pupil)
+
+    focal_length = 254e-3
+    loD = wavelength_wfs / lab_diam
+
+    phase_mask_diam_loD = phasemask_diam / (loD * focal_length)
+
+    magnifier = hcipy.Magnifier(lab_diam / telescope_diameter)
+    magnified_pupil_grid = hcipy.make_pupil_grid(n_pix_pupil, 2 * lab_diam)
+
+    zwfs = hcipy.ZernikeWavefrontSensorOptics(
+        magnified_pupil_grid,
+        phase_step=phasemask_depth * np.pi,
+        phase_dot_diameter=phase_mask_diam_loD,
+        num_pix=128,
+        pupil_diameter=lab_diam,
+        reference_wavelength=wavelength_wfs,
+    )
+
+    wf = hcipy.Wavefront(pupil, wavelength_wfs)
+    wf.electric_field /= np.sqrt(wf.intensity.shaped.sum())
+    wf = magnifier.forward(wf)
+    wf = zwfs.forward(wf)
+
+    if include_cold_stop:
+        mag_between_mask_and_stop = 40 / 187
+        cold_stop_diameter = 2.15e-3 * mag_between_mask_and_stop
+
+        # print(f"Cold stop diameter: {cold_stop_diameter:.3e} m")
+
+        focal_grid = hcipy.make_focal_grid(
+            q=4,
+            num_airy=10,
+            pupil_diameter=lab_diam,
+            reference_wavelength=wavelength_wfs,
+            focal_length=254e-3,
+        )
+
+        mask = hcipy.make_circular_aperture(cold_stop_diameter)(focal_grid)
+
+        # plt.figure()
+        # plt.imshow(mask.shaped)
+        cold_stop_ideal = hcipy.OccultedLyotCoronagraph(
+            magnified_pupil_grid,
+            mask,
+            focal_plane_mask_grid=focal_grid,
+            focal_length=254e-3,
+        )
+        wf = cold_stop_ideal.forward(wf)
+
+    img = wf.intensity
+    img = hcipy.subsample_field(img, n_pix_pupil / n_pix_final, statistic="sum")
+    img = img.shaped
+
+    # plt.figure()
+    # plt.imshow(img)
+    # plt.colorbar()
+    # print(img.sum())
+
+    return np.array(img / img.max())
+
+
 def main():
     beam = args.beam
     show_plots = args.show_plots
@@ -189,15 +328,6 @@ def main():
     scattered_flux_mask /= scattered_flux_mask.sum()
 
     dm.set_data(init_cmd)
-    time.sleep(0.01)
-    img = cam.take_stack(64).mean(0)
-
-    pupil_hard_mask = pupil_mask > 0.6
-
-    print(stddev_loss(init_cmd, 0.1, scattered_flux_mask, pupil_mask))
-    print(
-        stddev_loss(np.random.randn(144) * 0.02, 0.1, scattered_flux_mask, pupil_mask)
-    )
 
     time.sleep(1)
 
@@ -220,13 +350,20 @@ def main():
         model_in_pupil /= np.sum(model_in_pupil)
 
         return -np.sum(img_in_pupil * model_in_pupil)
-        
 
     if args.target == "stddev":
         loss = basis_loss
         loss_args = (0.3, scattered_flux_mask, pupil_mask, 0.1)
     elif args.target == "model":
-
+        loss = model_loss
+        print(f"Generating model image for beam {beam}, centre {pupil_center}...")
+        model_img = generate_zwfs_model_image(
+            "AT",
+            "H3",
+            centre=pupil_center + (32 - 1) / 2,
+            include_cold_stop=True,
+        )
+        loss_args = (model_img, pupil_mask, 0.1)
 
     freqs = [2.01, 3.51, 5.01]
     n_iters = [50, 120, 240]
@@ -254,9 +391,9 @@ def main():
             )
 
         res = opt.minimize(
-            basis_loss,
+            loss,
             init_coeffs,
-            (fourier, 0.3, scattered_flux_mask, pupil_mask, 0.1),
+            loss_args,
             method="COBYLA",
             options={"disp": True, "maxiter": n_it},
             # bounds=[[-0.05, 0.05] for _ in range(n_modes)],
