@@ -108,8 +108,8 @@ class ZmqNoResponse(RuntimeError):
 
 @dataclass
 class Beam:
-    """Object for managing all interactions with the RTC at the per-beam level.
-    """
+    """Object for managing all interactions with the RTC at the per-beam level."""
+
     socket: Optional[ZmqReq] = field(init=False)
     beam_id: int
     host: str = DEFAULT_HOST
@@ -177,7 +177,7 @@ class Beam:
 
     @property
     def file_prefix(self) -> str:
-        return path.join(BALDR_ROOT, "") # f"B{self.beam_id}_")
+        return path.join(BALDR_ROOT, "")  # f"B{self.beam_id}_")
 
     @staticmethod
     def check_name(name: str):
@@ -359,9 +359,7 @@ class Beam:
         """
 
         ### Build mode_to_com projection
-        mode_to_com = MODAL_BASIS.modes_on_unit_disk(
-            nsamplex=N_ACTX, nmodes=N_MODES
-        )
+        mode_to_com = MODAL_BASIS.modes_on_unit_disk(nsamplex=N_ACTX, nmodes=N_MODES)
 
         ### Measure mode_to_slope interaction
         # flatten DM
@@ -387,7 +385,8 @@ class Beam:
         com_to_meas = (
             mode_to_meas[:, :nmodes]
             @ np.linalg.solve(
-                mode_to_com[:, :nmodes].T @ mode_to_com[:, :nmodes] + beta * np.eye(nmodes),
+                mode_to_com[:, :nmodes].T @ mode_to_com[:, :nmodes]
+                + beta * np.eye(nmodes),
                 mode_to_com[:, :nmodes].T,
             )
             / MEAS_SCALE
@@ -418,9 +417,7 @@ class Beam:
         code will sometimes refer to N_MODES (a constant) and nmodes (a variable).
         """
         ### Build mode_to_com projection
-        mode_to_com = MODAL_BASIS.modes_on_unit_disk(
-            nsamplex=N_ACTX, nmodes=N_MODES
-        )
+        mode_to_com = MODAL_BASIS.modes_on_unit_disk(nsamplex=N_ACTX, nmodes=N_MODES)
 
         ### Measure mode_to_slope interaction
         # flatten DM
@@ -458,16 +455,17 @@ if __name__ == "__main__":
         help="initialise all arrays with zeros and save them to disk",
         action="count",
     )
-    parser.add_argument(
-        "--disturboff",
-        help="resets the disturbance to zero",
-        action="count",
-    )
-    parser.add_argument(
-        "--disturb",
-        help="inject a test signal onto the dms",
-        action="count",
-    )
+    if DIST_LEN > 0:
+        parser.add_argument(
+            "--disturboff",
+            help="resets the disturbance to zero",
+            action="count",
+        )
+        parser.add_argument(
+            "--disturb",
+            help="inject a test signal onto the dms",
+            action="count",
+        )
 
     parser.add_argument(
         "--offset",
@@ -528,27 +526,28 @@ This is correct behaviour if the RTC is not yet running.
         beam.set_com_clip(clip_val=args.clipcom)
         action_performed = True
 
-    if args.disturb is not None:
-        if args.disturboff is not None:
-            raise ValueError("cannot simultaneously be disturbing and not disturbing")
-        # The default disturbance is a sine wave that sweeps accross the dm
-        # over 20 frames.
-        _, xx = np.meshgrid(
-            np.linspace(0, 2 * 2 * np.pi, N_ACTX + 1)[:-1],
-            np.linspace(0, 2 * 2 * np.pi, N_ACTX + 1)[:-1],
-            indexing="ij",
-        )
-        xx_flat = xx.flatten()
-        disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
-        for i, t in enumerate(np.linspace(0, 2 * np.pi, DIST_LEN + 1)[:-1]):
-            disturbance[:, i] = 0.1 * np.sin(xx_flat + t)
-        beam.update_array(name="com_dist_buffer", array=disturbance)
-        action_performed = True
+    if DIST_LEN > 0:
+        if args.disturb is not None:
+            if args.disturboff is not None:
+                raise ValueError("cannot simultaneously be disturbing and not disturbing")
+            # The default disturbance is a sine wave that sweeps accross the dm
+            # over 20 frames.
+            _, xx = np.meshgrid(
+                np.linspace(0, 2 * 2 * np.pi, N_ACTX + 1)[:-1],
+                np.linspace(0, 2 * 2 * np.pi, N_ACTX + 1)[:-1],
+                indexing="ij",
+            )
+            xx_flat = xx.flatten()
+            disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
+            for i, t in enumerate(np.linspace(0, 2 * np.pi, DIST_LEN + 1)[:-1]):
+                disturbance[:, i] = 0.1 * np.sin(xx_flat + t)
+            beam.update_array(name="com_dist_buffer", array=disturbance)
+            action_performed = True
 
-    if args.disturboff is not None:
-        disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
-        beam.update_array(name="com_dist_buffer", array=disturbance)
-        action_performed = True
+        if args.disturboff is not None:
+            disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
+            beam.update_array(name="com_dist_buffer", array=disturbance)
+            action_performed = True
 
     if args.polc is not None:
         if args.recompute is not None:

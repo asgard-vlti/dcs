@@ -108,15 +108,12 @@ void servo_loop()
         // Remove reference image
         calibrate_frame();
 
-        // infer the pseudo-open-loop measure
-        compute_pol_meas();
-
         // apply the reconstructor to estimate the mode values from the
-        // calibrated pseudo-open loop measurement
+        // calibrated measurement
         reconstruct_modes();
 
-        // filter the reconstructed modes to produce a good clean compensatory
-        // set of modes.
+        // filter/integrate the reconstructed modes to produce a good clean 
+        // compensatory set of modes.
         filter_modes();
 
         // project the modes into the command space
@@ -134,10 +131,6 @@ void servo_loop()
 #ifdef PRINT_TIMING
         auto t2 = high_resolution_clock::now();
 #endif
-        remove_offset();
-
-        inject_dm_signal();
-
 #ifdef PRINT_TIMING
         if (cnt % 20 == 0) {
             std::cout << "|----------|-----------|-----------|\n";
@@ -199,20 +192,13 @@ void calibrate_frame()
     ctrl.mutex.unlock();
 }
 
-void compute_pol_meas()
-{
-    ctrl.mutex.lock();
-    ctrl.meas_pol = ctrl.meas_cl + ctrl.meas_feedback;
-    ctrl.mutex.unlock();
-}
-
 void reconstruct_modes()
 {
     ctrl.mutex.lock();
     // the reconstructed modes are the matrix-vector product of the
     // reconstructor matrix (meas_to_modes) and the pseudo-open loop
     // measurements
-    ctrl.mode_pol = ctrl.meas_to_mode * ctrl.meas_pol;
+    ctrl.mode_raw = ctrl.meas_to_mode * ctrl.meas_cl;
     ctrl.mutex.unlock();
 }
 
@@ -230,9 +216,9 @@ void filter_modes()
     // and setting the zeroth component to be the current mode_pol
     for (size_t i = FILTER_LEN - 1; i > 0; i--)
     {
-        ctrl.mode_pol_buffer.row(i).swap(ctrl.mode_pol_buffer.row(i - 1));
+        ctrl.mode_raw_buffer.row(i).swap(ctrl.mode_raw_buffer.row(i - 1));
     }
-    ctrl.mode_pol_buffer.row(0) = ctrl.mode_pol;
+    ctrl.mode_raw_buffer.row(0) = ctrl.mode_raw;
 
     // INITIALLY ZERO THE OUTPUT COMING FROM THIS CALCULATION
     ctrl.mode_filt.setZero();
@@ -243,7 +229,7 @@ void filter_modes()
     // pass to get the pipeline sound.
     for (size_t i = 0; i < FILTER_LEN; i++)
     {
-        ctrl.mode_filt += (ctrl.mode_pol_buffer.row(i).array() * ctrl.filter_coeff_in.row(i).array()).matrix();
+        ctrl.mode_filt += (ctrl.mode_raw_buffer.row(i).array() * ctrl.filter_coeff_in.row(i).array()).matrix();
     }
 
     // COMPUTE COMPONENT FROM OUTPUTS
@@ -289,7 +275,11 @@ void inject_disturb()
 {
     ctrl.mutex.lock();
     // add the next disturbance buffer element to the command vector
+    #if DIST_LEN > 0
     ctrl.com_write = ctrl.com_clean + ctrl.com_dist_buffer.col(cnt % DIST_LEN);
+    #else
+    ctrl.com_write = ctrl.com_clean;
+    #endif
     ctrl.mutex.unlock();
 }
 
@@ -310,48 +300,3 @@ void write_shm()
     ImageStreamIO_sempost(&master_DM, 1);
 }
 
-void remove_offset()
-{
-    ctrl.mutex.lock();
-    ctrl.com_feedback = ctrl.com_clean + ctrl.com_offset;
-    ctrl.mutex.unlock();
-}
-
-void inject_dm_signal()
-{
-    // this task computes the effective DM signal on the measurement that
-    // will be received next frame.
-
-    // ctrl.delay is some real number between 0 and (say) 10
-    // A value of 0 implies that there is no delay - i.e., that the
-    // command we have just sent will be seen in the measurement we are
-    // about to receive. This is of course not practical, since
-    // the WFS takes a full frame to integrate and then another ~frame to
-    // readout. The DM also takes time to move, and then there are network
-    // delays. We will measure the system delay and save it in "ctrl.delay".
-    //
-    // In general, we want to assume that the delay can be fractional, e.g.,
-    // delay=2.5 implies that the 3rd and 4th most recent commands will have
-    // influence on the measurement we are about to receive. We will linearly interpolate
-    // those commands in order to get something close to the true shape of the
-    // DM during the exposure.
-    //
-    // For a delay of 2.5, we require a buffer of the:
-    //   - most recent command, (to compute the 2nd most recent command next frame)
-    //   - 2nd most recent command, (to compute the 3rd most recent command next frame)
-    //   - 3rd most recent command, (for the delay calc, and to compute the 4th mrcnf)
-    //   - and 4th most recent command. (for the delay calc (can be dropped afterwards)).
-    //
-    // The buffer is defined as having the most recent command as the 0th column, and so on.
-    ctrl.mutex.lock();
-    for (size_t i = COM_BUFFER_LEN - 1; i > 0; i--)
-    {
-        ctrl.com_fb_buffer.col(i).swap(ctrl.com_fb_buffer.col(i - 1));
-    }
-    ctrl.com_fb_buffer.col(0) = ctrl.com_feedback.col(0);
-    int idx_a = floor(ctrl.delay);
-    double remainder = ctrl.delay - (double)idx_a;
-    ctrl.com_effective = ctrl.com_fb_buffer.col(idx_a) * (1 - remainder) + ctrl.com_fb_buffer.col(idx_a + 1) * (remainder);
-    ctrl.meas_feedback = -ctrl.com_to_meas * ctrl.com_effective;
-    ctrl.mutex.unlock();
-}

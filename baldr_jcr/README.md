@@ -26,10 +26,10 @@ of available supervisor commands, run:
 python supervisor.py --help
 ```
 
-For example, to recompute the interaction and control matrices for a POLC controller
+For example, to recompute the interaction and control matrices for a leaky integrator controller
 with a gain of 0.3 and leak of 0.999, run:
 ```bash
-python supervisor.py 1 --polc --recompute --gain=0.3 --leak=0.999
+python supervisor.py 1 --leaky --recompute --gain=0.3 --leak=0.999
 ```
 
 ## Todo:
@@ -61,9 +61,9 @@ collisions.
 | `com_max`          |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :x:     |
 | `com_min`          |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :x:     |
 | `com_dist_buffer`  |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
-| `com_offset`       |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :x:     |
-| `delay`            |  :ok:   |   :ok:   |    :ok:    |  :x:  |  :ok:  |    :x:    |    :x:     |
-| `com_to_meas`      |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
+<!-- | `com_offset`       |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :x:     | -->
+<!-- | `delay`            |  :ok:   |   :ok:   |    :ok:    |  :x:  |  :ok:  |    :x:    |    :x:     | -->
+<!-- | `com_to_meas`      |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    | -->
 
 ### HRTC Pipeline
 
@@ -78,5 +78,5 @@ collisions.
 | `clip_com`          |    :ok:     |  :x:   |
 | `inject_disturb`    |    :ok:     |  :x:   |
 | `write_shm`         |    :ok:     |  :x:   |
-| `remove_offset`     |    :ok:     |  :x:   |
-| `inject_dm_signal`  |    :ok:     |  :x:   |
+<!-- | `remove_offset`     |    :ok:     |  :x:   | -->
+<!-- | `inject_dm_signal`  |    :ok:     |  :x:   | -->

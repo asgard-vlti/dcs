@@ -34,19 +34,18 @@
 //----------Defines-----------
 // #define SIMULATE
 
-#define N_MODES 100            // Number of modes to control
+#define N_MODES 100           // Number of modes to control
 #define WIDTH 15              // Number of pixels across subim
 #define N_PIXELS WIDTH *WIDTH // Total number of pixels in subim
 #define FILTER_LEN 1          // Max number of taps in IIR filter
 // NOTE ON FILTER LEN
 // In order to read the matrices in RowMajor (so that they have intuitive
 // parseing from numpy and fits) we need the matrices with filter_len for an
-// axis to have the filter_len as the first axis (number or rows), since 
+// axis to have the filter_len as the first axis (number or rows), since
 // otherwise we might set filter_len to 1 and then request a row-major matrix
 // with only 1 column which is a compile-time error in Eigen.
-#define N_ACTUATORS 144  // Including corners
-#define DIST_LEN 100      // Length of disturbance sequence (periodic)
-#define COM_BUFFER_LEN 4 // used for POLC computations, should be ceil(max_delay)+1
+#define N_ACTUATORS 144 // Including corners
+#define DIST_LEN 0      // Length of disturbance sequence (periodic)
 
 //----- Structures and typedefs------
 
@@ -54,7 +53,7 @@
 struct ControlVariables
 {
     std::mutex mutex;
-    uint64_t cnt;  // controller iteration (increments even when controller is not running)
+    uint64_t cnt; // controller iteration (increments even when controller is not running)
 
     // real-time variables
     // admittedly, this is a LOT of copying, so I might change this to a single
@@ -62,18 +61,13 @@ struct ControlVariables
     // that need to retain state (e.g., in the IIR filter and the feeback loop)
     Eigen::Matrix<double, N_PIXELS, 1> meas_raw;
     Eigen::Matrix<double, N_PIXELS, 1> meas_cl;
-    Eigen::Matrix<double, N_PIXELS, 1> meas_feedback;
-    Eigen::Matrix<double, N_PIXELS, 1> meas_pol;
-    Eigen::Matrix<double, N_MODES, 1> mode_pol;
+    Eigen::Matrix<double, N_MODES, 1> mode_raw;
     Eigen::Matrix<double, N_MODES, 1> mode_filt;
-    Eigen::Matrix<double, FILTER_LEN, N_MODES, Eigen::RowMajor> mode_pol_buffer;
+    Eigen::Matrix<double, FILTER_LEN, N_MODES, Eigen::RowMajor> mode_raw_buffer;
     Eigen::Matrix<double, FILTER_LEN, N_MODES, Eigen::RowMajor> mode_filt_buffer;
     Eigen::Matrix<double, N_ACTUATORS, 1> com_raw;
     Eigen::Matrix<double, N_ACTUATORS, 1> com_clean;
-    Eigen::Matrix<double, N_ACTUATORS, 1> com_feedback;
     Eigen::Matrix<double, N_ACTUATORS, 1> com_write;
-    Eigen::Matrix<double, N_ACTUATORS, COM_BUFFER_LEN, Eigen::RowMajor> com_fb_buffer;
-    Eigen::Matrix<double, N_ACTUATORS, 1> com_effective;
 
     // dynamically configurable variables
     Eigen::Matrix<double, N_PIXELS, 1> meas_offset;
@@ -86,10 +80,9 @@ struct ControlVariables
     Eigen::Matrix<double, N_ACTUATORS, N_MODES, Eigen::RowMajor> mode_to_com;
     Eigen::Array<double, N_ACTUATORS, 1> com_max;
     Eigen::Array<double, N_ACTUATORS, 1> com_min;
+#if DIST_LEN > 0
     Eigen::Matrix<double, N_ACTUATORS, DIST_LEN, Eigen::RowMajor> com_dist_buffer;
-    Eigen::Matrix<double, N_ACTUATORS, 1> com_offset;
-    double delay;
-    Eigen::Matrix<double, N_PIXELS, N_ACTUATORS, Eigen::RowMajor> com_to_meas;
+#endif
 };
 
 //-------Commander structs-------------
@@ -114,8 +107,7 @@ struct Status
 // Settings struct for commander
 struct Settings
 {
-    double log, lol, hog, hol, flux_threshold;
-    size_t num_lomodes;
+    double flux_threshold;
     int px, py;
     int servo_mode;
 };
@@ -143,14 +135,14 @@ struct Result
 
 struct MeasBase64
 {
-    std::string meas;  // measurement from the RTC
-    uint64_t cnt;  // iteration that the measurement corresponds to
+    std::string meas; // measurement from the RTC
+    uint64_t cnt;     // iteration that the measurement corresponds to
 };
 
 struct ModeBase64
 {
-    std::string mode;  // mode from the RTC
-    uint64_t cnt;  // iteration that the mode correspond to
+    std::string mode; // mode from the RTC
+    uint64_t cnt;     // iteration that the mode correspond to
 };
 
 //-------End of Commander structs------

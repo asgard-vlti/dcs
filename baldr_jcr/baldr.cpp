@@ -92,25 +92,21 @@ DEF_READ_CTRL_PARAM(mode_min, minimum mode values(used in antiwinup), N_MODES, 1
 DEF_READ_CTRL_PARAM(mode_to_com, modal projection matrix, N_ACTUATORS, N_MODES, DOUBLE)
 DEF_READ_CTRL_PARAM(com_max, maximum command values(used in clipping), N_ACTUATORS, 1, DOUBLE)
 DEF_READ_CTRL_PARAM(com_min, minimum command values(used in clipping), N_ACTUATORS, 1, DOUBLE)
+#if DIST_LEN > 0
 DEF_READ_CTRL_PARAM(com_dist_buffer, command disturbance buffer, N_ACTUATORS, DIST_LEN, DOUBLE)
-DEF_READ_CTRL_PARAM(com_offset, command offset vector for feedback loop, N_ACTUATORS, 1, DOUBLE)
-DEF_READ_CTRL_PARAM(com_to_meas, interaction matrix, N_PIXELS, N_ACTUATORS, DOUBLE)
+#endif
 
 Result reset_ctrl()
 {
   ctrl.mutex.lock();
   ctrl.meas_raw.setZero();
   ctrl.meas_cl.setZero();
-  ctrl.meas_pol.setZero();
-  ctrl.mode_pol.setZero();
+  ctrl.mode_raw.setZero();
   ctrl.mode_filt.setZero();
   ctrl.com_raw.setZero();
   ctrl.com_clean.setZero();
   ctrl.com_write.setZero();
-  ctrl.com_feedback.setZero();
-  ctrl.meas_feedback.setZero();
-  ctrl.com_fb_buffer.setZero();
-  ctrl.mode_pol_buffer.setZero();
+  ctrl.mode_raw_buffer.setZero();
   ctrl.mode_filt_buffer.setZero();
   ctrl.mutex.unlock();
   return SUCCESS();
@@ -145,50 +141,6 @@ Result set_servo_mode(std::string mode)
   std::string msg = fmt::format("Servo mode updated to {}", new_mode);
   info(msg.c_str());
   return SUCCESS(msg);
-}
-
-// Set the tt gain.
-Result set_log(double gain)
-{
-  settings.mutex.lock();
-  settings.settings.log = gain;
-  settings.mutex.unlock();
-  return SUCCESS(settings.settings.log);
-}
-
-Result set_delay(double delay)
-{
-  ctrl.mutex.lock();
-  ctrl.delay = delay;
-  ctrl.mutex.unlock();
-  return SUCCESS(ctrl.delay);
-}
-
-// Set the high order gain
-Result set_hog(double gain)
-{
-  settings.mutex.lock();
-  settings.settings.hog = gain;
-  settings.mutex.unlock();
-  return SUCCESS(settings.settings.hog);
-}
-
-// Set the high order leaky integrator term
-Result set_hol(double leak)
-{
-  settings.mutex.lock();
-  settings.settings.hol = leak;
-  settings.mutex.unlock();
-  return SUCCESS(settings.settings.hol);
-}
-
-// Set the tip/tilt leaky integrator term
-Result set_lol(double leak)
-{
-  settings.mutex.lock();
-  settings.settings.lol = leak;
-  settings.mutex.unlock();
-  return SUCCESS(settings.settings.lol);
 }
 
 // Setter functions for thresholds.
@@ -271,11 +223,6 @@ COMMANDER_REGISTER(m)
   m.def("reset", reset_ctrl, "Reset the ctrl internal parameters");
   m.def("status", get_status, "Get the status of the system");
   m.def("settings", get_settings, "Get current system settings");
-  m.def("delay", set_delay, "Set the estimated system delay, used for POLC", "delay"_arg=1.8);
-  // m.def("log", set_log, "Set the low-order gain for the servo loop", "gain"_arg = 0.0);
-  // m.def("lol", set_lol, "Set the low-order leak term", "gain"_arg = 0.01);
-  // m.def("hog", set_hog, "Set the high-order gain for the servo loop", "gain"_arg = 0.0);
-  // m.def("hol", set_hol, "Set the high-order leak term", "gain"_arg = 0.01);
   m.def("pxy", set_pxy, "Set the origin pixels", "px"_arg = 15, "py"_arg = 15);
   m.def("flux_threshold", set_flux_threshold, "Set flux threshold", "value"_arg = 100.0);
   m.def("meas", get_measurement_encoded, "Read meas_raw in Base64 encoding");
@@ -290,11 +237,9 @@ COMMANDER_REGISTER(m)
   m.def("mode_to_com", read_mode_to_com, "Read mode_to_com from file", "filename"_arg = "./baldr_jcr/mode_to_com.fits");
   m.def("com_max", read_com_max, "Read com_max from file", "filename"_arg = "./baldr_jcr/com_max.fits");
   m.def("com_min", read_com_min, "Read com_min from file", "filename"_arg = "./baldr_jcr/com_min.fits");
+#if DIST_LEN > 0
   m.def("com_dist_buffer", read_com_dist_buffer, "Read com_dist_buffer from file", "filename"_arg = "./baldr_jcr/com_dist_buffer.fits");
-  m.def("com_offset", read_com_offset, "Read com_offset from file", "filename"_arg = "./baldr_jcr/com_offset.fits");
-  m.def("com_to_meas", read_com_to_meas, "Read com_to_meas from file", "filename"_arg = "./baldr_jcr/com_to_meas.fits");
-  // m.def("poke", poke_mode, "Poke the DM with a given mode and amplitude", "mode_ix"_arg = 0, "amplitude"_arg = 0.1);
-  // m.def("recon", load_reconstructor, "Load a reconstructor from a fits file", "filename"_arg = "recon.fits");
+#endif
 }
 
 int main(int argc, char *argv[])
@@ -337,10 +282,6 @@ int main(int argc, char *argv[])
       }
     }
   }
-  settings.settings.log = config["log"].value_or(0.01);
-  settings.settings.lol = config["lol"].value_or(0.01);
-  settings.settings.hog = config["hog"].value_or(0.2);
-  settings.settings.hol = config["hol"].value_or(0.01);
   settings.settings.flux_threshold = config["flux_threshold"].value_or(10000.0);
   settings.settings.servo_mode = SERVO_OPEN;
 
@@ -359,11 +300,9 @@ int main(int argc, char *argv[])
   LOAD_FROM_FILE(mode_to_com, modal projection matrix)
   LOAD_FROM_FILE(com_max, maximum command values(used in clipping))
   LOAD_FROM_FILE(com_min, minimum command values(used in clipping))
+#if DIST_LEN > 0
   LOAD_FROM_FILE(com_dist_buffer, command disturbance buffer)
-  LOAD_FROM_FILE(com_offset, command offset vector for feedback loop)
-  LOAD_FROM_FILE(com_to_meas, interaction matrix)
-  ctrl.delay = config["delay"].value_or(1.8);
-
+#endif
   // Read in the influence functions from the "modefile" fits file.
   std::string modefile = config["modefile"].value_or("modes.fits");
 
