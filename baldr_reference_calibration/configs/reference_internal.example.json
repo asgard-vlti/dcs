@@ -1,0 +1,69 @@
+{
+  "source": {
+    "profile": "internal",
+    "profiles": {
+      "internal": {
+        "spectral_type": null,
+        "temperature_K": 3000.0,
+        "photons_per_second_per_pixel_per_nm": 1000.0
+      },
+      "onsky": {
+        "spectral_type": "K5V",
+        "temperature_K": null,
+        "photons_per_second_per_pixel_per_nm": 500.0
+      }
+    }
+  },
+  "spectrum": {
+    "mode": "blackbody",
+    "weighting": "photon",
+    "wavelength_min_m": 1.5e-6,
+    "wavelength_max_m": 1.8e-6,
+    "samples": 7
+  },
+  "pupil": {
+    "geometry": "solarstein",
+    "rotation_deg": 0.0,
+    "array_size": 256,
+    "pixels_across_pupil": 64,
+    "physical_diameter_m": 1.8
+  },
+  "flat_dm": {
+    "model": "BMC-multi-3.5",
+    "flat_command": 0.5,
+    "opd_per_command_m": 3.0e-6,
+    "actuator_coupling_factor": 0.75
+  },
+  "optics": {
+    "f_number": 21.2
+  },
+  "phase_mask": {
+    "name": "H3",
+    "phase_model": "physical_depth",
+    "depth_um": 0.654,
+    "material": "N_1405",
+    "diameter_model": "physical",
+    "diameter_um": 44.0
+  },
+  "relay": {
+    "entrance_diameter_m": 0.012,
+    "oap_focal_length_m": 0.254,
+    "collimator_focal_length_m": 0.040,
+    "distance_to_mirror_m": 0.50,
+    "mirror_diameter_m": 0.0254,
+    "edge_offset_m": -0.001,
+    "edge_angle_rad": 0.0,
+    "imaging_focal_length_m": 0.184,
+    "cold_stop_diameter_m": 0.002145,
+    "cold_stop_x_offset_m": 0.0,
+    "cold_stop_y_offset_m": 0.0,
+    "detector_pupil_diameter_m": 0.000288,
+    "pupil_misconjugation_m": 0.0
+  },
+  "detector": {
+    "binning": 4,
+    "crop": null,
+    "exposure_s": 0.001,
+    "quantum_efficiency": 0.7
+  }
+}
