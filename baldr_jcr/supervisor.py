@@ -19,7 +19,7 @@ N_PIXELS = WIDTH * WIDTH
 FILTER_LEN = 1
 N_ACTX = 12
 N_ACTUATORS = N_ACTX * N_ACTX
-DIST_LEN = 100
+DIST_LEN = 0
 
 # local constants:
 BALDR_ROOT = path.abspath(path.dirname(__file__))
@@ -53,7 +53,6 @@ ARRAY_NAMES = [
     "com_min",
     "com_dist_buffer",
     "com_offset",
-    "com_to_meas",
 ]
 
 ARRAY_SHAPES = {
@@ -69,7 +68,6 @@ ARRAY_SHAPES = {
     "com_min": (N_ACTUATORS,),
     "com_dist_buffer": (N_ACTUATORS, DIST_LEN),
     "com_offset": (N_ACTUATORS,),
-    "com_to_meas": (N_PIXELS, N_ACTUATORS),
 }
 
 MODAL_BASIS = modal_basis.Fourier()
@@ -93,7 +91,6 @@ INIT_VAL = {
     "com_min": -1e6,
     "com_dist_buffer": 0.0,
     "com_offset": 0.0,
-    "com_to_meas": 0.0,
 }
 # make sure that all named arrays have an entry in this dict:
 for array_name in ARRAY_NAMES:
@@ -298,13 +295,20 @@ class Beam:
         for i in range(nmodes):
             mode = np.zeros(N_MODES)
             # poke mode i (positive poke)
+            print(
+                f"poking mode {i}/{nmodes} for {navg} frames, {poke:0.2e}.",
+                end="",
+                flush=True,
+            )
             mode[i] = poke
             self.poke(array=mode)
             meas_pos = self.avg_meas(navg=navg, after_frame=CNT_MIN)
+            print(" POS.", end="", flush=True)
             # poke mode i (negative poke)
             mode[i] = -poke
             self.poke(array=mode)
             meas_neg = self.avg_meas(navg=navg, after_frame=CNT_MIN)
+            print(f" NEG.")
             meas = (meas_pos - meas_neg) / (2 * poke) * MEAS_SCALE
 
             # inject it to matrix
@@ -340,70 +344,10 @@ class Beam:
         )
         return meas_to_mode
 
-    def create_polc_matrices(
-        self,
-        *,
-        navg: int = 5,
-        alpha: float = ALPHA,
-        beta: float = BETA,
-        poke: float = POKE,
-        nmodes: Optional[int] = None,
-    ):
-        """Measure the interaction matrix, fit the system parameters based on that
-        measurement, and then compute and upload all control matrices derived from
-        the system parameters.
-
-        NOTE: To avoid recompiling the RTC, the nmodes option only modifies the
-        "values" of the control matrices, not the dimensions. For this reason, the
-        code will sometimes refer to N_MODES (a constant) and nmodes (a variable).
-        """
-
-        ### Build mode_to_com projection
-        mode_to_com = MODAL_BASIS.modes_on_unit_disk(nsamplex=N_ACTX, nmodes=N_MODES)
-
-        ### Measure mode_to_slope interaction
-        # flatten DM
-        self.flatten_dm()
-        self.flatten_offsets()
-
-        # set mode_to_com
-        self.update_array(name="mode_to_com", array=mode_to_com)
-
-        # measure modal imat
-        mode_to_meas, meas_offset = self.measure_interaction_matrix(
-            navg=navg,
-            poke=poke,
-            nmodes=nmodes,
-        )
-
-        # run some statistics on the measured interaction matrix
-        # TODO
-
-        # produce com imat
-        if nmodes is None:
-            nmodes = N_MODES
-        com_to_meas = (
-            mode_to_meas[:, :nmodes]
-            @ np.linalg.solve(
-                mode_to_com[:, :nmodes].T @ mode_to_com[:, :nmodes]
-                + beta * np.eye(nmodes),
-                mode_to_com[:, :nmodes].T,
-            )
-            / MEAS_SCALE
-        )
-        self.update_array(name="com_to_meas", array=com_to_meas)
-
-        ### Invert mode_to_slope to build slope_to_mode reconstructor
-        meas_to_mode = self.build_meas_to_mode(
-            mode_to_meas=mode_to_meas, alpha=alpha, nmodes=nmodes
-        )
-        self.update_array(name="meas_to_mode", array=meas_to_mode)
-        self.update_array(name="meas_offset", array=meas_offset)
-
     def create_leaky_matrices(
         self,
         *,
-        navg: int = 5,
+        navg: int = 1,
         alpha: float = ALPHA,
         poke: float = POKE,
         nmodes: Optional[int] = None,
@@ -433,8 +377,6 @@ class Beam:
             poke=poke,
             nmodes=nmodes,
         )
-
-        self.update_array(name="com_to_meas", array=np.zeros((N_PIXELS, N_ACTUATORS)))
 
         ### Invert mode_to_slope to build slope_to_mode reconstructor
         meas_to_mode = self.build_meas_to_mode(
@@ -529,7 +471,9 @@ This is correct behaviour if the RTC is not yet running.
     if DIST_LEN > 0:
         if args.disturb is not None:
             if args.disturboff is not None:
-                raise ValueError("cannot simultaneously be disturbing and not disturbing")
+                raise ValueError(
+                    "cannot simultaneously be disturbing and not disturbing"
+                )
             # The default disturbance is a sine wave that sweeps accross the dm
             # over 20 frames.
             _, xx = np.meshgrid(
@@ -549,20 +493,7 @@ This is correct behaviour if the RTC is not yet running.
             beam.update_array(name="com_dist_buffer", array=disturbance)
             action_performed = True
 
-    if args.polc is not None:
-        if args.recompute is not None:
-            beam.create_polc_matrices(nmodes=args.nmodes, poke=args.poke)
-        if args.gain is not None:
-            gain = args.gain
-        else:
-            gain = 0.3
-        if args.leak is not None:
-            leak = args.leak
-        else:
-            leak = 1.0
-        beam.set_polc_gain(ewma_gain=gain, ewma_leak=leak)
-        action_performed = True
-    elif args.leaky is not None:
+    if args.leaky is not None:
         if args.recompute is not None:
             beam.create_leaky_matrices(nmodes=args.nmodes, poke=args.poke)
         if args.gain is not None:
@@ -577,7 +508,7 @@ This is correct behaviour if the RTC is not yet running.
         action_performed = True
     else:
         if args.gain is not None:
-            raise ValueError("gain must only be set if also passing --polc or --leaky")
+            raise ValueError("gain must only be set if also passing --leaky")
         if args.leak is not None:
             raise ValueError("leak must only be set if also passing --leaky")
 

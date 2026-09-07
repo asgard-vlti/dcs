@@ -86,12 +86,11 @@ class Fourier(ModalBasis):
             return (k, k - (m - n - t))
 
     def sample(self, i: int, x: float, y: float) -> float:
-        n = math.floor(i / 2) + 2
+        n = math.floor(i) + 2
         p, q = self.spiral_coords(n)
         freq_x: float = 1.0 * np.pi * p / 2
         freq_y: float = 1.0 * np.pi * q / 2
-        remainder = i % 2
-        if remainder == 0:
+        if p < 0 or p == 0 and q > 0:
             return np.cos(freq_x * x + freq_y * y)
         else:
             return np.sin(freq_x * x + freq_y * y)
@@ -111,10 +110,20 @@ class Zonal(ModalBasis):
 
 
 if __name__ == "__main__":
-    mb = Zernike()
-    import time
+    import matplotlib.pyplot as plt
 
-    t1 = time.perf_counter()
-    print(mb.modes_on_unit_disk(nsamplex=12, nmodes=100))
-    t2 = time.perf_counter()
-    print(f"time: {t2-t1:0.3e}")
+    mb = Fourier()
+    modes = mb.modes_on_unit_disk(nsamplex=12, nmodes=100)
+    fig, ax = plt.subplots(10, 10, figsize=[10, 10])
+    for i, a in enumerate(ax.flatten()):
+        a.imshow(modes[:, i].reshape([12, 12]))
+        a.set_xticks([])
+        a.set_yticks([])
+    plt.tight_layout()
+    plt.savefig("tmp.png", dpi=100)
+    # import time
+
+    # t1 = time.perf_counter()
+    # print(mb.modes_on_unit_disk(nsamplex=12, nmodes=100))
+    # t2 = time.perf_counter()
+    # print(f"time: {t2-t1:0.3e}")
