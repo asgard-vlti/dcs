@@ -16,6 +16,7 @@ dependencies = [
   "scipy",
   "astropy",
   "matplotlib",
+  "xaosim",
 ]
 
 
@@ -30,3 +31,8 @@ baldr-reference-registration = "baldr_reference.registration:main"
 
 [tool.setuptools.package-data]
 baldr_reference = ["Exposed_Ma-N_1405_optical_constants.txt"]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
