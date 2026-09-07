@@ -90,7 +90,8 @@
     <g text-rendering="geometricPrecision" stroke-miterlimit="1.45" shape-rendering="geometricPrecision" transform="matrix(1,0,0,1,-657,-264)" stroke-linecap="butt">
       <path fill="none" d="M771.6064 447 L922.3665 447 L922.3665 479.24 L771.6064 479.24 Z" clip-path="url(#clipPath2)"/>
       <rect fill="none" x="774.6064" width="144.76" height="26.24" y="450" clip-path="url(#clipPath2)"/>
-      <text x="778.8799" xml:space="preserve" y="467.776" clip-path="url(#clipPath2)" font-family="sans-serif" stroke="none">meas_offset: Meas&lt;f32&gt;</text>
+      <text x="778.8799" xml:space="preserve" y="459.604" clip-path="url(#clipPath2)" font-family="sans-serif" stroke="none">flux_mask: Meas&lt;bool&gt;</text>
+      <text x="778.8799" xml:space="preserve" y="475.9481" clip-path="url(#clipPath2)" font-family="sans-serif" stroke="none">meas_offset: Meas&lt;f32&gt;</text>
     </g>
     <g fill="url(#linearGradient2)" text-rendering="geometricPrecision" shape-rendering="geometricPrecision" transform="matrix(1,0,0,1,-657,-264)" stroke="url(#linearGradient2)">
       <path d="M952.3665 447 L1134.1265 447 L1134.1265 479.24 L952.3665 479.24 Z" stroke="none" clip-path="url(#clipPath2)"/>

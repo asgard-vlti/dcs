@@ -35,13 +35,18 @@ DEFAULT_HOST = "localhost"
 
 # Default values, will be overridden by CLI arguments
 POKE: float = 0.1
-ALPHA: float = 500.0
+ALPHA: float = 0.1
 BETA: float = 0.0
-MEAS_SCALE: float = 1 / 1000
+# MEAS_SCALE: float = 1 / 1000
 CNT_MIN: int = 3  # minimum number of measurements to wait after applying poke
+
+XC_OFFSET: float = 0.0
+YC_OFFSET: float = 0.0
+MASK_RADIUS: float = WIDTH / 2.0
 
 ARRAY_NAMES = [
     "meas_offset",
+    "flux_mask",
     "meas_to_mode",
     "filter_coeff_in",
     "filter_coeff_out",
@@ -51,12 +56,13 @@ ARRAY_NAMES = [
     "mode_to_com",
     "com_max",
     "com_min",
-    "com_dist_buffer",
-    "com_offset",
 ]
+if DIST_LEN > 0:
+    ARRAY_NAMES += ["com_dist_buffer"]
 
 ARRAY_SHAPES = {
     "meas_offset": (N_PIXELS,),
+    "flux_mask": (N_PIXELS,),
     "meas_to_mode": (N_MODES, N_PIXELS),
     "filter_coeff_in": (FILTER_LEN, N_MODES),
     "filter_coeff_out": (FILTER_LEN, N_MODES),
@@ -67,7 +73,6 @@ ARRAY_SHAPES = {
     "com_max": (N_ACTUATORS,),
     "com_min": (N_ACTUATORS,),
     "com_dist_buffer": (N_ACTUATORS, DIST_LEN),
-    "com_offset": (N_ACTUATORS,),
 }
 
 MODAL_BASIS = modal_basis.Fourier()
@@ -80,6 +85,7 @@ for array_name in ARRAY_NAMES:
 
 INIT_VAL = {
     "meas_offset": 0.0,
+    "flux_mask": 1.0,
     "meas_to_mode": 0.0,
     "filter_coeff_in": 0.0,
     "filter_coeff_out": 0.0,
@@ -90,7 +96,6 @@ INIT_VAL = {
     "com_max": 1e6,
     "com_min": -1e6,
     "com_dist_buffer": 0.0,
-    "com_offset": 0.0,
 }
 # make sure that all named arrays have an entry in this dict:
 for array_name in ARRAY_NAMES:
@@ -131,6 +136,10 @@ class Beam:
         resp = self.socket.send_payload(message, is_str=True, decode_ascii=False)  # type: ignore
         if not isinstance(resp, dict):
             raise ZmqNoResponse(f"No valid response for command '{message}': {resp}")
+        if "status_code" not in resp.keys():
+            raise RuntimeError(
+                f"invalid response from request.\nMessage: `{message}`\nResponse: `{resp}`"
+            )
         if resp["status_code"] != 0:
             raise RuntimeError(resp["data"])
         return resp["data"]
@@ -192,7 +201,7 @@ class Beam:
         assert array is not None
         if array.shape != TARGET_SHAPE:
             raise IndexError(
-                f"meas_offset.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
+                f"{name}.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
             )
         fits.writeto(filename=filename, data=array.astype(DTYPE), overwrite=True)
 
@@ -215,6 +224,17 @@ class Beam:
         for name in ARRAY_NAMES:
             if init:
                 self.writefits(name=name, array=None)
+        if init:
+            # Flux mask requires special treatment:
+            xx, yy = np.meshgrid(
+                np.arange(WIDTH) * 1.0, np.arange(WIDTH) * 1.0, indexing="xy"
+            )
+            rr = (
+                (xx.flatten() - (WIDTH - 1) / 2 - XC_OFFSET) ** 2.0
+                + (yy.flatten() - (WIDTH - 1) / 2 - YC_OFFSET) ** 2.0
+            ) ** 0.5
+            array = (rr < MASK_RADIUS) * 1.0
+            self.writefits(name="flux_mask", array=array)
         for name in ARRAY_NAMES:
             if push_rtc:
                 self.request(name)
@@ -309,7 +329,7 @@ class Beam:
             self.poke(array=mode)
             meas_neg = self.avg_meas(navg=navg, after_frame=CNT_MIN)
             print(f" NEG.")
-            meas = (meas_pos - meas_neg) / (2 * poke) * MEAS_SCALE
+            meas = (meas_pos - meas_neg) / (2 * poke)
 
             # inject it to matrix
             mode_to_meas[:, i] = meas
@@ -334,13 +354,10 @@ class Beam:
         if nmodes is None:
             nmodes = N_MODES
         meas_to_mode = np.zeros((N_MODES, N_PIXELS), dtype=DTYPE)
-        meas_to_mode[:nmodes, :] = (
-            np.linalg.solve(
-                mode_to_meas[:, :nmodes].T @ mode_to_meas[:, :nmodes]
-                + alpha * np.eye(nmodes),
-                mode_to_meas[:, :nmodes].T,
-            )
-            * MEAS_SCALE
+        meas_to_mode[:nmodes, :] = np.linalg.solve(
+            mode_to_meas[:, :nmodes].T @ mode_to_meas[:, :nmodes]
+            + alpha * np.eye(nmodes),
+            mode_to_meas[:, :nmodes].T,
         )
         return meas_to_mode
 

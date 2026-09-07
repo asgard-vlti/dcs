@@ -60,6 +60,7 @@ struct ControlVariables
     // "buffer" that we work on through the pipeline, and only keep variables
     // that need to retain state (e.g., in the IIR filter and the feeback loop)
     Eigen::Matrix<double, N_PIXELS, 1> meas_raw;
+    Eigen::Matrix<double, N_PIXELS, 1> meas_norm;
     Eigen::Matrix<double, N_PIXELS, 1> meas_cl;
     Eigen::Matrix<double, N_MODES, 1> mode_raw;
     Eigen::Matrix<double, N_MODES, 1> mode_filt;
@@ -71,6 +72,7 @@ struct ControlVariables
 
     // dynamically configurable variables
     Eigen::Matrix<double, N_PIXELS, 1> meas_offset;
+    Eigen::Matrix<double, N_PIXELS, 1> flux_mask;
     Eigen::Matrix<double, N_MODES, N_PIXELS, Eigen::RowMajor> meas_to_mode;
     Eigen::Matrix<double, FILTER_LEN, N_MODES, Eigen::RowMajor> filter_coeff_in;
     Eigen::Matrix<double, FILTER_LEN, N_MODES, Eigen::RowMajor> filter_coeff_out;

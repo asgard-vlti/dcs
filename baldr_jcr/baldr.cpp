@@ -83,6 +83,7 @@ std::string encode(const char *input, unsigned int size)
 //----------commander functions from here---------------
 
 DEF_READ_CTRL_PARAM(meas_offset, measurement reference, N_PIXELS, 1, DOUBLE)
+DEF_READ_CTRL_PARAM(flux_mask, mask for normalizing measurement, N_PIXELS, 1, DOUBLE)
 DEF_READ_CTRL_PARAM(meas_to_mode, reconstructor matrix, N_MODES, N_PIXELS, DOUBLE)
 DEF_READ_CTRL_PARAM(filter_coeff_in, IIR input filter coefficients, N_MODES, FILTER_LEN, DOUBLE)
 DEF_READ_CTRL_PARAM(filter_coeff_out, IIR output filter coefficients, N_MODES, FILTER_LEN, DOUBLE)
@@ -100,6 +101,7 @@ Result reset_ctrl()
 {
   ctrl.mutex.lock();
   ctrl.meas_raw.setZero();
+  ctrl.meas_norm.setZero();
   ctrl.meas_cl.setZero();
   ctrl.mode_raw.setZero();
   ctrl.mode_filt.setZero();
@@ -194,10 +196,10 @@ Result get_measurement_encoded()
 {
   MeasBase64 meas;
   ctrl.mutex.lock();
-  // Thanks to the mutex, we can guarantee that ctrl.cnt and ctrl.meas_raw
+  // Thanks to the mutex, we can guarantee that ctrl.cnt and ctrl.meas_norm
   // correspond to the same frame.
   meas.cnt = ctrl.cnt;
-  meas.meas = encode((char *)ctrl.meas_raw.data(), sizeof(double) * N_PIXELS);
+  meas.meas = encode((char *)ctrl.meas_norm.data(), sizeof(double) * N_PIXELS);
   ctrl.mutex.unlock();
   return SUCCESS(meas);
 }
@@ -206,8 +208,6 @@ Result get_mode_encoded()
 {
   ModeBase64 mode;
   ctrl.mutex.lock();
-  // Thanks to the mutex, we can guarantee that ctrl.cnt and ctrl.meas_raw
-  // correspond to the same frame.
   mode.cnt = ctrl.cnt;
   mode.mode = encode((char *)ctrl.mode_filt.data(), sizeof(double) * N_MODES);
   ctrl.mutex.unlock();
@@ -225,9 +225,10 @@ COMMANDER_REGISTER(m)
   m.def("settings", get_settings, "Get current system settings");
   m.def("pxy", set_pxy, "Set the origin pixels", "px"_arg = 15, "py"_arg = 15);
   m.def("flux_threshold", set_flux_threshold, "Set flux threshold", "value"_arg = 100.0);
-  m.def("meas", get_measurement_encoded, "Read meas_raw in Base64 encoding");
+  m.def("meas", get_measurement_encoded, "Read meas_norm in Base64 encoding");
   m.def("mode", get_mode_encoded, "Read mode_filt in Base64 encoding");
   m.def("meas_offset", read_meas_offset, "Read meas_offset from file", "filename"_arg = "./baldr_jcr/meas_offset.fits");
+  m.def("flux_mask", read_flux_mask, "Read flux_mask from file", "filename"_arg = "./baldr_jcr/flux_mask.fits");
   m.def("meas_to_mode", read_meas_to_mode, "Read meas_to_mode from file", "filename"_arg = "./baldr_jcr/meas_to_mode.fits");
   m.def("filter_coeff_in", read_filter_coeff_in, "Read filter_coeff_in from file", "filename"_arg = "./baldr_jcr/filter_coeff_in.fits");
   m.def("filter_coeff_out", read_filter_coeff_out, "Read filter_coeff_out from file", "filename"_arg = "./baldr_jcr/filter_coeff_out.fits");
@@ -291,6 +292,7 @@ int main(int argc, char *argv[])
 
   // read all control matrices/vectors from fits files with same name.
   LOAD_FROM_FILE(meas_offset, measurement reference)
+  LOAD_FROM_FILE(flux_mask, mask for normalizing measurement)
   LOAD_FROM_FILE(meas_to_mode, reconstructor matrix)
   LOAD_FROM_FILE(filter_coeff_in, IIR input filter coefficients)
   LOAD_FROM_FILE(filter_coeff_out, IIR output filter coefficients)

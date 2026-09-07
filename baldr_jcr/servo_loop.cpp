@@ -185,10 +185,15 @@ void read_shm()
 void calibrate_frame()
 {
     ctrl.mutex.lock();
+    // First, we divide the full frame by the sum of the flux within the 
+    // flux mask.
+    double sum = ctrl.meas_raw.dot(ctrl.flux_mask);
+    // printf("sum: %0.1f", sum);
+    ctrl.meas_norm = ctrl.meas_raw / sum;
     // the closed-loop calibrated measurement is the raw measurement plus
     // the measurement offset (typically the negative of the reference
     // measurement, but may also be a function of NCPAs).
-    ctrl.meas_cl = ctrl.meas_raw + ctrl.meas_offset;
+    ctrl.meas_cl = ctrl.meas_norm + ctrl.meas_offset;
     ctrl.mutex.unlock();
 }
 
