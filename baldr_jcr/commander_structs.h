@@ -35,24 +35,14 @@ template <> struct adl_serializer<Status> {
 template <> struct adl_serializer<Settings> {
     static void to_json(json& j, const Settings& p) {
         j = json::object();
-        j["log"] = p.log;
-        j["lol"] = p.lol;
-        j["hog"] = p.hog;
-        j["hol"] = p.hol;
         j["flux_threshold"] = p.flux_threshold;
-        j["num_lomodes"] = p.num_lomodes;
         j["px"] = p.px;
         j["py"] = p.py;
         j["servo_mode"] = p.servo_mode;
     }
     static void from_json(const json& j, Settings& p) {
         p = Settings();
-        j.at("log").get_to(p.log);
-        j.at("lol").get_to(p.lol);
-        j.at("hog").get_to(p.hog);
-        j.at("hol").get_to(p.hol);
         j.at("flux_threshold").get_to(p.flux_threshold);
-        j.at("num_lomodes").get_to(p.num_lomodes);
         j.at("px").get_to(p.px);
         j.at("py").get_to(p.py);
         j.at("servo_mode").get_to(p.servo_mode);
@@ -67,7 +57,7 @@ template <> struct adl_serializer<Result> {
     static void from_json(const json& j, Result& p) {
         p = Result();
         j.at("status_code").get_to(p.status_code);
-        j.at("data").get_to(p.data);
+        p.data = j.at("data");
     }
    };
 template <> struct adl_serializer<MeasBase64> {

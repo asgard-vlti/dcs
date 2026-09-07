@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: baldr-reference-calibration
+Version: 0.1.0
+Summary: Standalone Baldr theoretical references and alignment fitting
+Author-email: Benjamin Courtney-Barrer <bencb92@gmail.com>
+License: MIT
+Requires-Python: >=3.11
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: astropy
+Requires-Dist: matplotlib

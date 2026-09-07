@@ -1,0 +1,503 @@
+{
+  "parameter_names": [
+    "edge_offset_mm",
+    "edge_angle_deg",
+    "cold_stop_x_um",
+    "cold_stop_y_um"
+  ],
+  "parameter_units": [
+    "mm",
+    "deg",
+    "um",
+    "um"
+  ],
+  "true_parameters": [
+    -0.92,
+    1.7,
+    50.0,
+    -45.0
+  ],
+  "scenario_summary": {
+    "band_center_+10nm": {
+      "runs": 1,
+      "mean_error": {
+        "edge_offset_mm": 0.0028021108674791684,
+        "edge_angle_deg": 0.052382638254349745,
+        "cold_stop_x_um": -1.9481380223266882,
+        "cold_stop_y_um": 2.5598716713479064
+      },
+      "std_error": {
+        "edge_offset_mm": 0.0,
+        "edge_angle_deg": 0.0,
+        "cold_stop_x_um": 0.0,
+        "cold_stop_y_um": 0.0
+      },
+      "rmse": {
+        "edge_offset_mm": 0.0028021108674791684,
+        "edge_angle_deg": 0.052382638254349745,
+        "cold_stop_x_um": 1.9481380223266882,
+        "cold_stop_y_um": 2.5598716713479064
+      },
+      "all_successful": true
+    },
+    "band_center_-10nm": {
+      "runs": 1,
+      "mean_error": {
+        "edge_offset_mm": -0.0026095711646118014,
+        "edge_angle_deg": 0.034311137217901466,
+        "cold_stop_x_um": 5.931942427804437,
+        "cold_stop_y_um": 0.42885188694693
+      },
+      "std_error": {
+        "edge_offset_mm": 0.0,
+        "edge_angle_deg": 0.0,
+        "cold_stop_x_um": 0.0,
+        "cold_stop_y_um": 0.0
+      },
+      "rmse": {
+        "edge_offset_mm": 0.0026095711646118014,
+        "edge_angle_deg": 0.034311137217901466,
+        "cold_stop_x_um": 5.931942427804437,
+        "cold_stop_y_um": 0.42885188694693
+      },
+      "all_successful": true
+    },
+    "bandwidth_+5pct": {
+      "runs": 1,
+      "mean_error": {
+        "edge_offset_mm": -1.758214649671963e-05,
+        "edge_angle_deg": 0.05344412141463306,
+        "cold_stop_x_um": 4.660086697825911,
+        "cold_stop_y_um": -1.3633208882607448
+      },
+      "std_error": {
+        "edge_offset_mm": 0.0,
+        "edge_angle_deg": 0.0,
+        "cold_stop_x_um": 0.0,
+        "cold_stop_y_um": 0.0
+      },
+      "rmse": {
+        "edge_offset_mm": 1.758214649671963e-05,
+        "edge_angle_deg": 0.05344412141463306,
+        "cold_stop_x_um": 4.660086697825911,
+        "cold_stop_y_um": 1.3633208882607448
+      },
+      "all_successful": true
+    },
+    "bandwidth_-5pct": {
+      "runs": 1,
+      "mean_error": {
+        "edge_offset_mm": 0.0003397427916039808,
+        "edge_angle_deg": 0.021042145897560705,
+        "cold_stop_x_um": -0.8944481156196815,
+        "cold_stop_y_um": 4.524394213628931
+      },
+      "std_error": {
+        "edge_offset_mm": 0.0,
+        "edge_angle_deg": 0.0,
+        "cold_stop_x_um": 0.0,
+        "cold_stop_y_um": 0.0
+      },
+      "rmse": {
+        "edge_offset_mm": 0.0003397427916039808,
+        "edge_angle_deg": 0.021042145897560705,
+        "cold_stop_x_um": 0.8944481156196815,
+        "cold_stop_y_um": 4.524394213628931
+      },
+      "all_successful": true
+    },
+    "baseline": {
+      "runs": 1,
+      "mean_error": {
+        "edge_offset_mm": -0.00011896842551650799,
+        "edge_angle_deg": 0.018109087605081564,
+        "cold_stop_x_um": 1.7010443836478188,
+        "cold_stop_y_um": 1.0441932471428643
+      },
+      "std_error": {
+        "edge_offset_mm": 0.0,
+        "edge_angle_deg": 0.0,
+        "cold_stop_x_um": 0.0,
+        "cold_stop_y_um": 0.0
+      },
+      "rmse": {
+        "edge_offset_mm": 0.00011896842551650799,
+        "edge_angle_deg": 0.018109087605081564,
+        "cold_stop_x_um": 1.7010443836478188,
+        "cold_stop_y_um": 1.0441932471428643
+      },
+      "all_successful": true
+    },
+    "mask_depth_+0.02um": {
+      "runs": 1,
+      "mean_error": {
+        "edge_offset_mm": 0.0019208213912542682,
+        "edge_angle_deg": 0.05876558144726918,
+        "cold_stop_x_um": -0.3441340611319319,
+        "cold_stop_y_um": -2.6512034184981275
+      },
+      "std_error": {
+        "edge_offset_mm": 0.0,
+        "edge_angle_deg": 0.0,
+        "cold_stop_x_um": 0.0,
+        "cold_stop_y_um": 0.0
+      },
+      "rmse": {
+        "edge_offset_mm": 0.0019208213912542682,
+        "edge_angle_deg": 0.05876558144726918,
+        "cold_stop_x_um": 0.3441340611319319,
+        "cold_stop_y_um": 2.6512034184981275
+      },
+      "all_successful": true
+    },
+    "mask_depth_-0.02um": {
+      "runs": 1,
+      "mean_error": {
+        "edge_offset_mm": -0.0018584199357779552,
+        "edge_angle_deg": 0.02640320032122556,
+        "cold_stop_x_um": 5.878146643701307,
+        "cold_stop_y_um": 5.176924286056476
+      },
+      "std_error": {
+        "edge_offset_mm": 0.0,
+        "edge_angle_deg": 0.0,
+        "cold_stop_x_um": 0.0,
+        "cold_stop_y_um": 0.0
+      },
+      "rmse": {
+        "edge_offset_mm": 0.0018584199357779552,
+        "edge_angle_deg": 0.02640320032122556,
+        "cold_stop_x_um": 5.878146643701307,
+        "cold_stop_y_um": 5.176924286056476
+      },
+      "all_successful": true
+    },
+    "mask_diam_+1um": {
+      "runs": 1,
+      "mean_error": {
+        "edge_offset_mm": -0.00011896842551650799,
+        "edge_angle_deg": 0.018109087605081564,
+        "cold_stop_x_um": 1.7010443836478188,
+        "cold_stop_y_um": 1.0441932471428643
+      },
+      "std_error": {
+        "edge_offset_mm": 0.0,
+        "edge_angle_deg": 0.0,
+        "cold_stop_x_um": 0.0,
+        "cold_stop_y_um": 0.0
+      },
+      "rmse": {
+        "edge_offset_mm": 0.00011896842551650799,
+        "edge_angle_deg": 0.018109087605081564,
+        "cold_stop_x_um": 1.7010443836478188,
+        "cold_stop_y_um": 1.0441932471428643
+      },
+      "all_successful": true
+    },
+    "mask_diam_-1um": {
+      "runs": 1,
+      "mean_error": {
+        "edge_offset_mm": -0.00011896842551650799,
+        "edge_angle_deg": 0.018109087605081564,
+        "cold_stop_x_um": 1.7010443836478188,
+        "cold_stop_y_um": 1.0441932471428643
+      },
+      "std_error": {
+        "edge_offset_mm": 0.0,
+        "edge_angle_deg": 0.0,
+        "cold_stop_x_um": 0.0,
+        "cold_stop_y_um": 0.0
+      },
+      "rmse": {
+        "edge_offset_mm": 0.00011896842551650799,
+        "edge_angle_deg": 0.018109087605081564,
+        "cold_stop_x_um": 1.7010443836478188,
+        "cold_stop_y_um": 1.0441932471428643
+      },
+      "all_successful": true
+    },
+    "noise_0.2pct": {
+      "runs": 3,
+      "mean_error": {
+        "edge_offset_mm": 5.274380294151282e-05,
+        "edge_angle_deg": 0.026958972562443655,
+        "cold_stop_x_um": 1.8499819781161524,
+        "cold_stop_y_um": 1.5428631382788704
+      },
+      "std_error": {
+        "edge_offset_mm": 0.0002575421323830612,
+        "edge_angle_deg": 0.014982143825396763,
+        "cold_stop_x_um": 0.39490466579275163,
+        "cold_stop_y_um": 1.132375051456693
+      },
+      "rmse": {
+        "edge_offset_mm": 0.00026288754002642907,
+        "edge_angle_deg": 0.030842354566852775,
+        "cold_stop_x_um": 1.891661442864298,
+        "cold_stop_y_um": 1.9138181524432443
+      },
+      "all_successful": true
+    },
+    "noise_1pct": {
+      "runs": 3,
+      "mean_error": {
+        "edge_offset_mm": -0.0007388856414014544,
+        "edge_angle_deg": 0.03648240503844039,
+        "cold_stop_x_um": -7.9915514877897165,
+        "cold_stop_y_um": -5.390501491515859
+      },
+      "std_error": {
+        "edge_offset_mm": 0.0010958124169387037,
+        "edge_angle_deg": 0.027681760190468675,
+        "cold_stop_x_um": 3.1371964219443282,
+        "cold_stop_y_um": 0.4995342811037017
+      },
+      "rmse": {
+        "edge_offset_mm": 0.0013216492894055829,
+        "edge_angle_deg": 0.04579569548146897,
+        "cold_stop_x_um": 8.585272073257453,
+        "cold_stop_y_um": 5.41359777117145
+      },
+      "all_successful": true
+    },
+    "temperature_+300K": {
+      "runs": 1,
+      "mean_error": {
+        "edge_offset_mm": -0.0004881064357251663,
+        "edge_angle_deg": 0.009949612348151504,
+        "cold_stop_x_um": 2.3681595166951723,
+        "cold_stop_y_um": 0.6480633082560203
+      },
+      "std_error": {
+        "edge_offset_mm": 0.0,
+        "edge_angle_deg": 0.0,
+        "cold_stop_x_um": 0.0,
+        "cold_stop_y_um": 0.0
+      },
+      "rmse": {
+        "edge_offset_mm": 0.0004881064357251663,
+        "edge_angle_deg": 0.009949612348151504,
+        "cold_stop_x_um": 2.3681595166951723,
+        "cold_stop_y_um": 0.6480633082560203
+      },
+      "all_successful": true
+    },
+    "temperature_-300K": {
+      "runs": 1,
+      "mean_error": {
+        "edge_offset_mm": 0.000783623885909468,
+        "edge_angle_deg": 0.06327595959812138,
+        "cold_stop_x_um": 2.207498747941287,
+        "cold_stop_y_um": 2.6084717106487005
+      },
+      "std_error": {
+        "edge_offset_mm": 0.0,
+        "edge_angle_deg": 0.0,
+        "cold_stop_x_um": 0.0,
+        "cold_stop_y_um": 0.0
+      },
+      "rmse": {
+        "edge_offset_mm": 0.000783623885909468,
+        "edge_angle_deg": 0.06327595959812138,
+        "cold_stop_x_um": 2.207498747941287,
+        "cold_stop_y_um": 2.6084717106487005
+      },
+      "all_successful": true
+    }
+  },
+  "config": {
+    "source": {
+      "profile": "internal",
+      "profiles": {
+        "internal": {
+          "spectral_type": null,
+          "temperature_K": 3000.0,
+          "photons_per_second_per_pixel_per_nm": 1000.0
+        }
+      }
+    },
+    "spectrum": {
+      "mode": "blackbody",
+      "weighting": "photon",
+      "wavelength_min_m": 1.5e-06,
+      "wavelength_max_m": 1.8e-06,
+      "samples": 3
+    },
+    "pupil": {
+      "geometry": "solarstein",
+      "rotation_deg": 0.0,
+      "array_size": 256,
+      "pixels_across_pupil": 64,
+      "physical_diameter_m": 1.8
+    },
+    "flat_dm": {
+      "model": "BMC-multi-3.5",
+      "flat_command": 0.5,
+      "opd_per_command_m": 3e-06,
+      "actuator_coupling_factor": 0.75
+    },
+    "optics": {
+      "f_number": 21.2
+    },
+    "phase_mask": {
+      "name": "H3"
+    },
+    "relay": {
+      "entrance_diameter_m": 0.012,
+      "oap_focal_length_m": 0.254,
+      "collimator_focal_length_m": 0.04,
+      "distance_to_mirror_m": 0.5,
+      "mirror_diameter_m": 0.0254,
+      "edge_offset_m": -0.001,
+      "edge_angle_rad": 0.0,
+      "imaging_focal_length_m": 0.184,
+      "cold_stop_diameter_m": 0.002145,
+      "cold_stop_x_offset_m": 0.0,
+      "cold_stop_y_offset_m": 0.0,
+      "detector_pupil_diameter_m": 0.000288,
+      "pupil_misconjugation_m": 0.0
+    },
+    "detector": {
+      "binning": 4,
+      "crop": null,
+      "exposure_s": 0.001,
+      "quantum_efficiency": 0.7
+    },
+    "fit": {
+      "bounds": [
+        [
+          -1.3,
+          -0.5
+        ],
+        [
+          -4.0,
+          4.0
+        ],
+        [
+          -120.0,
+          120.0
+        ],
+        [
+          -120.0,
+          120.0
+        ]
+      ],
+      "finite_difference_steps": [
+        0.04,
+        0.25,
+        30.0,
+        30.0
+      ],
+      "coarse_points_per_axis": 5,
+      "coarse_passes": 1,
+      "max_function_evaluations": 24
+    },
+    "synthetic_test": {
+      "true_parameters": [
+        -0.92,
+        1.7,
+        50.0,
+        -45.0
+      ],
+      "flux_scale": 0.85,
+      "clear_background": 20.0,
+      "zwfs_background": 25.0,
+      "noise_std": 0.0,
+      "random_seed": 5
+    },
+    "sensitivity": {
+      "random_seed": 100,
+      "scenarios": [
+        {
+          "name": "baseline",
+          "repeats": 1,
+          "perturbation": {}
+        },
+        {
+          "name": "noise_0.2pct",
+          "repeats": 3,
+          "perturbation": {
+            "noise_fraction": 0.002
+          }
+        },
+        {
+          "name": "noise_1pct",
+          "repeats": 3,
+          "perturbation": {
+            "noise_fraction": 0.01
+          }
+        },
+        {
+          "name": "mask_diam_-1um",
+          "repeats": 1,
+          "perturbation": {
+            "mask_diameter_delta_um": -1.0
+          }
+        },
+        {
+          "name": "mask_diam_+1um",
+          "repeats": 1,
+          "perturbation": {
+            "mask_diameter_delta_um": 1.0
+          }
+        },
+        {
+          "name": "mask_depth_-0.02um",
+          "repeats": 1,
+          "perturbation": {
+            "mask_depth_delta_um": -0.02
+          }
+        },
+        {
+          "name": "mask_depth_+0.02um",
+          "repeats": 1,
+          "perturbation": {
+            "mask_depth_delta_um": 0.02
+          }
+        },
+        {
+          "name": "temperature_-300K",
+          "repeats": 1,
+          "perturbation": {
+            "temperature_delta_K": -300.0
+          }
+        },
+        {
+          "name": "temperature_+300K",
+          "repeats": 1,
+          "perturbation": {
+            "temperature_delta_K": 300.0
+          }
+        },
+        {
+          "name": "band_center_-10nm",
+          "repeats": 1,
+          "perturbation": {
+            "passband_center_delta_nm": -10.0
+          }
+        },
+        {
+          "name": "band_center_+10nm",
+          "repeats": 1,
+          "perturbation": {
+            "passband_center_delta_nm": 10.0
+          }
+        },
+        {
+          "name": "bandwidth_-5pct",
+          "repeats": 1,
+          "perturbation": {
+            "passband_width_fraction": -0.05
+          }
+        },
+        {
+          "name": "bandwidth_+5pct",
+          "repeats": 1,
+          "perturbation": {
+            "passband_width_fraction": 0.05
+          }
+        }
+      ]
+    }
+  }
+}

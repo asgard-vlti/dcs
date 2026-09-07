@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "baldr-reference-calibration"
+version = "0.1.0"
+authors = [
+    { name = "Benjamin Courtney-Barrer", email = "bencb92@gmail.com" }
+]
+description = "Standalone Baldr theoretical references and alignment fitting"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = [
+  "numpy",
+  "scipy",
+  "astropy",
+  "matplotlib",
+  "xaosim",
+]
+
+
+[project.scripts]
+baldr-reference-generate = "baldr_reference.generate:main"
+baldr-reference-fit = "baldr_reference.fitting:main"
+baldr-acquire-references = "baldr_reference.acquisition:main"
+baldr-reference-sim-test = "baldr_reference.simulate:main"
+baldr-reference-sensitivity = "baldr_reference.sensitivity:main"
+baldr-reference-compare = "baldr_reference.compare:main"
+baldr-reference-registration = "baldr_reference.registration:main"
+
+[tool.setuptools.package-data]
+baldr_reference = ["Exposed_Ma-N_1405_optical_constants.txt"]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
