@@ -36,6 +36,7 @@ from baldr_reference.fitting import (
     fit_alignment,
     measure_pupil,
     parameters_from_config,
+    read_reference_fits,
 )
 from baldr_reference.model import generate_references
 

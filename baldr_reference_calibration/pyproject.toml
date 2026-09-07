@@ -22,6 +22,7 @@ dependencies = [
 [project.scripts]
 baldr-reference-generate = "baldr_reference.generate:main"
 baldr-reference-fit = "baldr_reference.fitting:main"
+baldr-acquire-references = "baldr_reference.acquisition:main"
 baldr-reference-sim-test = "baldr_reference.simulate:main"
 baldr-reference-sensitivity = "baldr_reference.sensitivity:main"
 baldr-reference-compare = "baldr_reference.compare:main"

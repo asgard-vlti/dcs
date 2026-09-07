@@ -2,15 +2,26 @@
 
 Standalone tools for:
 
-1. Generating theoretical clear pupil and ZWFS reference intensities.
-2. Fitting knife edge and cold stop alignment from a measured clear/ZWFS pair.
-3. Testing alignment recovery with synthetic data.
-4. Measuring sensitivity to noise, phase mask , source, and passband errors.
+1. Acquiring averaged clear pupil and ZWFS reference intensities from shared memory.
+2. Generating theoretical clear pupil and ZWFS reference intensities.
+3. Fitting knife edge and cold stop alignment from a measured clear/ZWFS pair.
+4. Testing alignment recovery with synthetic data.
+5. Measuring sensitivity to noise, phase mask, source, and passband errors.
 
-The package does not import BaldrApp, pyZELDA, or XAOSIM. It preserves the
-validated BaldrApp 0.1.7 numerical conventions and requires Python 3.11+.
+The physical model and fitting routines do not import BaldrApp, pyZELDA, or
+XAOSIM. The acquisition command uses XAOSIM only to access the camera shared
+memory. The model preserves the validated BaldrApp 0.1.7 numerical conventions
+and requires Python 3.11+.
 
 The physical model integrates a configurable internal or stellar spectrum over wavelength and propagates it through the Baldr system to generate clear pupil and ZWFS intensities. It includes configurable pupil geometry and rotation, flat-DM phase, wavelength dependent phase mask  size and phase delay, Fresnel relay propagation, knife edge and cold stop alignment, pupil misconjugation, detector sampling, and photometric scaling. The fitting routine automatically registers and crops the theoretical pupil to the measured subframe before fitting the knife edge and cold stop parameters.
+
+The top-level operational workflow is:
+
+1. Acquire averaged clear-pupil (`N0`) and ZWFS-pupil (`I0`) images from shared memory.
+2. Fit the measured pair using a JSON configuration appropriate to the beam, phase mask, source, and passband.
+3. Inspect the fitted parameters, residuals, and fit diagnostics. If the inferred alignment is unacceptable, adjust the optics and repeat the acquisition and fit. If it is acceptable, transfer the fitted alignment values into the relevant configuration and generate or update the reference products used for subsequent control-loop calibration.
+
+Acquisition and fitting are diagnostic steps: they do not move the phase mask, adjust the optics, or update an RTC configuration automatically.
 
 ## Installation
 
@@ -25,12 +36,34 @@ This provides both Python modules and the following commands:
 ```text
 baldr-reference-generate
 baldr-reference-fit
+baldr-acquire-references
 baldr-reference-sim-test
 baldr-reference-sensitivity
 baldr-reference-compare
 ```
 
 Thin wrappers with equivalent behavior are retained under `scripts/`.
+
+## Acquire measured references
+
+With the Baldr camera shared memory running, acquire an averaged clear/ZWFS
+reference pair with:
+
+```bash
+baldr-acquire-references \
+  --beam_id 1 \
+  --n_clear 500 \
+  --n_zwfs 500 \
+  --phasemask H3 \
+  --output_dir output
+```
+
+The operator is responsible for moving the phase mask. The command first asks
+for the mask to be moved out of the beam and waits for confirmation before
+acquiring `N0`; it then asks for the selected phase mask to be moved into the
+beam and waits again before acquiring `I0`. It does not send motor commands.
+The output is a timestamped FITS file containing metadata in the primary HDU,
+followed by the averaged `N0` and `I0` image extensions expected by the fitter.
 
 ## Generate a theoretical reference
 
@@ -74,6 +107,16 @@ baldr-reference-fit \
   configs/fit.example.json \
   fit_output
 ```
+
+The JSON input is required because the two measured pupil images do not by
+themselves define the complete physical forward model. It supplies the nominal
+instrument and observing configuration, including the wavelength sampling and
+source spectrum, pupil and detector geometry, phase-mask properties, relay
+parameters, and initial alignment values. It also defines the fitting settings,
+including parameter bounds, finite-difference steps, coarse-search sampling,
+and convergence limits. The alignment values in the JSON are initial conditions
+rather than assumed true values: the knife-edge offset and angle and the two
+cold-stop offsets are varied within the configured bounds during the fit.
 
 The FITS reader accepts named clear/ZWFS extensions, the first two 2-D image
 HDUs, or the first two frames of a cube. It produces a summary, coarse fit
