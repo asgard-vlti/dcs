@@ -36,10 +36,10 @@ parser.add_argument(
     "Each is saved into its own flat file at the end",
 )
 parser.add_argument(
-    "--show-plots",
+    "--no-plots",
     action="store_true",
     default=False,
-    help="Show plots at the end of optimization",
+    help="Suppress plots at the end of optimization",
 )
 parser.add_argument(
     "--pupil",
@@ -230,8 +230,8 @@ def generate_zwfs_model_image(
         pupil = pupil_guess.copy()
         pupil /= np.max(pupil)
 
-        downscale = n_pix_pupil // pupil.shape[0]
-        pupil = np.kron(pupil, np.ones((downscale, downscale)))
+        # downscale = n_pix_pupil // pupil.shape[0]
+        # pupil = np.kron(pupil, np.ones((downscale, downscale)))
 
         pupil = hcipy.Field(
             np.sqrt(pupil.flatten()),
@@ -302,7 +302,7 @@ def generate_zwfs_model_image(
 
 def main():
     beam = args.beam
-    show_plots = args.show_plots
+    show_plots = not args.no_plots
 
     def mds_connect(host: str, port: int = 5555, timeout_ms: int = 5000):
         ctx = zmq.Context()
@@ -488,10 +488,17 @@ def main():
             get_telescope_params("Lab")
         )
 
+        # TODO: remove this
+        np.save(
+            "~/delete_this/pupil_only.npz",
+            pupil_only=pupil_only,
+            pupil_center=pupil_center,
+        )
+
         res = fit_amp_errors(
-            pupil_img=pupil_only,
+            pupil_img=pupil_only / np.sum(pupil_only),
             pupil_radius=8.0,
-            pupil_center=np.array(pupil_center) + (32 - 1) / 2,
+            pupil_center=np.array(pupil_center),
             secondary_ratio=secondary_diameter / telescope_diameter,
             out_scale=4,
         )
@@ -512,6 +519,18 @@ def main():
             n_pix_final=32,
         )
         loss_args = (model_img, pupil_mask, 0.1)
+
+        if show_plots:
+            plt.figure()
+            plt.subplot(121)
+            plt.imshow(pupil_only)
+            plt.title("Pupil only image")
+            plt.colorbar()
+            plt.subplot(122)
+            plt.imshow(final_pupil)
+            plt.title("Fitted intensity errors")
+            plt.colorbar()
+            plt.show()
 
     else:
         raise ValueError(
