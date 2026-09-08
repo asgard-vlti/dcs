@@ -489,8 +489,8 @@ def main():
         )
 
         # TODO: remove this
-        np.save(
-            "~/delete_this/pupil_only.npz",
+        np.savez(
+            "/home/asg/delete_this/pupil_only.npz",
             pupil_only=pupil_only,
             pupil_center=pupil_center,
         )
