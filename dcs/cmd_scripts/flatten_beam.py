@@ -29,7 +29,7 @@ parser.add_argument("beam", type=int, help="Beam number")
 parser.add_argument(
     "--target",
     choices=["stddev", "model"],
-    default=False,
+    default="model",
     help="Whether the target should be visual flatness or a model based reference. "
     "Each is saved into its own flat file at the end",
 )
@@ -213,10 +213,10 @@ def main():
     mds_send(sock, f"moveabs BMY{beam} 500.0")
     time.sleep(3)
     cam.take_dark(256)
-    if show_plots:
-        plt.imshow(cam.dark)
-        plt.colorbar()
-        plt.show()
+    # if show_plots:
+    #     plt.imshow(cam.dark)
+    #     plt.colorbar()
+    #     plt.show()
 
     mds_send(sock, f"moveabs BMY{beam} {cur_bmy}")
     time.sleep(3)
@@ -233,10 +233,10 @@ def main():
     mds_send(sock, f"moverel BMY{beam} {-offset}")
     time.sleep(1)
 
-    if show_plots:
-        plt.imshow(pupil_only)
-        plt.colorbar()
-        plt.show()
+    # if show_plots:
+    #     plt.imshow(pupil_only)
+    #     plt.colorbar()
+    #     plt.show()
 
     act_grid = DM_modes2.make_hc_act_grid()
     fourier, freqs_used = DM_modes2.fourier_basis(
@@ -280,10 +280,10 @@ def main():
     ).reshape(32, 32)
     pupil_center = (res.x[1], res.x[2])
 
-    if show_plots:
-        plt.imshow(pupil_only)
-        plt.contour(pupil_mask, levels=[0.5], colors="r")
-        plt.show()
+    # if show_plots:
+    #     plt.imshow(pupil_only)
+    #     plt.contour(pupil_mask, levels=[0.5], colors="r")
+    #     plt.show()
 
     # pupil_mask =
     scattered_flux_mask_r_outer = 12
@@ -349,7 +349,9 @@ def main():
         img_in_pupil /= np.sum(img_in_pupil)
         model_in_pupil /= np.sum(model_in_pupil)
 
-        return -np.sum(img_in_pupil * model_in_pupil)
+        # return -np.sum(img_in_pupil * model_in_pupil)
+        rmse = np.sqrt(np.mean((img_in_pupil - model_in_pupil) ** 2))
+        return rmse
 
     if args.target == "stddev":
         loss = basis_loss
@@ -358,12 +360,16 @@ def main():
         loss = model_loss
         print(f"Generating model image for beam {beam}, centre {pupil_center}...")
         model_img = generate_zwfs_model_image(
-            "AT",
+            "Lab",
             "H3",
             centre=np.array(pupil_center) + (32 - 1) / 2,
             include_cold_stop=True,
         )
         loss_args = (model_img, pupil_mask, 0.1)
+    else:
+        raise ValueError(
+            f"Invalid target: {args.target}. Must be one of ['stddev', 'model']"
+        )
 
     freqs = [2.01, 3.51, 5.01]
     n_iters = [50, 120, 240]
@@ -393,7 +399,7 @@ def main():
         res = opt.minimize(
             loss,
             init_coeffs,
-            loss_args,
+            (fourier, *loss_args),
             method="COBYLA",
             options={"disp": True, "maxiter": n_it},
             # bounds=[[-0.05, 0.05] for _ in range(n_modes)],
@@ -402,6 +408,29 @@ def main():
         print(f"Loss at end of optimization with {n_modes} modes: {res.fun:.3f}")
 
         prev_fourier = fourier
+
+        if show_plots and args.target == "model":
+            dm.set_data(fourier.linear_combination(res.x * 0.05))
+            time.sleep(0.5)
+            img = cam.take_stack(64).mean(0)
+            plt.figure()
+            plt.subplot(131)
+            plt.imshow(model_img / np.sum(model_img))
+            plt.colorbar()
+            plt.title("Model image")
+            plt.subplot(132)
+            plt.imshow(img / np.sum(img))
+            plt.colorbar()
+            plt.title("Current image")
+            plt.subplot(133)
+            plt.imshow(
+                model_img / np.sum(model_img) - img / np.sum(img),
+                norm=mcolors.CenteredNorm(),
+                cmap="RdBu_r",
+            )
+            plt.colorbar()
+            plt.title("Difference")
+            plt.show()
 
     # Apply final optimization result to DM
     final_coeffs = res.x * 0.1  # Apply the final scale factor
