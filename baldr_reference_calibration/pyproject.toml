@@ -1,3 +1,4 @@
+#pip install -e . --no-index --no-build-isolation --find-links ~/Downloads
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
@@ -9,7 +10,7 @@ authors = [
     { name = "Benjamin Courtney-Barrer", email = "bencb92@gmail.com" }
 ]
 description = "Standalone Baldr theoretical references and alignment fitting"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 dependencies = [
   "numpy",
