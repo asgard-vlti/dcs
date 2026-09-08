@@ -974,6 +974,8 @@ class MCSServer:
             elif msg.get("origin") == "s_bld_pup_autoalign_sky":
                 # Save the data for later processing
                 self.data = msg
+            elif msg.get("origin") == "find_fringes":
+                self.data = msg
 
 
 # ---------------- Main publish loop ----------------

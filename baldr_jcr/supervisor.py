@@ -19,7 +19,7 @@ N_PIXELS = WIDTH * WIDTH
 FILTER_LEN = 1
 N_ACTX = 12
 N_ACTUATORS = N_ACTX * N_ACTX
-DIST_LEN = 100
+DIST_LEN = 0
 
 # local constants:
 BALDR_ROOT = path.abspath(path.dirname(__file__))
@@ -35,13 +35,18 @@ DEFAULT_HOST = "localhost"
 
 # Default values, will be overridden by CLI arguments
 POKE: float = 0.1
-ALPHA: float = 500.0
+ALPHA: float = 0.1
 BETA: float = 0.0
-MEAS_SCALE: float = 1 / 1000
+# MEAS_SCALE: float = 1 / 1000
 CNT_MIN: int = 3  # minimum number of measurements to wait after applying poke
+
+XC_OFFSET: float = 0.0
+YC_OFFSET: float = 0.0
+MASK_RADIUS: float = WIDTH / 2.0
 
 ARRAY_NAMES = [
     "meas_offset",
+    "flux_mask",
     "meas_to_mode",
     "filter_coeff_in",
     "filter_coeff_out",
@@ -51,13 +56,13 @@ ARRAY_NAMES = [
     "mode_to_com",
     "com_max",
     "com_min",
-    "com_dist_buffer",
-    "com_offset",
-    "com_to_meas",
 ]
+if DIST_LEN > 0:
+    ARRAY_NAMES += ["com_dist_buffer"]
 
 ARRAY_SHAPES = {
     "meas_offset": (N_PIXELS,),
+    "flux_mask": (N_PIXELS,),
     "meas_to_mode": (N_MODES, N_PIXELS),
     "filter_coeff_in": (FILTER_LEN, N_MODES),
     "filter_coeff_out": (FILTER_LEN, N_MODES),
@@ -68,8 +73,6 @@ ARRAY_SHAPES = {
     "com_max": (N_ACTUATORS,),
     "com_min": (N_ACTUATORS,),
     "com_dist_buffer": (N_ACTUATORS, DIST_LEN),
-    "com_offset": (N_ACTUATORS,),
-    "com_to_meas": (N_PIXELS, N_ACTUATORS),
 }
 
 MODAL_BASIS = modal_basis.Fourier()
@@ -82,6 +85,7 @@ for array_name in ARRAY_NAMES:
 
 INIT_VAL = {
     "meas_offset": 0.0,
+    "flux_mask": 1.0,
     "meas_to_mode": 0.0,
     "filter_coeff_in": 0.0,
     "filter_coeff_out": 0.0,
@@ -92,8 +96,6 @@ INIT_VAL = {
     "com_max": 1e6,
     "com_min": -1e6,
     "com_dist_buffer": 0.0,
-    "com_offset": 0.0,
-    "com_to_meas": 0.0,
 }
 # make sure that all named arrays have an entry in this dict:
 for array_name in ARRAY_NAMES:
@@ -108,8 +110,8 @@ class ZmqNoResponse(RuntimeError):
 
 @dataclass
 class Beam:
-    """Object for managing all interactions with the RTC at the per-beam level.
-    """
+    """Object for managing all interactions with the RTC at the per-beam level."""
+
     socket: Optional[ZmqReq] = field(init=False)
     beam_id: int
     host: str = DEFAULT_HOST
@@ -134,6 +136,10 @@ class Beam:
         resp = self.socket.send_payload(message, is_str=True, decode_ascii=False)  # type: ignore
         if not isinstance(resp, dict):
             raise ZmqNoResponse(f"No valid response for command '{message}': {resp}")
+        if "status_code" not in resp.keys():
+            raise RuntimeError(
+                f"invalid response from request.\nMessage: `{message}`\nResponse: `{resp}`"
+            )
         if resp["status_code"] != 0:
             raise RuntimeError(resp["data"])
         return resp["data"]
@@ -177,7 +183,7 @@ class Beam:
 
     @property
     def file_prefix(self) -> str:
-        return path.join(BALDR_ROOT, "") # f"B{self.beam_id}_")
+        return path.join(BALDR_ROOT, "")  # f"B{self.beam_id}_")
 
     @staticmethod
     def check_name(name: str):
@@ -195,7 +201,7 @@ class Beam:
         assert array is not None
         if array.shape != TARGET_SHAPE:
             raise IndexError(
-                f"meas_offset.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
+                f"{name}.shape incorrect\nexpected: {TARGET_SHAPE}, got: {array.shape}"
             )
         fits.writeto(filename=filename, data=array.astype(DTYPE), overwrite=True)
 
@@ -218,6 +224,17 @@ class Beam:
         for name in ARRAY_NAMES:
             if init:
                 self.writefits(name=name, array=None)
+        if init:
+            # Flux mask requires special treatment:
+            xx, yy = np.meshgrid(
+                np.arange(WIDTH) * 1.0, np.arange(WIDTH) * 1.0, indexing="xy"
+            )
+            rr = (
+                (xx.flatten() - (WIDTH - 1) / 2 - XC_OFFSET) ** 2.0
+                + (yy.flatten() - (WIDTH - 1) / 2 - YC_OFFSET) ** 2.0
+            ) ** 0.5
+            array = (rr < MASK_RADIUS) * 1.0
+            self.writefits(name="flux_mask", array=array)
         for name in ARRAY_NAMES:
             if push_rtc:
                 self.request(name)
@@ -298,14 +315,21 @@ class Beam:
         for i in range(nmodes):
             mode = np.zeros(N_MODES)
             # poke mode i (positive poke)
+            print(
+                f"poking mode {i}/{nmodes} for {navg} frames, {poke:0.2e}.",
+                end="",
+                flush=True,
+            )
             mode[i] = poke
             self.poke(array=mode)
             meas_pos = self.avg_meas(navg=navg, after_frame=CNT_MIN)
+            print(" POS.", end="", flush=True)
             # poke mode i (negative poke)
             mode[i] = -poke
             self.poke(array=mode)
             meas_neg = self.avg_meas(navg=navg, after_frame=CNT_MIN)
-            meas = (meas_pos - meas_neg) / (2 * poke) * MEAS_SCALE
+            print(f" NEG.")
+            meas = (meas_pos - meas_neg) / (2 * poke)
 
             # inject it to matrix
             mode_to_meas[:, i] = meas
@@ -330,81 +354,17 @@ class Beam:
         if nmodes is None:
             nmodes = N_MODES
         meas_to_mode = np.zeros((N_MODES, N_PIXELS), dtype=DTYPE)
-        meas_to_mode[:nmodes, :] = (
-            np.linalg.solve(
-                mode_to_meas[:, :nmodes].T @ mode_to_meas[:, :nmodes]
-                + alpha * np.eye(nmodes),
-                mode_to_meas[:, :nmodes].T,
-            )
-            * MEAS_SCALE
+        meas_to_mode[:nmodes, :] = np.linalg.solve(
+            mode_to_meas[:, :nmodes].T @ mode_to_meas[:, :nmodes]
+            + alpha * np.eye(nmodes),
+            mode_to_meas[:, :nmodes].T,
         )
         return meas_to_mode
-
-    def create_polc_matrices(
-        self,
-        *,
-        navg: int = 5,
-        alpha: float = ALPHA,
-        beta: float = BETA,
-        poke: float = POKE,
-        nmodes: Optional[int] = None,
-    ):
-        """Measure the interaction matrix, fit the system parameters based on that
-        measurement, and then compute and upload all control matrices derived from
-        the system parameters.
-
-        NOTE: To avoid recompiling the RTC, the nmodes option only modifies the
-        "values" of the control matrices, not the dimensions. For this reason, the
-        code will sometimes refer to N_MODES (a constant) and nmodes (a variable).
-        """
-
-        ### Build mode_to_com projection
-        mode_to_com = MODAL_BASIS.modes_on_unit_disk(
-            nsamplex=N_ACTX, nmodes=N_MODES
-        )
-
-        ### Measure mode_to_slope interaction
-        # flatten DM
-        self.flatten_dm()
-        self.flatten_offsets()
-
-        # set mode_to_com
-        self.update_array(name="mode_to_com", array=mode_to_com)
-
-        # measure modal imat
-        mode_to_meas, meas_offset = self.measure_interaction_matrix(
-            navg=navg,
-            poke=poke,
-            nmodes=nmodes,
-        )
-
-        # run some statistics on the measured interaction matrix
-        # TODO
-
-        # produce com imat
-        if nmodes is None:
-            nmodes = N_MODES
-        com_to_meas = (
-            mode_to_meas[:, :nmodes]
-            @ np.linalg.solve(
-                mode_to_com[:, :nmodes].T @ mode_to_com[:, :nmodes] + beta * np.eye(nmodes),
-                mode_to_com[:, :nmodes].T,
-            )
-            / MEAS_SCALE
-        )
-        self.update_array(name="com_to_meas", array=com_to_meas)
-
-        ### Invert mode_to_slope to build slope_to_mode reconstructor
-        meas_to_mode = self.build_meas_to_mode(
-            mode_to_meas=mode_to_meas, alpha=alpha, nmodes=nmodes
-        )
-        self.update_array(name="meas_to_mode", array=meas_to_mode)
-        self.update_array(name="meas_offset", array=meas_offset)
 
     def create_leaky_matrices(
         self,
         *,
-        navg: int = 5,
+        navg: int = 1,
         alpha: float = ALPHA,
         poke: float = POKE,
         nmodes: Optional[int] = None,
@@ -418,9 +378,7 @@ class Beam:
         code will sometimes refer to N_MODES (a constant) and nmodes (a variable).
         """
         ### Build mode_to_com projection
-        mode_to_com = MODAL_BASIS.modes_on_unit_disk(
-            nsamplex=N_ACTX, nmodes=N_MODES
-        )
+        mode_to_com = MODAL_BASIS.modes_on_unit_disk(nsamplex=N_ACTX, nmodes=N_MODES)
 
         ### Measure mode_to_slope interaction
         # flatten DM
@@ -436,8 +394,6 @@ class Beam:
             poke=poke,
             nmodes=nmodes,
         )
-
-        self.update_array(name="com_to_meas", array=np.zeros((N_PIXELS, N_ACTUATORS)))
 
         ### Invert mode_to_slope to build slope_to_mode reconstructor
         meas_to_mode = self.build_meas_to_mode(
@@ -458,16 +414,17 @@ if __name__ == "__main__":
         help="initialise all arrays with zeros and save them to disk",
         action="count",
     )
-    parser.add_argument(
-        "--disturboff",
-        help="resets the disturbance to zero",
-        action="count",
-    )
-    parser.add_argument(
-        "--disturb",
-        help="inject a test signal onto the dms",
-        action="count",
-    )
+    if DIST_LEN > 0:
+        parser.add_argument(
+            "--disturboff",
+            help="resets the disturbance to zero",
+            action="count",
+        )
+        parser.add_argument(
+            "--disturb",
+            help="inject a test signal onto the dms",
+            action="count",
+        )
 
     parser.add_argument(
         "--offset",
@@ -528,42 +485,32 @@ This is correct behaviour if the RTC is not yet running.
         beam.set_com_clip(clip_val=args.clipcom)
         action_performed = True
 
-    if args.disturb is not None:
+    if DIST_LEN > 0:
+        if args.disturb is not None:
+            if args.disturboff is not None:
+                raise ValueError(
+                    "cannot simultaneously be disturbing and not disturbing"
+                )
+            # The default disturbance is a sine wave that sweeps accross the dm
+            # over 20 frames.
+            _, xx = np.meshgrid(
+                np.linspace(0, 2 * 2 * np.pi, N_ACTX + 1)[:-1],
+                np.linspace(0, 2 * 2 * np.pi, N_ACTX + 1)[:-1],
+                indexing="ij",
+            )
+            xx_flat = xx.flatten()
+            disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
+            for i, t in enumerate(np.linspace(0, 2 * np.pi, DIST_LEN + 1)[:-1]):
+                disturbance[:, i] = 0.1 * np.sin(xx_flat + t)
+            beam.update_array(name="com_dist_buffer", array=disturbance)
+            action_performed = True
+
         if args.disturboff is not None:
-            raise ValueError("cannot simultaneously be disturbing and not disturbing")
-        # The default disturbance is a sine wave that sweeps accross the dm
-        # over 20 frames.
-        _, xx = np.meshgrid(
-            np.linspace(0, 2 * 2 * np.pi, N_ACTX + 1)[:-1],
-            np.linspace(0, 2 * 2 * np.pi, N_ACTX + 1)[:-1],
-            indexing="ij",
-        )
-        xx_flat = xx.flatten()
-        disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
-        for i, t in enumerate(np.linspace(0, 2 * np.pi, DIST_LEN + 1)[:-1]):
-            disturbance[:, i] = 0.1 * np.sin(xx_flat + t)
-        beam.update_array(name="com_dist_buffer", array=disturbance)
-        action_performed = True
+            disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
+            beam.update_array(name="com_dist_buffer", array=disturbance)
+            action_performed = True
 
-    if args.disturboff is not None:
-        disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
-        beam.update_array(name="com_dist_buffer", array=disturbance)
-        action_performed = True
-
-    if args.polc is not None:
-        if args.recompute is not None:
-            beam.create_polc_matrices(nmodes=args.nmodes, poke=args.poke)
-        if args.gain is not None:
-            gain = args.gain
-        else:
-            gain = 0.3
-        if args.leak is not None:
-            leak = args.leak
-        else:
-            leak = 1.0
-        beam.set_polc_gain(ewma_gain=gain, ewma_leak=leak)
-        action_performed = True
-    elif args.leaky is not None:
+    if args.leaky is not None:
         if args.recompute is not None:
             beam.create_leaky_matrices(nmodes=args.nmodes, poke=args.poke)
         if args.gain is not None:
@@ -578,7 +525,7 @@ This is correct behaviour if the RTC is not yet running.
         action_performed = True
     else:
         if args.gain is not None:
-            raise ValueError("gain must only be set if also passing --polc or --leaky")
+            raise ValueError("gain must only be set if also passing --leaky")
         if args.leak is not None:
             raise ValueError("leak must only be set if also passing --leaky")
 

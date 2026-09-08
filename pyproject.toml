@@ -1,4 +1,4 @@
-# magic line for install is 
+# magic line for install is "./install" which runs:
 # pip install -e . --no-index --find-links ~/Downloads
 # Then, to install the run_* commands, execute from terminal:
 # dcs-run-scripts
@@ -39,6 +39,7 @@ move-hpol = 'pyeng_heimdallr.move_hpol:main'
 h-pupil-track = 'pyeng_heimdallr.tip_tilt_sensor.pupil_drift_monitor:main'
 dcs-run-scripts = "run_scripts.install:main"
 baldrtt-recon = "baldr_tt.save_recon:main"
+flatten-beam = "dcs.cmd_scripts.flatten_beam:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["dcs", "minimal_baldr_python_rtc"]

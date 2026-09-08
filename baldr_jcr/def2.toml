@@ -3,9 +3,6 @@ name = "Default Configuration"
 # Beam. This should be over-written as an input.
 beam = 2
 
-# DM Rotations in radians
-dm_rotation = [-20,0,0,50]
-
 #Wavelength in microns
 wave = 1.65
 
@@ -14,25 +11,25 @@ px = 15
 py = 15
 
 #Width with respect to the central pixel. Must be odd!
-width = 25
 focus_amp = 0.00
 
-#Tip/tilt Gaussian weight 1/e^2 half width
-gauss_hwidth = 3.5
-
-# Tip/tilt gain in units of DM stroke per pixel.
-ttg = 0.01
-ttl = 0.01
-# High-order gain - normalised to unity 
-hog = 0.2
-hol = 0.01
-# Flux threshold
+# Flux threshold 0.1
 flux_threshold = 1000
-#Badpix
-badpix_x = [10]
-badpix_y = [8]
 
-modefile = "/usr/local/etc/modes.fits"
+meas_offset = "./baldr_jcr/meas_offset.fits"
+meas_to_mode = "./baldr_jcr/meas_to_mode.fits"
+filter_coeff_in = "./baldr_jcr/filter_coeff_in.fits"
+filter_coeff_out = "./baldr_jcr/filter_coeff_out.fits"
+mode_offset = "./baldr_jcr/mode_offset.fits"
+mode_max = "./baldr_jcr/mode_max.fits"
+mode_min = "./baldr_jcr/mode_min.fits"
+mode_to_com = "./baldr_jcr/mode_to_com.fits"
+com_max = "./baldr_jcr/com_max.fits"
+com_min = "./baldr_jcr/com_min.fits"
+com_dist_buffer = "./baldr_jcr/com_dist_buffer.fits"
+com_offset = "./baldr_jcr/com_offset.fits"
+com_to_meas = "./baldr_jcr/com_to_meas.fits"
+delay = 1.0
 
 #All units are in radians and microns
 [geometry] 

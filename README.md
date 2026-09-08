@@ -42,7 +42,7 @@ A possibly incomplete list of dependencies is below:
  - `boost`
  - `cppzmq`
  - `fmt`
- - `fftw`
+ - `fftw` (including `libfftw3-dev`)
  - `tomlplusplus`
  - `cfitsio`
  - `libb64`
