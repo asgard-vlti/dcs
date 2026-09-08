@@ -80,6 +80,24 @@ The primary image is `CLEAR_PUPIL`; extension 1 is `PHASE_MASK`. Set
 `detector.crop` to `null` for the complete binned image or `[32, 32]` for a
 centered crop. Both headers store a lossless copy of the input configuration.
 
+For command-line overrides, an explicitly positioned 32x32 subframe, common
+clear-pupil normalization, or optional on-sky clear-pupil measurement, use:
+
+```bash
+python scripts/generate_reference_fits_with_overrides.py \
+  output/reference_intensities.fits \
+  --config configs/reference_onsky.example.json \
+  --spectral-type K5V --pupil-geometry at --strehl 0.8 \
+  --phase-mask H3 --frame-size 32 32 --pupil-center 15.5 15.5
+```
+
+`--pupil-center` is `(x, y)` in zero-indexed floating-point detector pixels.
+Both output images are divided by the mean clear-pupil signal in an eroded
+interior mask; the ZWFS image is not normalized independently. Add
+`--measure-clear --beam-id 1 --n-clear 500` to acquire the clear pupil from
+shared memory, fit its centre, AT/UT spider rotation, scale, and smooth
+amplitude, and generate the corresponding model ZWFS reference.
+
 Use `configs/reference_onsky.example.json` for the example on-sky source.
 The spectral wavelength limits define the propagated passband. The phase mask 
 beam `optics.f_number` remains required for converting physical mask diameters
@@ -182,8 +200,11 @@ attempt to recover unconstrained structure below the detector resolution.
 `pupil_fit.example.json` documents the bounds and regularization settings. For
 a full detector frame, pupil translation is fitted in the model coordinates.
 For a cropped frame whose full-frame origin is unavailable, pupil centres are
-registered first, so translation is partly degenerate with the unknown crop
-origin; rotation, scale, and illumination remain constrained by morphology.
+registered first with a robust subpixel fit to the outer pupil edge. The fit
+includes a planar illumination term so flux gradients do not bias the centre;
+spiders and local defects are rejected by the robust loss. Translation remains
+partly degenerate with the unknown crop origin, while rotation, scale, and
+illumination are constrained by morphology.
 
 The output directory contains:
 
@@ -194,6 +215,7 @@ pupil_fit_products.fits
 updated_references.fits
 pupil_fit_diagnostics.png
 pupil_rotation_scan.png
+pupil_center_fit.png
 ```
 
 `updated_references.fits` contains `CLEAR_PUPIL` and `PHASE_MASK` in the same
@@ -236,6 +258,19 @@ baldr-reference-sim-test \
   configs/synthetic_recovery.example.json \
   synthetic_test_output
 ```
+
+Run the complete internal-calibration to on-sky-reference stress test with:
+
+```bash
+python bens_playground/stress_test_reference_pipeline.py
+```
+
+This uses `configs/stress_internal.example.json` for a 1900 K Solarstein
+source and `configs/stress_onsky.example.json` for a K5V AT pupil whose true
+rotation is 30 degrees. It injects relay misalignment, detector noise, pupil
+translation, a diameter error, and a smooth amplitude gradient; fits the
+internal alignment; transfers that alignment to the on-sky configuration; and
+tests the resulting updated ZWFS reference against the known synthetic truth.
 
 The regression comparison should report relative L2 errors near `1e-15` and
 flux ratios near `1.0`. The synthetic recovery report should stay within the
