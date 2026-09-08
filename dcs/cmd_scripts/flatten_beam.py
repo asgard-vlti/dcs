@@ -230,8 +230,8 @@ def generate_zwfs_model_image(
         pupil = pupil_guess.copy()
         pupil /= np.max(pupil)
 
-        downscale = n_pix_pupil // pupil.shape[0]
-        pupil = np.kron(pupil, np.ones((downscale, downscale)))
+        # downscale = n_pix_pupil // pupil.shape[0]
+        # pupil = np.kron(pupil, np.ones((downscale, downscale)))
 
         pupil = hcipy.Field(
             np.sqrt(pupil.flatten()),
@@ -528,7 +528,7 @@ def main():
             plt.colorbar()
             plt.subplot(122)
             plt.imshow(final_pupil)
-            plt.title("Fitted amplitude errors")
+            plt.title("Fitted intensity errors")
             plt.colorbar()
             plt.show()
 
