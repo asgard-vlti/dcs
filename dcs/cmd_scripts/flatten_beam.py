@@ -28,9 +28,10 @@ parser.add_argument("beam", type=int, help="Beam number")
 
 parser.add_argument(
     "--target",
-    choices=["stddev", "model"],
+    choices=["stddev", "model", "amp-model"],
     default="model",
     help="Whether the target should be visual flatness or a model based reference. "
+    "The model is generated using the pupil only image and the propagation system. "
     "Each is saved into its own flat file at the end",
 )
 parser.add_argument(
@@ -65,7 +66,8 @@ phasemask_parameters = {
 def generate_zwfs_model_image(
     case,  # one of ["AT", "UT", "Lab"]
     phasemask,  # one of ["J1-5", "H1-5"]
-    centre,
+    centre=None,
+    pupil_img=None,
     include_cold_stop=True,
     n_pix_pupil=256,
     n_pix_final=32,
@@ -77,6 +79,10 @@ def generate_zwfs_model_image(
         raise ValueError(
             f"Invalid phasemask: {phasemask}. Must be one of {phasemask_parameters.keys()}"
         )
+    if centre is None and pupil_img is None:
+        raise ValueError("Must provide either centre or pupil_img")
+    if centre is not None and pupil_img is not None:
+        raise ValueError("Must provide either centre or pupil_img, not both")
 
     if phasemask.startswith("J"):
         wavelength_wfs = 1.25e-6
@@ -116,13 +122,21 @@ def generate_zwfs_model_image(
         )
 
     # convert centre from pixels to physical units
-    centre = centre.copy()
-    centre -= np.array([(n_pix_final - 1) / 2, (n_pix_final - 1) / 2])
-    centre = 2 * centre * telescope_diameter / n_pix_final
+    if centre is not None:
+        centre = centre.copy()
+        centre -= np.array([(n_pix_final - 1) / 2, (n_pix_final - 1) / 2])
+        centre = 2 * centre * telescope_diameter / n_pix_final
 
-    pupil_grid = hcipy.make_pupil_grid(n_pix_pupil, 2 * telescope_diameter)
-    pupil_grid = pupil_grid.shift(-centre)
-    pupil = hcipy.evaluate_supersampled(aperture, pupil_grid, 6)
+        pupil_grid = hcipy.make_pupil_grid(n_pix_pupil, 2 * telescope_diameter)
+        pupil_grid = pupil_grid.shift(-centre)
+        pupil = hcipy.evaluate_supersampled(aperture, pupil_grid, 6)
+
+    if pupil_img is not None:
+        pupil = pupil_img.copy()
+        pupil /= np.max(pupil)
+
+        downscale = n_pix_pupil // pupil.shape[0]
+        pupil = np.kron(pupil, np.ones((downscale, downscale)))
 
     # hcipy.imshow_field(pupil)
 
