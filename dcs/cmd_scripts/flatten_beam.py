@@ -36,10 +36,10 @@ parser.add_argument(
     "Each is saved into its own flat file at the end",
 )
 parser.add_argument(
-    "--show-plots",
+    "--no-plots",
     action="store_true",
     default=False,
-    help="Show plots at the end of optimization",
+    help="Suppress plots at the end of optimization",
 )
 parser.add_argument(
     "--pupil",
@@ -302,7 +302,7 @@ def generate_zwfs_model_image(
 
 def main():
     beam = args.beam
-    show_plots = args.show_plots
+    show_plots = not args.no_plots
 
     def mds_connect(host: str, port: int = 5555, timeout_ms: int = 5000):
         ctx = zmq.Context()
@@ -512,6 +512,18 @@ def main():
             n_pix_final=32,
         )
         loss_args = (model_img, pupil_mask, 0.1)
+
+        if show_plots:
+            plt.figure()
+            plt.subplot(121)
+            plt.imshow(pupil_only)
+            plt.title("Pupil only image")
+            plt.colorbar()
+            plt.subplot(122)
+            plt.imshow(final_pupil)
+            plt.title("Fitted amplitude errors")
+            plt.colorbar()
+            plt.show()
 
     else:
         raise ValueError(
