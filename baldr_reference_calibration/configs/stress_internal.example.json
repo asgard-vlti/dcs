@@ -4,7 +4,7 @@
     "profiles": {
       "internal": {
         "spectral_type": null,
-        "temperature_K": 3000,
+        "temperature_K": 1900,
         "photons_per_second_per_pixel_per_nm": 1000
       }
     }
@@ -19,8 +19,8 @@
   "pupil": {
     "geometry": "solarstein",
     "rotation_deg": 0,
-    "array_size": 256,
-    "pixels_across_pupil": 64,
+    "array_size": 128,
+    "pixels_across_pupil": 32,
     "physical_diameter_m": 1.8
   },
   "flat_dm": {
@@ -31,7 +31,7 @@
   },
   "optics": {
     "f_number": 21.2,
-    "strehl":1.0
+    "strehl": 1.0
   },
   "phase_mask": {
     "name": "H3"
@@ -60,31 +60,19 @@
   "fit": {
     "registration": "auto",
     "bounds": [
-      [
-        -1.3,
-        1.5
-      ],
-      [
-        -4,
-        4
-      ],
-      [
-        -1200,
-        1200
-      ],
-      [
-        -1200,
-        1200
-      ]
+      [-1.3, -0.5],
+      [-4, 4],
+      [-120, 120],
+      [-120, 120]
     ],
-    "finite_difference_steps": [
-      0.04,
-      0.25,
-      50,
-      50
-    ],
+    "finite_difference_steps": [0.04, 0.25, 30, 30],
     "coarse_points_per_axis": 5,
     "coarse_passes": 1,
-    "max_function_evaluations": 24
+    "max_function_evaluations": 30
+  },
+  "stress_test": {
+    "true_alignment_parameters": [-0.82, 1.5, 55, -40],
+    "noise_fraction": 0.001,
+    "random_seed": 12
   }
 }
