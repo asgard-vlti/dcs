@@ -288,7 +288,7 @@ def mask_parameters(
 
 def zwfs_field(
     amplitude: np.ndarray, theta: float, diameter_lambda_d: float,
-    focal_array_size: int = 300, phase: np.ndarray | None = None,
+    focal_array_size: int = 300, phase: np.ndarray | None = None, strehl: float = 1.0
 ) -> np.ndarray:
     """Return the post-phase-mask pupil field using BaldrApp centering."""
     original_size = amplitude.shape[0]
@@ -321,7 +321,8 @@ def zwfs_field(
     pixels_per_lambda_d = focal_size / pupil_diameter_pixels
     phase_disc = radius <= 0.5 * diameter_lambda_d * pixels_per_lambda_d
 
-    reference_wave = np.fft.fftshift(
+    # reference wave = b in N'Diaye notation which scales with sqrt strehl ratio in high strehl regimes
+    reference_wave = np.sqrt( strehl ) * np.fft.fftshift(
         np.fft.ifft2(np.fft.ifftshift(phase_disc * focal_field), norm="ortho")
     )
     output = pupil_field + (np.exp(1j * theta) - 1.0) * reference_wave
@@ -481,6 +482,11 @@ def generate_references(config: dict, material_data_path: Path):
     dm_opd = flat_dm_opd(config)
     clear_rate = np.zeros_like(pupil)
     masked_rate = np.zeros_like(pupil)
+    
+    strehl = float(config.get("strehl", 1.0))
+    if not np.isfinite(strehl) or not 0.0 <= strehl <= 1.0:
+        raise ValueError(f"strehl ratio in the input config file must be finite and lie in [0, 1].")
+
     for wavelength, weight_nm in zip(wavelengths, weights_nm):
         theta, diameter = mask_parameters(config, float(wavelength), material_data_path)
         clear_rate += weight_nm * relay_intensity(
@@ -494,6 +500,7 @@ def generate_references(config: dict, material_data_path: Path):
             zwfs_field(
                 amplitude, theta, diameter,
                 phase=2 * np.pi / float(wavelength) * pupil * dm_opd,
+                strehl=strehl,
             ),
             float(wavelength), config,
         )

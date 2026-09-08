@@ -30,7 +30,8 @@
     "actuator_coupling_factor": 0.75
   },
   "optics": {
-    "f_number": 21.2
+    "f_number": 21.2,
+    "strehl":1.0
   },
   "phase_mask": {
     "name": "H3"
