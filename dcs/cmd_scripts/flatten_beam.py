@@ -302,7 +302,7 @@ def generate_zwfs_model_image(
 
 def main():
     beam = args.beam
-    show_plots = args.no_plots
+    show_plots = not args.no_plots
 
     def mds_connect(host: str, port: int = 5555, timeout_ms: int = 5000):
         ctx = zmq.Context()
