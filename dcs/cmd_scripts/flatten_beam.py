@@ -349,7 +349,9 @@ def main():
         img_in_pupil /= np.sum(img_in_pupil)
         model_in_pupil /= np.sum(model_in_pupil)
 
-        return -np.sum(img_in_pupil * model_in_pupil)
+        # return -np.sum(img_in_pupil * model_in_pupil)
+        rmse = np.sqrt(np.mean((img_in_pupil - model_in_pupil) ** 2))
+        return rmse
 
     if args.target == "stddev":
         loss = basis_loss
@@ -413,15 +415,19 @@ def main():
             img = cam.take_stack(64).mean(0)
             plt.figure()
             plt.subplot(131)
-            plt.imshow(model_img)
+            plt.imshow(model_img / np.sum(model_img))
             plt.colorbar()
             plt.title("Model image")
             plt.subplot(132)
-            plt.imshow(img)
+            plt.imshow(img / np.sum(img))
             plt.colorbar()
             plt.title("Current image")
             plt.subplot(133)
-            plt.imshow(model_img - img, norm=mcolors.CenteredNorm(), cmap="RdBu_r")
+            plt.imshow(
+                model_img / np.sum(model_img) - img / np.sum(img),
+                norm=mcolors.CenteredNorm(),
+                cmap="RdBu_r",
+            )
             plt.colorbar()
             plt.title("Difference")
             plt.show()
