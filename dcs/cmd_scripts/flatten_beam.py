@@ -498,7 +498,7 @@ def main():
         res = fit_amp_errors(
             pupil_img=pupil_only / np.sum(pupil_only),
             pupil_radius=8.0,
-            pupil_center=np.array(pupil_center) + (32 - 1) / 2,
+            pupil_center=np.array(pupil_center),
             secondary_ratio=secondary_diameter / telescope_diameter,
             out_scale=4,
         )
