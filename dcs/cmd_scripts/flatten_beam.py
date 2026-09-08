@@ -20,6 +20,7 @@ import matplotlib.colors as mcolors
 import hcipy
 from asgard_alignment import FLI_Cameras as FLI
 import scipy.optimize as opt
+import scipy.ndimage as ndi
 
 parser = argparse.ArgumentParser(
     description="Flatten beam wavefront using hardware in the loop optimization."
@@ -28,9 +29,10 @@ parser.add_argument("beam", type=int, help="Beam number")
 
 parser.add_argument(
     "--target",
-    choices=["stddev", "model"],
+    choices=["stddev", "model", "amp-model"],
     default="model",
     help="Whether the target should be visual flatness or a model based reference. "
+    "The model is generated using the pupil only image and the propagation system. "
     "Each is saved into its own flat file at the end",
 )
 parser.add_argument(
@@ -38,6 +40,19 @@ parser.add_argument(
     action="store_true",
     default=False,
     help="Show plots at the end of optimization",
+)
+parser.add_argument(
+    "--pupil",
+    type=str,
+    choices=["Lab", "AT", "UT"],
+    default="Lab",
+    help="Which pupil to use for the model image generation. Only used if target is 'model' or 'amp-model'.",
+)
+parser.add_argument(
+    "--mask",
+    choices=[*(f"J{i}" for i in range(1, 6)), *(f"H{i}" for i in range(1, 6))],
+    default="H3",
+    help="Which ZWFS mask to use for the model image generation. Only used if target is 'model' or 'amp-model'.",
 )
 args = parser.parse_args()
 
@@ -47,45 +62,76 @@ TARGET_TO_FLAT_NAME = {
 }
 
 
-# units are: depth [fraction of pi], diameter [microns]
-phasemask_parameters = {
-    # "J1": {"depth": 0.5, "diameter": 54},
-    # "J2": {"depth": 0.5, "diameter": 44},
-    # "J3": {"depth": 0.5, "diameter": 36},
-    # "J4": {"depth": 0.5, "diameter": 32},
-    # "J5": {"depth": 0.5, "diameter": 65},
-    "H5": {"depth": 0.5, "diameter": 68},
-    "H4": {"depth": 0.5, "diameter": 53},
-    "H3": {"depth": 0.5, "diameter": 44},
-    "H2": {"depth": 0.5, "diameter": 37},
-    "H1": {"depth": 0.5, "diameter": 31},
-}
+def amp_aberrated_aperture(amp_errors, center, secondary_ratio, subsample=True):
+    n_pix_pupil = 128
+    n_pix_final = 32
+    telescope_diameter = 12e-3
+    secondary_diameter = secondary_ratio * telescope_diameter
+    aperture = hcipy.make_obstructed_circular_aperture(
+        pupil_diameter=telescope_diameter,
+        central_obscuration_ratio=secondary_diameter / telescope_diameter,
+        num_spiders=0,
+    )
+
+    pupil_grid = hcipy.make_pupil_grid(n_pix_pupil, 2 * telescope_diameter)
+    pupil_grid = pupil_grid.shift(-center * telescope_diameter / n_pix_final)
+
+    amp_errors /= np.mean(amp_errors)
+
+    pupil = hcipy.evaluate_supersampled(aperture, pupil_grid, 6)
+
+    pupil *= ndi.gaussian_filter(amp_errors, sigma=2.0).flatten()
+
+    if subsample:
+        pupil = hcipy.subsample_field(pupil, n_pix_pupil / n_pix_final, statistic="sum")
+
+    return np.array(pupil.shaped)
 
 
-def generate_zwfs_model_image(
-    case,  # one of ["AT", "UT", "Lab"]
-    phasemask,  # one of ["J1-5", "H1-5"]
-    centre,
-    include_cold_stop=True,
-    n_pix_pupil=256,
-    n_pix_final=32,
-):
-    # validate all inputs
-    if case not in ["AT", "UT", "Lab"]:
-        raise ValueError(f"Invalid case: {case}. Must be one of ['AT', 'UT', 'Lab']")
-    if phasemask not in phasemask_parameters.keys():
-        raise ValueError(
-            f"Invalid phasemask: {phasemask}. Must be one of {phasemask_parameters.keys()}"
+def loss(params, args):
+    (img,) = args
+    centre = np.array((params[1], params[2]))
+    secondary_ratio = params[3]
+    amp_errors = params[4:].reshape((128, 128))
+    model = amp_aberrated_aperture(amp_errors, centre, secondary_ratio)
+
+    model /= np.sum(model)
+    img /= np.sum(img)
+    return -np.sum(img * model) * 1e3
+
+
+def fit_amp_errors(pupil_img, pupil_radius, pupil_center, secondary_ratio, out_scale=4):
+    downscale = out_scale
+    amp_errors = np.kron(pupil_img, np.ones((downscale, downscale)))
+
+    init_params = np.concatenate(
+        (
+            np.array(
+                [
+                    pupil_radius,
+                    pupil_center[0],
+                    pupil_center[1],
+                    secondary_ratio,
+                ]
+            ),
+            (amp_errors / amp_errors.mean()).flatten(),
         )
+    )
 
-    if phasemask.startswith("J"):
-        wavelength_wfs = 1.25e-6
-    elif phasemask.startswith("H"):
-        wavelength_wfs = 1.65e-6
+    res = opt.minimize(
+        loss,
+        x0=init_params,
+        args=((pupil_img,),),
+        bounds=((8, 8), (-10, 10), (-10, 10), (0.05, 0.2))
+        + ((0.0, 10.5),) * (128 * 128),
+        # options={"maxiter": 100},
+        method="L-BFGS-B",
+    )
 
-    phasemask_diam = phasemask_parameters[phasemask]["diameter"] * 1e-6
-    phasemask_depth = phasemask_parameters[phasemask]["depth"]
+    return res
 
+
+def get_telescope_params(case):
     lab_diam = 12e-3
 
     if case == "AT":
@@ -115,14 +161,82 @@ def generate_zwfs_model_image(
             num_spiders=0,
         )
 
-    # convert centre from pixels to physical units
-    centre = centre.copy()
-    centre -= np.array([(n_pix_final - 1) / 2, (n_pix_final - 1) / 2])
-    centre = 2 * centre * telescope_diameter / n_pix_final
+    return telescope_diameter, secondary_diameter, aperture, lab_diam
 
-    pupil_grid = hcipy.make_pupil_grid(n_pix_pupil, 2 * telescope_diameter)
-    pupil_grid = pupil_grid.shift(-centre)
-    pupil = hcipy.evaluate_supersampled(aperture, pupil_grid, 6)
+
+# units are: depth [fraction of pi], diameter [microns]
+phasemask_parameters = {
+    # "J1": {"depth": 0.5, "diameter": 54},
+    # "J2": {"depth": 0.5, "diameter": 44},
+    # "J3": {"depth": 0.5, "diameter": 36},
+    # "J4": {"depth": 0.5, "diameter": 32},
+    # "J5": {"depth": 0.5, "diameter": 65},
+    "H5": {"depth": 0.5, "diameter": 68},
+    "H4": {"depth": 0.5, "diameter": 53},
+    "H3": {"depth": 0.5, "diameter": 44},
+    "H2": {"depth": 0.5, "diameter": 37},
+    "H1": {"depth": 0.5, "diameter": 31},
+}
+
+
+def generate_zwfs_model_image(
+    case,  # one of ["AT", "UT", "Lab"]
+    phasemask,  # one of ["J1-5", "H1-5"]
+    centre=None,
+    pupil_guess=None,
+    include_cold_stop=True,
+    n_pix_pupil=256,
+    n_pix_final=32,
+):
+    """
+    Assumes pupil_guess is in intensity, not amplitude!!
+    """
+
+    # validate all inputs
+    if case not in ["AT", "UT", "Lab"]:
+        raise ValueError(f"Invalid case: {case}. Must be one of ['AT', 'UT', 'Lab']")
+    if phasemask not in phasemask_parameters.keys():
+        raise ValueError(
+            f"Invalid phasemask: {phasemask}. Must be one of {phasemask_parameters.keys()}"
+        )
+    if centre is None and pupil_guess is None:
+        raise ValueError("Must provide either centre or pupil_guess")
+    if centre is not None and pupil_guess is not None:
+        raise ValueError("Must provide either centre or pupil_guess, not both")
+
+    if phasemask.startswith("J"):
+        wavelength_wfs = 1.25e-6
+    elif phasemask.startswith("H"):
+        wavelength_wfs = 1.65e-6
+
+    phasemask_diam = phasemask_parameters[phasemask]["diameter"] * 1e-6
+    phasemask_depth = phasemask_parameters[phasemask]["depth"]
+
+    telescope_diameter, secondary_diameter, aperture, lab_diam = get_telescope_params(
+        case
+    )
+
+    # convert centre from pixels to physical units
+    if centre is not None:
+        centre = centre.copy()
+        centre -= np.array([(n_pix_final - 1) / 2, (n_pix_final - 1) / 2])
+        centre = 2 * centre * telescope_diameter / n_pix_final
+
+        pupil_grid = hcipy.make_pupil_grid(n_pix_pupil, 2 * telescope_diameter)
+        pupil_grid = pupil_grid.shift(-centre)
+        pupil = hcipy.evaluate_supersampled(aperture, pupil_grid, 6)
+
+    if pupil_guess is not None:
+        pupil = pupil_guess.copy()
+        pupil /= np.max(pupil)
+
+        downscale = n_pix_pupil // pupil.shape[0]
+        pupil = np.kron(pupil, np.ones((downscale, downscale)))
+
+        pupil = hcipy.Field(
+            np.sqrt(pupil.flatten()),
+            hcipy.make_pupil_grid(n_pix_pupil, 2 * telescope_diameter),
+        )
 
     # hcipy.imshow_field(pupil)
 
@@ -366,9 +480,42 @@ def main():
             include_cold_stop=True,
         )
         loss_args = (model_img, pupil_mask, 0.1)
+    elif args.target == "amp-model":
+        loss = model_loss
+        print("fitting amplitude errors to pupil only image...")
+
+        telescope_diameter, secondary_diameter, aperture, lab_diam = (
+            get_telescope_params("Lab")
+        )
+
+        res = fit_amp_errors(
+            pupil_img=pupil_only,
+            pupil_radius=8.0,
+            pupil_center=np.array(pupil_center) + (32 - 1) / 2,
+            secondary_ratio=secondary_diameter / telescope_diameter,
+            out_scale=4,
+        )
+        final_pupil = amp_aberrated_aperture(
+            res.x[4:].reshape((128, 128)),
+            res.x[1:3],
+            res.x[3],
+            subsample=False,
+        )
+        print(f"Generating model image for beam {beam}, using pupil image...")
+
+        model_img = generate_zwfs_model_image(
+            case="Lab",
+            phasemask="H3",
+            pupil_guess=final_pupil,
+            include_cold_stop=True,
+            n_pix_pupil=256,
+            n_pix_final=32,
+        )
+        loss_args = (model_img, pupil_mask, 0.1)
+
     else:
         raise ValueError(
-            f"Invalid target: {args.target}. Must be one of ['stddev', 'model']"
+            f"Invalid target: {args.target}. Must be one of ['stddev', 'model', 'amp-model']"
         )
 
     freqs = [2.01, 3.51, 5.01]
