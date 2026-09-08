@@ -302,7 +302,7 @@ def generate_zwfs_model_image(
 
 def main():
     beam = args.beam
-    show_plots = not args.no_plots
+    show_plots = args.no_plots
 
     def mds_connect(host: str, port: int = 5555, timeout_ms: int = 5000):
         ctx = zmq.Context()
@@ -488,8 +488,15 @@ def main():
             get_telescope_params("Lab")
         )
 
+        # TODO: remove this
+        np.save(
+            "~/delete_this/pupil_only.npz",
+            pupil_only=pupil_only,
+            pupil_center=pupil_center,
+        )
+
         res = fit_amp_errors(
-            pupil_img=pupil_only,
+            pupil_img=pupil_only / np.sum(pupil_only),
             pupil_radius=8.0,
             pupil_center=np.array(pupil_center) + (32 - 1) / 2,
             secondary_ratio=secondary_diameter / telescope_diameter,
