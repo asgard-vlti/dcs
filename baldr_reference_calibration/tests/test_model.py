@@ -58,3 +58,16 @@ def test_custom_pupil_uses_symmetric_spiders_and_rotation():
     rotated["pupil"]["rotation_deg"] = 17.0
     assert make_pupil(nominal).shape == (256, 256)
     assert not np.array_equal(make_pupil(nominal), make_pupil(rotated))
+
+
+def test_reference_rejects_invalid_amplitude_shape():
+    from pathlib import Path
+
+    from baldr_reference.model import generate_references
+
+    nominal = config()
+    material = Path("src/baldr_reference/Exposed_Ma-N_1405_optical_constants.txt")
+    with np.testing.assert_raises_regex(ValueError, "pupil_amplitude must have shape"):
+        generate_references(
+            nominal, material, pupil_amplitude=np.ones((12, 12))
+        )

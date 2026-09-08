@@ -18,7 +18,7 @@
   },
   "pupil": {
     "geometry": "solarstein",
-    "rotation_deg": 0,
+    "rotation_deg": 0.0,
     "array_size": 256,
     "pixels_across_pupil": 64,
     "physical_diameter_m": 1.8
@@ -31,7 +31,7 @@
   },
   "optics": {
     "f_number": 21.2,
-    "strehl":1.0
+    "strehl": 1.0
   },
   "phase_mask": {
     "name": "H3"
@@ -43,13 +43,13 @@
     "distance_to_mirror_m": 0.5,
     "mirror_diameter_m": 0.0254,
     "edge_offset_m": -0.001,
-    "edge_angle_rad": 0,
+    "edge_angle_rad": 0.026179938779914945,
     "imaging_focal_length_m": 0.184,
     "cold_stop_diameter_m": 0.002145,
-    "cold_stop_x_offset_m": 0,
-    "cold_stop_y_offset_m": 0,
+    "cold_stop_x_offset_m": 0.0,
+    "cold_stop_y_offset_m": 0.0,
     "detector_pupil_diameter_m": 0.000288,
-    "pupil_misconjugation_m": 0
+    "pupil_misconjugation_m": 0.0
   },
   "detector": {
     "binning": 4,
@@ -58,33 +58,33 @@
     "quantum_efficiency": 0.7
   },
   "fit": {
+    "parameter_order": [
+      "edge_offset_mm",
+      "edge_angle_deg",
+      "cold_stop_x_um",
+      "cold_stop_y_um"
+    ],
+    "parameter_units": [
+      "mm",
+      "deg",
+      "um",
+      "um"
+    ],
     "registration": "auto",
     "bounds": [
-      [
-        -1.3,
-        1.5
-      ],
-      [
-        -4,
-        4
-      ],
-      [
-        -1200,
-        1200
-      ],
-      [
-        -1200,
-        1200
-      ]
+      [-1.35, -0.35],
+      [-180, 180],
+      [-300.0, 300.0],
+      [-300.0, 300.0]
     ],
     "finite_difference_steps": [
-      0.04,
-      0.25,
-      50,
-      50
+      0.025,
+      20,
+      20.0,
+      20.0
     ],
-    "coarse_points_per_axis": 5,
-    "coarse_passes": 1,
-    "max_function_evaluations": 24
+    "coarse_points_per_axis": 9,
+    "coarse_passes": 2,
+    "max_function_evaluations": 80
   }
 }
