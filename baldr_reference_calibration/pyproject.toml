@@ -28,6 +28,7 @@ baldr-reference-sim-test = "baldr_reference.simulate:main"
 baldr-reference-sensitivity = "baldr_reference.sensitivity:main"
 baldr-reference-compare = "baldr_reference.compare:main"
 baldr-reference-registration = "baldr_reference.registration:main"
+baldr-reference-pupil-fit = "baldr_reference.pupil_fitting:main"
 
 [tool.setuptools.package-data]
 baldr_reference = ["Exposed_Ma-N_1405_optical_constants.txt"]
@@ -35,4 +36,9 @@ baldr_reference = ["Exposed_Ma-N_1405_optical_constants.txt"]
 [project.optional-dependencies]
 test = [
     "pytest",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: full propagation or optimization tests",
 ]

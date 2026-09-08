@@ -474,32 +474,100 @@ def _crop(image: np.ndarray, shape) -> np.ndarray:
     return image[y0:y0 + height, x0:x0 + width]
 
 
-def generate_references(config: dict, material_data_path: Path):
+def generate_clear_reference(
+    config: dict,
+    pupil_amplitude: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Generate only the clear reference, avoiding phase-mask propagation."""
     pupil = make_pupil(config)
+    if pupil_amplitude is None:
+        pupil_amplitude = pupil
+    else:
+        pupil_amplitude = np.asarray(pupil_amplitude, dtype=float)
+        if pupil_amplitude.shape != pupil.shape:
+            raise ValueError(
+                "pupil_amplitude must have shape "
+                f"{pupil.shape}, got {pupil_amplitude.shape}."
+            )
+        if not np.all(np.isfinite(pupil_amplitude)):
+            raise ValueError("pupil_amplitude contains non-finite values.")
+        if np.any(pupil_amplitude < 0):
+            raise ValueError("pupil_amplitude must be non-negative.")
+
     _, profile, _, _ = resolve_source_profile(config)
-    amplitude = np.sqrt(float(profile["photons_per_second_per_pixel_per_nm"])) * pupil
+    amplitude = (
+        np.sqrt(float(profile["photons_per_second_per_pixel_per_nm"]))
+        * pupil_amplitude
+    )
+    wavelengths, weights_nm = make_spectrum(config)
+    dm_opd = flat_dm_opd(config)
+    clear_rate = np.zeros_like(pupil)
+    for wavelength, weight_nm in zip(wavelengths, weights_nm):
+        entrance = amplitude * np.exp(
+            1j * 2 * np.pi / float(wavelength) * dm_opd
+        )
+        clear_rate += weight_nm * relay_intensity(
+            entrance, float(wavelength), config
+        )
+
+    detector = config["detector"]
+    scale = float(detector["quantum_efficiency"]) * float(detector["exposure_s"])
+    clear = _bin(clear_rate, int(detector["binning"])) * scale
+    return _crop(clear, detector.get("crop")), wavelengths
+
+
+def generate_references(
+    config: dict,
+    material_data_path: Path,
+    pupil_amplitude: np.ndarray | None = None,
+):
+    """Generate clear and ZWFS references.
+
+    ``pupil_amplitude`` is an optional dimensionless, high-resolution entrance
+    pupil amplitude sampled on the same grid as ``make_pupil(config)``.  When
+    omitted, the configured analytic pupil is used exactly as before.
+    """
+    pupil = make_pupil(config)
+    if pupil_amplitude is None:
+        pupil_amplitude = pupil
+    else:
+        pupil_amplitude = np.asarray(pupil_amplitude, dtype=float)
+        if pupil_amplitude.shape != pupil.shape:
+            raise ValueError(
+                "pupil_amplitude must have shape "
+                f"{pupil.shape}, got {pupil_amplitude.shape}."
+            )
+        if not np.all(np.isfinite(pupil_amplitude)):
+            raise ValueError("pupil_amplitude contains non-finite values.")
+        if np.any(pupil_amplitude < 0):
+            raise ValueError("pupil_amplitude must be non-negative.")
+    _, profile, _, _ = resolve_source_profile(config)
+    amplitude = (
+        np.sqrt(float(profile["photons_per_second_per_pixel_per_nm"]))
+        * pupil_amplitude
+    )
     wavelengths, weights_nm = make_spectrum(config)
     dm_opd = flat_dm_opd(config)
     clear_rate = np.zeros_like(pupil)
     masked_rate = np.zeros_like(pupil)
     
-    strehl = float(config.get("strehl", 1.0))
+    strehl = float(config.get("optics", {}).get("strehl", config.get("strehl", 1.0)))
     if not np.isfinite(strehl) or not 0.0 <= strehl <= 1.0:
-        raise ValueError(f"strehl ratio in the input config file must be finite and lie in [0, 1].")
+        raise ValueError("optics.strehl must be finite and lie in [0, 1].")
 
     for wavelength, weight_nm in zip(wavelengths, weights_nm):
         theta, diameter = mask_parameters(config, float(wavelength), material_data_path)
         clear_rate += weight_nm * relay_intensity(
             zwfs_field(
                 amplitude, 0.0, diameter,
-                phase=2 * np.pi / float(wavelength) * pupil * dm_opd,
+                phase=2 * np.pi / float(wavelength) * dm_opd,
             ),
             float(wavelength), config,
         )
         masked_rate += weight_nm * relay_intensity(
             zwfs_field(
                 amplitude, theta, diameter,
-                phase=2 * np.pi / float(wavelength) * pupil * dm_opd,
+                phase=2 * np.pi / float(wavelength) * dm_opd,
                 strehl=strehl,
             ),
             float(wavelength), config,

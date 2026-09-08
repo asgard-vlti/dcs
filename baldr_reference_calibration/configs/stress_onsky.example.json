@@ -1,0 +1,91 @@
+{
+  "source": {
+    "profile": "onsky",
+    "profiles": {
+      "onsky": {
+        "spectral_type": "K5V",
+        "temperature_K": null,
+        "photons_per_second_per_pixel_per_nm": 500
+      }
+    }
+  },
+  "spectrum": {
+    "mode": "blackbody",
+    "weighting": "photon",
+    "wavelength_min_m": 1.5e-06,
+    "wavelength_max_m": 1.8e-06,
+    "samples": 3
+  },
+  "pupil": {
+    "geometry": "AT",
+    "rotation_deg": 30,
+    "array_size": 128,
+    "pixels_across_pupil": 32,
+    "physical_diameter_m": 1.8
+  },
+  "flat_dm": {
+    "model": "BMC-multi-3.5",
+    "flat_command": 0.5,
+    "opd_per_command_m": 3e-06,
+    "actuator_coupling_factor": 0.75
+  },
+  "optics": {
+    "f_number": 21.2,
+    "strehl": 0.8
+  },
+  "phase_mask": {
+    "name": "H3"
+  },
+  "relay": {
+    "entrance_diameter_m": 0.012,
+    "oap_focal_length_m": 0.254,
+    "collimator_focal_length_m": 0.04,
+    "distance_to_mirror_m": 0.5,
+    "mirror_diameter_m": 0.0254,
+    "edge_offset_m": -0.001,
+    "edge_angle_rad": 0,
+    "imaging_focal_length_m": 0.184,
+    "cold_stop_diameter_m": 0.002145,
+    "cold_stop_x_offset_m": 0,
+    "cold_stop_y_offset_m": 0,
+    "detector_pupil_diameter_m": 0.000288,
+    "pupil_misconjugation_m": 0
+  },
+  "detector": {
+    "binning": 4,
+    "crop": null,
+    "exposure_s": 0.001,
+    "quantum_efficiency": 0.7
+  },
+  "pupil_fit": {
+    "rotation_bounds_deg": [0, 45],
+    "rotation_coarse_points": 16,
+    "shift_x_bounds_pixels": [-3, 3],
+    "shift_y_bounds_pixels": [-3, 3],
+    "diameter_scale_bounds": [0.95, 1.05],
+    "geometric_parameter_scales": [1.0, 0.5, 0.5, 0.01],
+    "geometric_max_function_evaluations": 35,
+    "fit_mask_dilation": 2,
+    "fit_smooth_amplitude": true,
+    "amplitude_grid_shape": [4, 4],
+    "amplitude_coefficient_limit": 0.4,
+    "amplitude_finite_difference": 0.03,
+    "amplitude_prior_weight": 0.02,
+    "amplitude_smoothness_weight": 0.08,
+    "amplitude_passes": 2
+  },
+  "stress_test": {
+    "initial_rotation_deg": 10,
+    "true_shift_x_pupil_pixels": 1.0,
+    "true_shift_y_pupil_pixels": -0.7,
+    "true_diameter_scale": 1.02,
+    "true_amplitude_grid_coefficients": [
+      [-0.12, -0.05, 0.04, 0.10],
+      [-0.10, -0.03, 0.05, 0.11],
+      [-0.08, -0.01, 0.06, 0.09],
+      [-0.06, 0.01, 0.05, 0.04]
+    ],
+    "noise_fraction": 0.001,
+    "random_seed": 23
+  }
+}
