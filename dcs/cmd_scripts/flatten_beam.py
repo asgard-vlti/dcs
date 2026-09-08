@@ -393,7 +393,7 @@ def main():
         res = opt.minimize(
             loss,
             init_coeffs,
-            loss_args,
+            (fourier, *loss_args),
             method="COBYLA",
             options={"disp": True, "maxiter": n_it},
             # bounds=[[-0.05, 0.05] for _ in range(n_modes)],
