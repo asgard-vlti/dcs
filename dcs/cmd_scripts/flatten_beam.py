@@ -666,7 +666,7 @@ def main():
         res = opt.minimize(
             aaa_loss,
             x0=init_params,
-            args=((pupil_only / np.sum(pupil_only),),),
+            args=((pupil_only / np.sum(pupil_only), basis),),
             bounds=((7, 9), (-10, 10), (-10, 10), (0.05, 0.2))
             + ((-0.1, 0.1),) * basis.num_modes,
             # options={"maxiter": 100},
