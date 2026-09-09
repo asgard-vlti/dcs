@@ -594,10 +594,10 @@ def main():
         time.sleep(0.01)
         img = cam.take_stack(64).mean(0)
 
-        # img_in_pupil = img * pupil_mask
-        # model_in_pupil = model_img * pupil_mask
-        img_in_pupil = img
-        model_in_pupil = model_img
+        img_in_pupil = img * pupil_mask
+        model_in_pupil = model_img * pupil_mask
+        #img_in_pupil = img
+        #model_in_pupil = model_img
 
         img_in_pupil /= np.sum(img_in_pupil)
         model_in_pupil /= np.sum(model_in_pupil)
