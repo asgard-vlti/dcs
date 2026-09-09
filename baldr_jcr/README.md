@@ -2,41 +2,68 @@
 
 Jesse's implementation of the baldr RTC.
 
-## Quick Reference
+## Supervisor: Quick Reference
 
 For the simulator, the bench, and on-sky, the following supervisor
 commands should work well enough:
 
+---
+
+### `--init`
+
 To init on beam 1 (reset all matrices and control variables):
+
 ```bash
 python supervisor.py 1 --init
 ```
 
+---
+
+### `--reset`
+
 To reset (reset control variables online):
+
 ```bash
 python supervisor.py 1 --reset
 ```
 
+---
+
+### `--recompute`
+
 To perform a poke test, to measure interaction matrix, and to compute and set the control matrices:
+
 ```bash
 python supervisor.py 1 --recompute
 ```
 
+---
+
+### `--poke` and `--nmodes`
+
 To perform a poke test with a specific poke (default=0.1) and/or number of modes (default=max=100) to control:
+
 ```bash
 python supervisor.py 1 --recompute --poke 0.01 --nmodes 50
 ```
 
+---
+
+### `--gain` and `--leak`
+
 To set leaky integrator gain and leak:
+
 ```bash
 python supervisor.py 1 --gain 0.3 --leak 0.99
 ```
 
 To open the loop:
+
 ```bash
 python supervisor.py 1 --gain 0.0 --leak 0.0
 ```
 
+---
 
 ## Installation
 
@@ -95,8 +122,8 @@ python supervisor.py 1 --leaky --recompute --gain=0.3 --leak=0.999
 | ------------------- | :-----: | :------: | :--------: | :---: | :----: | :-------: | :--------: |
 | `meas_offset`\*     |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
 | `meas_offset_lut`\* |   :x:   |   :x:    |    :x:     |  :x:  |  :x:   |    :x:    |    :x:     |
-| `flux_mask`         |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:     |
-| `strehl_mask`       |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:     |
+| `flux_mask`         |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
+| `strehl_mask`       |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
 | `meas_to_mode`      |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
 | `filter_coeff_in`   |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
 | `filter_coeff_out`  |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
