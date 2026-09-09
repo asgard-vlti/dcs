@@ -1,3 +1,6 @@
+# Python installed-package metadata
+*.egg-info
+
 # Temporary text files
 *.txt 
 !CMakeLists.txt
