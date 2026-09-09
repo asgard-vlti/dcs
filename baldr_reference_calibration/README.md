@@ -47,10 +47,76 @@ baldr-reference-pupil-fit
 
 Thin wrappers with equivalent behavior are retained under `scripts/`.
 
-## Acquire measured references
+## Generate reference intensities with `gen_refs.py`
 
-With the Baldr camera shared memory running, acquire an averaged clear/ZWFS
-reference pair with:
+`scripts/gen_refs.py` is the main reference-generation workflow. It reads a
+complete JSON configuration, while source, wavelength, pupil, Strehl, phase
+mask, relay-alignment, frame-size, and pupil-centre values can be overridden
+with command-line arguments. Only the output path is required.
+
+### Mode 1: purely theoretical references
+
+Generate both references from the configured model:
+
+```bash
+python scripts/gen_refs.py output/reference_H3.fits \
+  --config configs/reference_onsky.example.json \
+  --phase-mask H3 \
+  --spectral-type K5V \
+  --pupil-geometry at \
+  --strehl 0.8 \
+  --frame-size 32 32 \
+  --pupil-center 15.25 15.75 \
+  --overwrite
+```
+
+`--pupil-center` is `(x, y)` in zero-indexed floating-point detector pixels.
+
+### Mode 2: measured clear pupil and modelled ZWFS reference
+
+```bash
+python scripts/gen_refs.py output/reference_H3.fits \
+  --config configs/reference_onsky.example.json \
+  --measure-clear \
+  --beam-id 1 \
+  --n-clear 500 \
+  --pupil-geometry at \
+  --phase-mask H3 \
+  --frame-size 32 32 \
+  --overwrite
+```
+
+This mode prompts the operator to move the phase mask out, measures the clear
+pupil from shared memory, and fits its subpixel centre, scale, rotation, and
+smooth amplitude. Internal references use the Solarstein pupil; on sky, the AT
+or UT prior supplies the appropriate central obstruction and spider geometry.
+The overall pupil rotation and registration are then fitted from the measured
+clear pupil before it is propagated through the ZWFS and fixed relay model.
+
+In both modes, `CLEAR_PUPIL` is the primary image and `PHASE_MASK` is extension
+1. Both are divided by the same mean clear-pupil interior signal; the ZWFS
+reference is not normalized independently. The complete effective configuration
+is stored in the FITS headers, and measured mode also saves pupil-fit and
+residual diagnostics.
+
+### Simplified theoretical generator
+
+`gen_refs.py` evolved from the configuration-only generator, which remains
+available for simple full-frame or centred theoretical references:
+
+```bash
+baldr-reference-generate \
+  configs/reference_internal.example.json \
+  output/reference_intensities.fits
+```
+
+Set `detector.crop` to `null` for the complete binned image or `[32, 32]` for a
+centred crop.
+
+## Acquire measured clear and ZWFS references
+
+To acquire both references directly from shared memory instead of modelling
+the ZWFS reference, run:
 
 ```bash
 baldr-acquire-references \
@@ -61,30 +127,8 @@ baldr-acquire-references \
   --output_dir output
 ```
 
-The operator is responsible for moving the phase mask. The command first asks
-for the mask to be moved out of the beam and waits for confirmation before
-acquiring `N0`; it then asks for the selected phase mask to be moved into the
-beam and waits again before acquiring `I0`. It does not send motor commands.
-The output is a timestamped FITS file containing metadata in the primary HDU,
-followed by the averaged `N0` and `I0` image extensions expected by the fitter.
-
-## Generate a theoretical reference
-
-```bash
-baldr-reference-generate \
-  configs/reference_internal.example.json \
-  output/reference_intensities.fits
-```
-
-The primary image is `CLEAR_PUPIL`; extension 1 is `PHASE_MASK`. Set
-`detector.crop` to `null` for the complete binned image or `[32, 32]` for a
-centered crop. Both headers store a lossless copy of the input configuration.
-
-Use `configs/reference_onsky.example.json` for the example on-sky source.
-The spectral wavelength limits define the propagated passband. The phase mask 
-beam `optics.f_number` remains required for converting physical mask diameters
-to wavelength dependent lambda/D units; no separate reference wavelength is
-required.
+The operator is prompted to move the phase mask out for `N0` and then into the
+beam for `I0`. The command does not move any hardware itself.
 
 ## Interactive GUI
 
@@ -182,8 +226,11 @@ attempt to recover unconstrained structure below the detector resolution.
 `pupil_fit.example.json` documents the bounds and regularization settings. For
 a full detector frame, pupil translation is fitted in the model coordinates.
 For a cropped frame whose full-frame origin is unavailable, pupil centres are
-registered first, so translation is partly degenerate with the unknown crop
-origin; rotation, scale, and illumination remain constrained by morphology.
+registered first with a robust subpixel fit to the outer pupil edge. The fit
+includes a planar illumination term so flux gradients do not bias the centre;
+spiders and local defects are rejected by the robust loss. Translation remains
+partly degenerate with the unknown crop origin, while rotation, scale, and
+illumination are constrained by morphology.
 
 The output directory contains:
 
@@ -194,6 +241,7 @@ pupil_fit_products.fits
 updated_references.fits
 pupil_fit_diagnostics.png
 pupil_rotation_scan.png
+pupil_center_fit.png
 ```
 
 `updated_references.fits` contains `CLEAR_PUPIL` and `PHASE_MASK` in the same
@@ -236,6 +284,19 @@ baldr-reference-sim-test \
   configs/synthetic_recovery.example.json \
   synthetic_test_output
 ```
+
+Run the complete internal-calibration to on-sky-reference stress test with:
+
+```bash
+python bens_playground/stress_test_reference_pipeline.py
+```
+
+This uses `configs/stress_internal.example.json` for a 1900 K Solarstein
+source and `configs/stress_onsky.example.json` for a K5V AT pupil whose true
+rotation is 30 degrees. It injects relay misalignment, detector noise, pupil
+translation, a diameter error, and a smooth amplitude gradient; fits the
+internal alignment; transfers that alignment to the on-sky configuration; and
+tests the resulting updated ZWFS reference against the known synthetic truth.
 
 The regression comparison should report relative L2 errors near `1e-15` and
 flux ratios near `1.0`. The synthetic recovery report should stay within the
