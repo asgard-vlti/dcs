@@ -370,6 +370,10 @@ class MyMainWidget(QtWidgets.QWidget):
             xsz, ysz = self.split_config[roi]["xsz"], self.split_config[roi]["ysz"]
             self.oboxes[ii].setPos(x0, y0)
 
+    def _auto_update_roi(self):
+        if self.chB_auto_roi.isChecked():
+            self.update_roi_boxes()
+
     # =========================================================
     def update_cbar(self):
         cbar = str(self.cmB_cbar.currentText()).lower()
