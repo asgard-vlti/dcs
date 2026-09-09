@@ -393,7 +393,7 @@ class Beam:
     def create_leaky_matrices(
         self,
         *,
-        navg: int = 1,
+        navg: int = 5,
         alpha: float = ALPHA,
         poke: float = POKE,
         nmodes: Optional[int] = None,
