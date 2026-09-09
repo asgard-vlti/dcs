@@ -3,6 +3,7 @@ from typing import Tuple
 import numpy as np
 from aotools import zernike  # type: ignore
 import math
+from modal_ordering import power_order
 
 
 class ModalBasis(ABC):
@@ -67,7 +68,8 @@ class Zernike(ModalBasis):
 
 class Fourier(ModalBasis):
     @staticmethod
-    def spiral_coords(n: int) -> Tuple[int, int]:
+    def spiral_coords(i: int) -> Tuple[int, int]:
+        n = i + 2
         k = math.ceil((n**0.5 - 1) / 2)
         t = 2 * k + 1
         m = t**2
@@ -86,14 +88,36 @@ class Fourier(ModalBasis):
             return (k, k - (m - n - t))
 
     def sample(self, i: int, x: float, y: float) -> float:
-        n = math.floor(i) + 2
-        p, q = self.spiral_coords(n)
+        p, q = self.spiral_coords(i)
         freq_x: float = 1.0 * np.pi * p / 2
         freq_y: float = 1.0 * np.pi * q / 2
-        if p < 0 or p == 0 and q > 0:
-            return np.cos(freq_x * x + freq_y * y)
+        amp_scaling: float = (1 / (p**2 + q**2) ** 0.5) ** 0.5
+        if q < 0 or q == 0 and p > 0:
+            return amp_scaling * np.cos(freq_x * x + freq_y * y)
         else:
-            return np.sin(freq_x * x + freq_y * y)
+            return amp_scaling * np.sin(freq_x * x + freq_y * y)
+
+
+class FourierModified(Fourier):
+    # same basis, but sorted in increasing order of spatial frequency (using
+    # euclidean distance ~ inversely correlated with power). Also replacing
+    # the sin[0,1] and sin[1,0] modes with pure tip and tilt.
+    @staticmethod
+    def spiral_coords(i: int) -> Tuple[int, int]:
+        return power_order[i]
+
+    def sample(self, i: int, x: float, y: float) -> float:
+        if i == 0:
+            # pure tip
+            return x
+        if i == 1:
+            # pure tilt
+            return y
+        # for the remainder, just use the fourier modes
+        return super().sample(i, x, y)
+        # optionally uncomment this to skip the cos[0,1] and cos[1,0] terms
+        # because they're pretty pistoney:
+        # return super().sample(i + 2, x, y)
 
 
 class Zonal(ModalBasis):
@@ -112,7 +136,7 @@ class Zonal(ModalBasis):
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
-    mb = Fourier()
+    mb = FourierModified()
     modes = mb.modes_on_unit_disk(nsamplex=12, nmodes=100)
     fig, ax = plt.subplots(10, 10, figsize=[10, 10])
     for i, a in enumerate(ax.flatten()):

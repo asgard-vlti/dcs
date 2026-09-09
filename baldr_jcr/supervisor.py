@@ -16,6 +16,8 @@ import modal_basis
 N_MODES = 100  # TODO: change to 144, also in baldr.cpp
 WIDTH = 15
 N_PIXELS = WIDTH * WIDTH
+SUBARRAY_WIDTH = 32
+N_SUBARRAY_PIXELS = SUBARRAY_WIDTH * SUBARRAY_WIDTH
 FILTER_LEN = 1
 N_ACTX = 12
 N_ACTUATORS = N_ACTX * N_ACTX
@@ -35,18 +37,21 @@ DEFAULT_HOST = "localhost"
 
 # Default values, will be overridden by CLI arguments
 POKE: float = 0.1
-ALPHA: float = 0.1
+ALPHA: float = 0.001
 BETA: float = 0.0
 # MEAS_SCALE: float = 1 / 1000
 CNT_MIN: int = 3  # minimum number of measurements to wait after applying poke
 
 XC_OFFSET: float = 0.0
 YC_OFFSET: float = 0.0
-MASK_RADIUS: float = WIDTH / 2.0
+FLUX_MASK_RADIUS: float = SUBARRAY_WIDTH / 2.0
+STREHL_MASK_INNER_RADIUS: float = WIDTH / 2.0 + 2.0
+STREHL_MASK_OUTER_RADIUS: float = WIDTH / 2.0 + 5.0
 
 ARRAY_NAMES = [
     "meas_offset",
     "flux_mask",
+    "strehl_mask",
     "meas_to_mode",
     "filter_coeff_in",
     "filter_coeff_out",
@@ -62,7 +67,8 @@ if DIST_LEN > 0:
 
 ARRAY_SHAPES = {
     "meas_offset": (N_PIXELS,),
-    "flux_mask": (N_PIXELS,),
+    "flux_mask": (N_SUBARRAY_PIXELS,),
+    "strehl_mask": (N_SUBARRAY_PIXELS,),
     "meas_to_mode": (N_MODES, N_PIXELS),
     "filter_coeff_in": (FILTER_LEN, N_MODES),
     "filter_coeff_out": (FILTER_LEN, N_MODES),
@@ -75,7 +81,8 @@ ARRAY_SHAPES = {
     "com_dist_buffer": (N_ACTUATORS, DIST_LEN),
 }
 
-MODAL_BASIS = modal_basis.Fourier()
+MODAL_BASIS = modal_basis.FourierModified()
+# MODAL_BASIS = modal_basis.Fourier()
 # MODAL_BASIS = modal_basis.Zonal()
 # MODAL_BASIS = modal_basis.Zernike()
 
@@ -86,6 +93,7 @@ for array_name in ARRAY_NAMES:
 INIT_VAL = {
     "meas_offset": 0.0,
     "flux_mask": 1.0,
+    "strehl_mask": 1.0,
     "meas_to_mode": 0.0,
     "filter_coeff_in": 0.0,
     "filter_coeff_out": 0.0,
@@ -226,18 +234,39 @@ class Beam:
                 self.writefits(name=name, array=None)
         if init:
             # Flux mask requires special treatment:
-            xx, yy = np.meshgrid(
-                np.arange(WIDTH) * 1.0, np.arange(WIDTH) * 1.0, indexing="xy"
-            )
-            rr = (
-                (xx.flatten() - (WIDTH - 1) / 2 - XC_OFFSET) ** 2.0
-                + (yy.flatten() - (WIDTH - 1) / 2 - YC_OFFSET) ** 2.0
-            ) ** 0.5
-            array = (rr < MASK_RADIUS) * 1.0
-            self.writefits(name="flux_mask", array=array)
+            self.init_flux_mask()
+            self.init_strehl_mask()
         for name in ARRAY_NAMES:
             if push_rtc:
                 self.request(name)
+        self.request("reset")
+
+    def init_flux_mask(self):
+        xx, yy = np.meshgrid(
+            np.arange(SUBARRAY_WIDTH) * 1.0,
+            np.arange(SUBARRAY_WIDTH) * 1.0,
+            indexing="xy",
+        )
+        rr = (
+            (xx.flatten() - (SUBARRAY_WIDTH - 1) / 2 - XC_OFFSET) ** 2.0
+            + (yy.flatten() - (SUBARRAY_WIDTH - 1) / 2 - YC_OFFSET) ** 2.0
+        ) ** 0.5
+        array = (rr < FLUX_MASK_RADIUS) * 1.0
+        self.writefits(name="flux_mask", array=array)
+
+    def init_strehl_mask(self):
+        xx, yy = np.meshgrid(
+            np.arange(SUBARRAY_WIDTH) * 1.0,
+            np.arange(SUBARRAY_WIDTH) * 1.0,
+            indexing="xy",
+        )
+        rr = (
+            (xx.flatten() - (SUBARRAY_WIDTH - 1) / 2 - XC_OFFSET) ** 2.0
+            + (yy.flatten() - (SUBARRAY_WIDTH - 1) / 2 - YC_OFFSET) ** 2.0
+        ) ** 0.5
+        array = (rr < STREHL_MASK_OUTER_RADIUS) * 1.0
+        array *= rr > STREHL_MASK_INNER_RADIUS
+        self.writefits(name="strehl_mask", array=array)
 
     def set_leaky_gain_leak(
         self,
@@ -334,7 +363,7 @@ class Beam:
             # inject it to matrix
             mode_to_meas[:, i] = meas
         self.flatten_offsets()
-        fits.writeto("DEBUG_mode_to_meas.fits", mode_to_meas, overwrite=True)
+        fits.writeto("mode_to_meas.fits", mode_to_meas, overwrite=True)
         return (mode_to_meas, -ref_meas)
 
     @staticmethod
@@ -379,11 +408,17 @@ class Beam:
         """
         ### Build mode_to_com projection
         mode_to_com = MODAL_BASIS.modes_on_unit_disk(nsamplex=N_ACTX, nmodes=N_MODES)
+        # filter piston from commands explicitly:
+        piston_filter = np.eye(N_ACTUATORS) - 1 / N_ACTUATORS * np.ones(
+            [N_ACTUATORS, N_ACTUATORS]
+        )
+        mode_to_com = piston_filter @ mode_to_com
 
         ### Measure mode_to_slope interaction
         # flatten DM
         self.flatten_dm()
         self.flatten_offsets()
+        self.reset()
 
         # set mode_to_com
         self.update_array(name="mode_to_com", array=mode_to_com)
@@ -402,6 +437,24 @@ class Beam:
         self.update_array(name="meas_to_mode", array=meas_to_mode)
         self.update_array(name="meas_offset", array=meas_offset)
 
+    def reinvert_control_matrix(
+        self,
+        *,
+        alpha: float = ALPHA,
+        nmodes: Optional[int] = None,
+    ):
+        # measure modal imat
+        mode_to_meas = fits.open(self.file_prefix + "mode_to_meas.fits")[
+            0
+        ].data  # type: ignore
+        assert type(mode_to_meas) is np.ndarray
+
+        ### Invert mode_to_slope to build slope_to_mode reconstructor
+        meas_to_mode = self.build_meas_to_mode(
+            mode_to_meas=mode_to_meas, alpha=alpha, nmodes=nmodes
+        )
+        self.update_array(name="meas_to_mode", array=meas_to_mode)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Baldr Supervisor")
@@ -412,6 +465,11 @@ if __name__ == "__main__":
         "--init",
         "-i",
         help="initialise all arrays with zeros and save them to disk",
+        action="count",
+    )
+    parser.add_argument(
+        "--reset",
+        help="send a reset command to the RTC",
         action="count",
     )
     if DIST_LEN > 0:
@@ -427,31 +485,20 @@ if __name__ == "__main__":
         )
 
     parser.add_argument(
-        "--offset",
-        help="inject a modal offset onto the DMs (for NCPAs later)",
+        "--gain", help="gain, requires leak to be specified too", type=float
+    )
+    parser.add_argument(
+        "--leak", help="leak, requires gain to be specified too", type=float
+    )
+    parser.add_argument(
+        "--recompute",
+        help="remeasure the interaction matrix and update control matrices",
         action="count",
     )
-
     parser.add_argument(
-        "--polc",
-        help="measure imat from live system, then initialise controller in POLC mode",
+        "--reinvert",
         action="count",
-    )
-
-    parser.add_argument(
-        "--leaky",
-        help="measure imat from live system, then initialise controller in leaky integrator mode",
-        action="count",
-    )
-
-    parser.add_argument(
-        "--gain", help="gain, only used if also used with --leaky or --polc", type=float
-    )
-    parser.add_argument(
-        "--leak", help="leak, only used if also used with --leaky", type=float
-    )
-    parser.add_argument(
-        "--recompute", help="recompute the specified controller", action="count"
+        help="rebuild the reconstructor from the imat on disk (e.g., to tweak reg params)",
     )
 
     parser.add_argument("--clipcom", help="value to clip commands to", type=float)
@@ -464,9 +511,19 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    if args.gain is None and args.leak is not None:
+        raise ValueError("gain must only be set if also passing leak")
+    if args.leak is None and args.gain is not None:
+        raise ValueError("leak must only be set if also passing gain")
+
     action_performed = False
 
     beam = Beam(beam_id=args.beam)
+
+    if args.reset is not None:
+        print("resetting!")
+        beam.reset()
+        action_performed = True
 
     if args.init is not None:
         print("initing!")
@@ -510,24 +567,19 @@ This is correct behaviour if the RTC is not yet running.
             beam.update_array(name="com_dist_buffer", array=disturbance)
             action_performed = True
 
-    if args.leaky is not None:
-        if args.recompute is not None:
-            beam.create_leaky_matrices(nmodes=args.nmodes, poke=args.poke)
-        if args.gain is not None:
-            gain = args.gain
-        else:
-            gain = 0.3
-        if args.leak is not None:
-            leak = args.leak
-        else:
-            leak = 0.95
+    if args.reinvert is not None:
+        beam.reinvert_control_matrix(nmodes=args.nmodes)
+        action_performed = True
+
+    if args.recompute is not None:
+        beam.create_leaky_matrices(nmodes=args.nmodes, poke=args.poke)
+        action_performed = True
+
+    if args.gain is not None and args.leak is not None:
+        gain = args.gain
+        leak = args.leak
         beam.set_leaky_gain_leak(gain=gain, leak=leak)
         action_performed = True
-    else:
-        if args.gain is not None:
-            raise ValueError("gain must only be set if also passing --leaky")
-        if args.leak is not None:
-            raise ValueError("leak must only be set if also passing --leaky")
 
     if not action_performed:
         print("""
