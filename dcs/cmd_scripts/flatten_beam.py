@@ -230,8 +230,8 @@ def generate_zwfs_model_image(
         pupil = pupil_guess.copy()
         pupil /= np.max(pupil)
 
-        # downscale = n_pix_pupil // pupil.shape[0]
-        # pupil = np.kron(pupil, np.ones((downscale, downscale)))
+        downscale = n_pix_pupil // pupil.shape[0]
+        pupil = np.kron(pupil, np.ones((downscale, downscale)))
 
         pupil = hcipy.Field(
             np.sqrt(pupil.flatten()),
