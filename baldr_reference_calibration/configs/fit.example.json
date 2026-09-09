@@ -43,7 +43,7 @@
     "distance_to_mirror_m": 0.5,
     "mirror_diameter_m": 0.0254,
     "edge_offset_m": -0.001,
-    "edge_angle_rad": 0,
+    "edge_angle_rad": 1.5,
     "imaging_focal_length_m": 0.184,
     "cold_stop_diameter_m": 0.002145,
     "cold_stop_x_offset_m": 0,

@@ -37,6 +37,14 @@ void initialise_servo()
         throw std::runtime_error("Subarray is not square");
     }
 
+    if (sz != SUBARRAY_WIDTH)
+    {
+        throw std::runtime_error(
+            "Subarray is not same width as constant SUBARRAY_WIDTH; " +
+            std::to_string(sz) + " != " +
+            std::to_string(SUBARRAY_WIDTH) + "\n");
+    }
+
     // Initialise the control variables
     reset_ctrl();
     write_shm();
@@ -89,7 +97,9 @@ void servo_loop()
 
         // Compute some monitoring variables for the supervisor
         rt_status.mutex.lock();
-        rt_status.status.flux = ctrl.meas_raw.sum();
+        ctrl.mutex.lock();
+        rt_status.status.flux = ctrl.flux_est;
+        ctrl.mutex.unlock();
         rt_status.status.nerrors = nerrors;
         if (rt_status.status.flux < settings.settings.flux_threshold)
         {
@@ -112,7 +122,7 @@ void servo_loop()
         // calibrated measurement
         reconstruct_modes();
 
-        // filter/integrate the reconstructed modes to produce a good clean 
+        // filter/integrate the reconstructed modes to produce a good clean
         // compensatory set of modes.
         filter_modes();
 
@@ -132,7 +142,8 @@ void servo_loop()
         auto t2 = high_resolution_clock::now();
 #endif
 #ifdef PRINT_TIMING
-        if (cnt % 20 == 0) {
+        if (cnt % 20 == 0)
+        {
             std::cout << "|----------|-----------|-----------|\n";
             std::cout << "|    cnt   |  critical |   total   |\n";
             std::cout << "|----------|-----------|-----------|\n";
@@ -178,6 +189,23 @@ void read_shm()
             ctrl.meas_raw(ii * WIDTH + jj) = (double)(subarray.array.SI32[y * sz + x]);
         }
     }
+    // perform strehl and flux estimation
+    // note: this would likely be more optimised if we convert the shmim to a
+    // Eigen3 matrix type, then perform the two operations as dot products, but
+    // until I can identify that this is a bottleneck then I'll keep it simple.
+    ctrl.flux_est = 0.0;
+    ctrl.strehl_est = 0.0;
+    for (size_t i = 0; i < N_SUBARRAY_PIXELS; i++)
+    {
+        double element = (double)subarray.array.SI32[i];
+        ctrl.flux_est += ctrl.flux_mask(i, 0) * element;
+        ctrl.strehl_est += ctrl.strehl_mask(i, 0) * element;
+    }
+    if (ctrl.flux_est <= 0.0)
+    {
+        throw std::runtime_error("flux estimate is equal to zero, quitting now to avoid div by 0");
+    }
+    ctrl.strehl_est /= ctrl.flux_est;
     ctrl.cnt = cnt;
     ctrl.mutex.unlock();
 }
@@ -185,12 +213,15 @@ void read_shm()
 void calibrate_frame()
 {
     ctrl.mutex.lock();
-    // First, we divide the full frame by the sum of the flux within the 
-    // flux mask.
-    double sum = ctrl.meas_raw.dot(ctrl.flux_mask);
-    // printf("sum: %0.1f", sum);
-    ctrl.meas_norm = ctrl.meas_raw / sum;
-    // the closed-loop calibrated measurement is the raw measurement plus
+    // First, we divide the full frame by the flux estimate
+    ctrl.meas_norm = ctrl.meas_raw / ctrl.flux_est;
+
+    // eventually, the meas_offset needs to be computed based on a strehl-indexed
+    // lookup table. Until then, we have a static measurement offset computed
+    // during interaction matrix computation; and we just print the strehl
+    // estimate out.
+    std::printf("| %lu | flux = %5.2e | sre = %5.2e |\n", ctrl.cnt, ctrl.flux_est, ctrl.strehl_est);
+    // the closed-loop calibrated measurement is the normalised measurement plus
     // the measurement offset (typically the negative of the reference
     // measurement, but may also be a function of NCPAs).
     ctrl.meas_cl = ctrl.meas_norm + ctrl.meas_offset;
@@ -279,12 +310,12 @@ void clip_com()
 void inject_disturb()
 {
     ctrl.mutex.lock();
-    // add the next disturbance buffer element to the command vector
-    #if DIST_LEN > 0
+// add the next disturbance buffer element to the command vector
+#if DIST_LEN > 0
     ctrl.com_write = ctrl.com_clean + ctrl.com_dist_buffer.col(cnt % DIST_LEN);
-    #else
+#else
     ctrl.com_write = ctrl.com_clean;
-    #endif
+#endif
     ctrl.mutex.unlock();
 }
 
@@ -304,4 +335,3 @@ void write_shm()
     // Poke the master DM to trigger an update.
     ImageStreamIO_sempost(&master_DM, 1);
 }
-

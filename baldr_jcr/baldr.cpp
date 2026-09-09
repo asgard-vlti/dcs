@@ -83,7 +83,8 @@ std::string encode(const char *input, unsigned int size)
 //----------commander functions from here---------------
 
 DEF_READ_CTRL_PARAM(meas_offset, measurement reference, N_PIXELS, 1, DOUBLE)
-DEF_READ_CTRL_PARAM(flux_mask, mask for normalizing measurement, N_PIXELS, 1, DOUBLE)
+DEF_READ_CTRL_PARAM(flux_mask, mask for normalizing measurement, N_SUBARRAY_PIXELS, 1, DOUBLE)
+DEF_READ_CTRL_PARAM(strehl_mask, mask for estimating strehl, N_SUBARRAY_PIXELS, 1, DOUBLE)
 DEF_READ_CTRL_PARAM(meas_to_mode, reconstructor matrix, N_MODES, N_PIXELS, DOUBLE)
 DEF_READ_CTRL_PARAM(filter_coeff_in, IIR input filter coefficients, N_MODES, FILTER_LEN, DOUBLE)
 DEF_READ_CTRL_PARAM(filter_coeff_out, IIR output filter coefficients, N_MODES, FILTER_LEN, DOUBLE)
@@ -110,6 +111,8 @@ Result reset_ctrl()
   ctrl.com_write.setZero();
   ctrl.mode_raw_buffer.setZero();
   ctrl.mode_filt_buffer.setZero();
+  ctrl.strehl_est = 0.5; // reset to a safe value.
+  ctrl.flux_est = 1.0e8; // reset to an unlikely but safe value.
   ctrl.mutex.unlock();
   return SUCCESS();
 }
@@ -229,6 +232,7 @@ COMMANDER_REGISTER(m)
   m.def("mode", get_mode_encoded, "Read mode_filt in Base64 encoding");
   m.def("meas_offset", read_meas_offset, "Read meas_offset from file", "filename"_arg = "./baldr_jcr/meas_offset.fits");
   m.def("flux_mask", read_flux_mask, "Read flux_mask from file", "filename"_arg = "./baldr_jcr/flux_mask.fits");
+  m.def("strehl_mask", read_strehl_mask, "Read strehl_mask from file", "filename"_arg = "./baldr_jcr/strehl_mask.fits");
   m.def("meas_to_mode", read_meas_to_mode, "Read meas_to_mode from file", "filename"_arg = "./baldr_jcr/meas_to_mode.fits");
   m.def("filter_coeff_in", read_filter_coeff_in, "Read filter_coeff_in from file", "filename"_arg = "./baldr_jcr/filter_coeff_in.fits");
   m.def("filter_coeff_out", read_filter_coeff_out, "Read filter_coeff_out from file", "filename"_arg = "./baldr_jcr/filter_coeff_out.fits");
@@ -293,6 +297,7 @@ int main(int argc, char *argv[])
   // read all control matrices/vectors from fits files with same name.
   LOAD_FROM_FILE(meas_offset, measurement reference)
   LOAD_FROM_FILE(flux_mask, mask for normalizing measurement)
+  LOAD_FROM_FILE(strehl_mask, mask for estimating strehl)
   LOAD_FROM_FILE(meas_to_mode, reconstructor matrix)
   LOAD_FROM_FILE(filter_coeff_in, IIR input filter coefficients)
   LOAD_FROM_FILE(filter_coeff_out, IIR output filter coefficients)

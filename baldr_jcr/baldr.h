@@ -34,10 +34,14 @@
 //----------Defines-----------
 // #define SIMULATE
 
-#define N_MODES 100           // Number of modes to control
-#define WIDTH 15              // Number of pixels across subim
-#define N_PIXELS WIDTH *WIDTH // Total number of pixels in subim
-#define FILTER_LEN 1          // Max number of taps in IIR filter
+#define N_MODES 100              // Number of modes to control
+#define WIDTH 15                 // Number of pixels across subim
+#define N_PIXELS (WIDTH * WIDTH) // Total number of pixels in subim
+#define SUBARRAY_WIDTH 32        // Number of pixels across subarray
+// Total number of pixels in subarray
+#define N_SUBARRAY_PIXELS (SUBARRAY_WIDTH * SUBARRAY_WIDTH)
+
+#define FILTER_LEN 1 // Max number of taps in IIR filter
 // NOTE ON FILTER LEN
 // In order to read the matrices in RowMajor (so that they have intuitive
 // parseing from numpy and fits) we need the matrices with filter_len for an
@@ -54,7 +58,8 @@ struct ControlVariables
 {
     std::mutex mutex;
     uint64_t cnt; // controller iteration (increments even when controller is not running)
-
+    double strehl_est;
+    double flux_est;
     // real-time variables
     // admittedly, this is a LOT of copying, so I might change this to a single
     // "buffer" that we work on through the pipeline, and only keep variables
@@ -72,7 +77,8 @@ struct ControlVariables
 
     // dynamically configurable variables
     Eigen::Matrix<double, N_PIXELS, 1> meas_offset;
-    Eigen::Matrix<double, N_PIXELS, 1> flux_mask;
+    Eigen::Matrix<double, N_SUBARRAY_PIXELS, 1> flux_mask;
+    Eigen::Matrix<double, N_SUBARRAY_PIXELS, 1> strehl_mask;
     Eigen::Matrix<double, N_MODES, N_PIXELS, Eigen::RowMajor> meas_to_mode;
     Eigen::Matrix<double, FILTER_LEN, N_MODES, Eigen::RowMajor> filter_coeff_in;
     Eigen::Matrix<double, FILTER_LEN, N_MODES, Eigen::RowMajor> filter_coeff_out;
