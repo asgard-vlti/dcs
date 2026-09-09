@@ -192,6 +192,13 @@ class MyMainWidget(QtWidgets.QWidget):
         self.cmB_cbar.activated[str].connect(self.update_cbar)
 
         self.pB_updt_roi = QtWidgets.QPushButton("Update ROI", self)
+        self.chB_auto_roi = QtWidgets.QCheckBox("Auto ROI update", self)
+
+        # 1 Hz timer for optional ROI auto-refresh
+        self.roi_timer = QtCore.QTimer(self)
+        self.roi_timer.timeout.connect(self._auto_update_roi)
+        self.roi_timer.start(1000)
+
         self.apply_layout()
 
     # =========================================================================
@@ -286,6 +293,10 @@ class MyMainWidget(QtWidgets.QWidget):
         x0, y0 = 2*pad+btw, 300
         self.pB_updt_roi.setGeometry(QRect(x0, y0, btw, clh))
         self.pB_updt_roi.clicked.connect(self.update_roi_boxes)
+
+        # place checkbox next to the Update ROI button
+        self.chB_auto_roi.setGeometry(QRect(x0 + btw + 8, y0, 140, clh))
+
         self.update_cbar()
 
     # =========================================================
