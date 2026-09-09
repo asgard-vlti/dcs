@@ -575,7 +575,7 @@ def main():
 
         prev_fourier = fourier
 
-        if show_plots and args.target == "model":
+        if show_plots and args.target in ("model", "amp-model"):
             dm.set_data(fourier.linear_combination(res.x * 0.05))
             time.sleep(0.5)
             img = cam.take_stack(64).mean(0)
