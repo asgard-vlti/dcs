@@ -164,6 +164,142 @@ def get_telescope_params(case):
     return telescope_diameter, secondary_diameter, aperture, lab_diam
 
 
+class AmpAberratedAperture:
+    def __init__(self, basis, radius, center, secondary_ratio):
+        self.basis = basis
+        self.radius = radius
+        self.center = center
+        self.secondary_ratio = secondary_ratio
+
+    def get_pupil_noerr(self):
+
+        # build the aperture as a circular obstruction with the given radius and center
+        pupil_grid = hcipy.make_pupil_grid(256, 2)
+        telescope_diameter = self.radius * 2 / 16
+        secondary_diameter = self.secondary_ratio * telescope_diameter
+        aperture = hcipy.make_obstructed_circular_aperture(
+            pupil_diameter=telescope_diameter,
+            central_obscuration_ratio=secondary_diameter / telescope_diameter,
+            num_spiders=0,
+        )
+        pupil_grid = pupil_grid.shift(-self.center * telescope_diameter / 32)
+
+        pupil_noerr = hcipy.evaluate_supersampled(aperture, pupil_grid, 6)
+
+        return pupil_noerr
+
+    def get_image(self, amp_coeffs, subsample=True):
+        """
+        amp_coeffs are now the coefficients for the basis
+        """
+        pupil_noerr = self.get_pupil_noerr()
+
+        amp_errors = self.basis.linear_combination(amp_coeffs)
+
+        amp = pupil_noerr * (1 + amp_errors)
+
+        if subsample:
+            amp = hcipy.subsample_field(amp, 256 / 32, statistic="sum")
+
+        return np.array(amp.shaped) / np.sum(np.array(amp.shaped))
+
+
+# %%
+def aaa_loss(params, args):
+    radius, center_x, center_y, secondary_ratio = params[:4]
+    amp_coeffs = params[4:]
+    img, basis = args
+    aaa = AmpAberratedAperture(
+        basis, radius, np.array([center_x, center_y]), secondary_ratio
+    )
+    model = aaa.get_image(amp_coeffs)
+    model /= np.sum(model)
+
+    img = img / np.sum(img)
+    rmse = np.sqrt(np.mean((model - img) ** 2))
+    return rmse
+
+
+_epsilon = 1e-12
+
+
+def make_fourier_basis(grid, fourier_grid, sort_by_energy=True):
+    """
+    Taken from HCIPY, adapted to return the frequencies too
+
+    Make a Fourier basis.
+
+    Fourier modes this function are defined to be real. This means that for each point, both a sine and cosine mode is returned.
+
+    Repeated frequencies will not be repeated in this mode basis. This means that opposite points in the `fourier_grid` will be silently ignored.
+
+    Parameters
+    ----------
+    grid : Grid
+        The :class:`Grid` on which to calculate the modes.
+    fourier_grid : Grid
+        The grid defining all frequencies.
+    sort_by_energy : bool
+        Whether to sort by increasing energy or not.
+
+    Returns
+    -------
+    ModeBasis
+        The mode basis containing all Fourier modes.
+    """
+    modes_cos = []
+    modes_sin = []
+    energies = []
+    ignore_list = []
+    freqs = []
+
+    c = np.array(grid.coords)
+
+    for i, p in enumerate(fourier_grid.points):
+        if i in ignore_list:
+            continue
+
+        mode_cos = hcipy.Field(np.cos(np.dot(p, c)), grid)
+        mode_sin = hcipy.Field(np.sin(np.dot(p, c)), grid)
+
+        modes_cos.append(mode_cos)
+        modes_sin.append(mode_sin)
+
+        j = fourier_grid.closest_to(-p)
+
+        dist = fourier_grid.points[j] + p
+        dist2 = np.dot(dist, dist)
+
+        p_length2 = np.dot(p, p)
+        energies.append(p_length2)
+        freqs.append(p)
+
+        if dist2 < (_epsilon * p_length2):
+            ignore_list.append(j)
+
+    if sort_by_energy:
+        ind = np.argsort(energies)
+        modes_sin = [modes_sin[i] for i in ind]
+        modes_cos = [modes_cos[i] for i in ind]
+        freqs = [freqs[i] for i in ind]
+        energies = np.array(energies)[ind]
+
+    modes = []
+    mode_freqs = []
+    for i, E in enumerate(energies):
+        # Filter out and correctly normalize zero energy vs non-zero energy modes.
+        if E > _epsilon:
+            modes.append(modes_cos[i] * np.sqrt(2))
+            modes.append(modes_sin[i] * np.sqrt(2))
+            mode_freqs.append(freqs[i])
+            mode_freqs.append(freqs[i])
+        else:
+            modes.append(modes_cos[i])
+            mode_freqs.append(freqs[i])
+
+    return hcipy.ModeBasis(modes, grid), np.array(mode_freqs)
+
+
 # units are: depth [fraction of pi], diameter [microns]
 phasemask_parameters = {
     # "J1": {"depth": 0.5, "diameter": 54},
@@ -393,6 +529,7 @@ def main():
         cam_grid, radius=res.x[0], softening=0.5, centre=(res.x[1], res.x[2])
     ).reshape(32, 32)
     pupil_center = (res.x[1], res.x[2])
+    pupil_radius = res.x[0]
 
     # if show_plots:
     #     plt.imshow(pupil_only)
@@ -483,31 +620,69 @@ def main():
     elif args.target == "amp-model":
         loss = model_loss
         print("fitting amplitude errors to pupil only image...")
+        pupil_grid = hcipy.make_pupil_grid(256, 2)
+
+        freqs = []
+        start_HO = 0.0
+        max_freq_HO = 4.0
+        min_freq_HO = 0.5
+        spacing_HO = 1.0
+        n_accross = int((max_freq_HO - start_HO) / spacing_HO) + 1
+        u = start_HO
+        for i in range(n_accross):
+            v = start_HO
+            for j in range(n_accross):
+                if (
+                    np.sqrt(u**2 + v**2) <= max_freq_HO
+                    and np.sqrt(u**2 + v**2) >= min_freq_HO
+                ):
+                    freqs.append([u, v])
+                    if np.abs(u) > 1e-6 and v > 1e-6:
+                        freqs.append([-u, v])
+                v += spacing_HO
+            u += spacing_HO
+        freqs = np.array(freqs)
+
+        basis, freqs = make_fourier_basis(pupil_grid, hcipy.Grid(freqs.T * 2 * np.pi))
 
         telescope_diameter, secondary_diameter, aperture, lab_diam = (
             get_telescope_params("Lab")
         )
 
-        # TODO: remove this
-        np.savez(
-            "/home/asg/delete_this/pupil_only.npz",
-            pupil_only=pupil_only,
-            pupil_center=pupil_center,
+        init_params = np.concatenate(
+            (
+                np.array(
+                    [
+                        pupil_radius,
+                        pupil_center[0],
+                        pupil_center[1],
+                        secondary_diameter / telescope_diameter,
+                    ]
+                ),
+                np.zeros(basis.num_modes),
+            )
         )
 
-        res = fit_amp_errors(
-            pupil_img=pupil_only / np.sum(pupil_only),
-            pupil_radius=8.0,
-            pupil_center=np.array(pupil_center),
-            secondary_ratio=secondary_diameter / telescope_diameter,
-            out_scale=4,
+        res = opt.minimize(
+            aaa_loss,
+            x0=init_params,
+            args=((pupil_only / np.sum(pupil_only),),),
+            bounds=((7, 9), (-10, 10), (-10, 10), (0.05, 0.2))
+            + ((-0.1, 0.1),) * basis.num_modes,
+            # options={"maxiter": 100},
+            method="L-BFGS-B",
+            options={
+                "eps": 1e-3,
+            },
         )
-        final_pupil = amp_aberrated_aperture(
-            res.x[4:].reshape((128, 128)),
-            res.x[1:3],
-            res.x[3],
-            subsample=False,
-        )
+
+        final_pupil = AmpAberratedAperture(
+            basis,
+            radius=res.x[0],
+            center=np.array([res.x[1], res.x[2]]),
+            secondary_ratio=res.x[3],
+        ).get_image(res.x[4:], subsample=False)
+
         print(f"Generating model image for beam {beam}, using pupil image...")
 
         model_img = generate_zwfs_model_image(
