@@ -12,7 +12,14 @@ from dcs.ZMQutils import ZmqReq  # type: ignore
 from os import path
 from dataclasses import dataclass, field
 import modal_basis
-from enum import StrEnum
+from enum import Enum
+try:
+    from enum import StrEnum  # Python 3.11+
+except ImportError:
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        pass
 import os
 
 # TODO: NOT REALLY SAFE: These parameters are defined both in baldr.h and here,
