@@ -6,7 +6,7 @@ Jesse's implementation of the baldr RTC.
 
 ### RTC
 
-Once the `baldr` executable is built, place it somewhere on your PATH (e.g., `/usr/bin/local/baldr`). See [installation](#installation) for build instructions if you run into trouble.
+Once the `baldr` executable is built, place it somewhere on your PATH (e.g., `/usr/local/bin/baldr`). See [installation](#installation) for build instructions if you run into trouble.
 
 If you are starting `baldr` manually, you need to set the `BALDR_ROOT` environment
 variable, e.g.,
