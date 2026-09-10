@@ -219,7 +219,7 @@ void read_shm();
 void calibrate_frame();
 void compute_pol_meas();
 void reconstruct_modes();
-void filter_modes();
+void filter_modes(int servo_mode);
 void project_com();
 void inject_disturb();
 void inject_dm_signal();

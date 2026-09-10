@@ -472,6 +472,12 @@ class Beam:
     def set_servo_mode(self, mode: ServoMode):
         resp = self.request(f'servo "{mode}"')
         print(resp)
+        
+    def print_status(self):
+        resp = self.request("status")
+        print(resp)
+        resp = self.request("settings")
+        print(resp)
 
 
 if __name__ == "__main__":
@@ -535,6 +541,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--verbose", "-v", help="use verbose mode", action="count", default=0
+    )
+    parser.add_argument(
+        "--status", help="check status of RTC", action="count"
     )
 
     args = parser.parse_args()
@@ -619,6 +628,10 @@ This is correct behaviour if the RTC is not yet running.
         gain = args.gain
         leak = args.leak
         beam.set_leaky_gain_leak(gain=gain, leak=leak)
+        action_performed = True
+    
+    if args.status is not None:
+        beam.print_status()
         action_performed = True
 
     if not action_performed:

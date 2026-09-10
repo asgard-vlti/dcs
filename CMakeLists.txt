@@ -36,7 +36,7 @@ if(DCS_BUILD_LEGACY_MAKE_TARGETS)
 
     # Single orchestration target so `cmake --build` also drives legacy Makefiles.
     add_custom_target(dcs_legacy_make_all ALL)
-    # add_dependencies(dcs_legacy_make_all baldr)
+    add_dependencies(dcs_legacy_make_all baldr)
 
     # Legacy Makefiles expect these archives under dcs/lib.
     add_custom_target(dcs_legacy_stage_libs
