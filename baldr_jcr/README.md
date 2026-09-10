@@ -2,7 +2,7 @@
 
 Jesse's implementation of the baldr RTC.
 
-## **@MIKE** INSTRUCTIONS FOR SETTING UP RTC (10TH SEPTEMBER 2026):
+## NEW instructions for user/**@MIKE** (10TH SEPTEMBER 2026):
 
 ### RTC
 
@@ -61,16 +61,6 @@ The following are the main `supervisor.py` commands needed.
 | `--close`           | close the loop (using previously set gain/leak)  | `./supervisor.py 1 --close`                 |
 | `--status`          | check the status of some variables (WIP)         | `./supervisor.py 1 --status`                |
 
-## Installation
-
-In the `dcs` root directory (one level up from here), run:
-
-```bash
-cmake -B build
-cmake --build build
-```
-
-Note that these instructions can be found in [dcs/README.md](../README.md)
 
 ## Todo:
 
