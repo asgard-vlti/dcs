@@ -6,7 +6,7 @@
 #include "./baldr.h"
 #include "commander/commander.h"
 #include "baldr.h"
-// #define PRINT_TIMING
+//#define PRINT_TIMING
 
 #ifdef PRINT_TIMING
 #include <chrono>
@@ -80,7 +80,7 @@ void servo_loop()
     cnt = subarray.md->cnt0;
 
     // TODO: why semid 2, where is that defined?
-    catch_up_with_sem(&subarray, 2);
+    catch_up_with_sem(&subarray, 1);
 
     // infinite loop while servo is running (not necessarily closed loop)
     int servo_mode;
@@ -90,15 +90,13 @@ void servo_loop()
         servo_mode = settings.settings.servo_mode;
         settings.mutex.unlock();
         cnt_since_init++; // This should "never" wrap around, as a long int is big.
-
         // See if there was a semaphore signalled for the next frame to be ready in K1 and K2
-        ImageStreamIO_semwait(&subarray, 2);
+        ImageStreamIO_semwait(&subarray, 1);
 #ifdef PRINT_TIMING
         auto t1 = high_resolution_clock::now();
 #endif
         // Image is ready, read it from shm
         read_shm();
-
         // Compute some monitoring variables for the supervisor
         rt_status.mutex.lock();
         ctrl.mutex.lock();
@@ -337,8 +335,9 @@ void write_shm()
     for (size_t i = 0; i < N_ACTUATORS; i++)
     {
         // TODO: Do we also need to post to this shmim semaphore, or is it
-        // sufficient to do only the master DM?
-        DM_low.array.D[i] = ctrl.com_write[i];
+        // sufficient to do only the master DM? On reading the DM server code
+        // for the high performance server, only the master DM semaphore matters.
+        DM_high.array.D[i] = ctrl.com_write[i];
     }
     ctrl.mutex.unlock();
 

@@ -35,7 +35,7 @@ RTStatus rt_status;
 ControlVariables ctrl;
 
 // Image streams used by servo_loop
-IMAGE DM_low;
+IMAGE DM_high;
 IMAGE master_DM;
 IMAGE subarray;
 
@@ -245,6 +245,7 @@ COMMANDER_REGISTER(m)
 
 int main(int argc, char *argv[])
 {
+
   // Read in the configuration file
   if (argc < 2)
   {
@@ -266,7 +267,7 @@ int main(int argc, char *argv[])
 
   // Exit immediately if another instance of this server is running.
   char lockfile[256];
-  sprintf(lockfile, "/tmp/asg.baldr_tt.%zu.lock", beam);
+  sprintf(lockfile, "/tmp/asg.baldr.%zu.lock", beam);
   if (!acquire_single_instance_lock(lockfile))
   {
     error("Another instance of this server is already running for beam %d. Exiting.", beam);
@@ -275,20 +276,9 @@ int main(int argc, char *argv[])
 
   settings.settings.px = config["px"].value_or(15);
   settings.settings.py = config["py"].value_or(15);
-  // If /usr/local/etc/ttN.txt exists, override px and py with its values.
-  {
-    std::string tt_file = "/usr/local/etc/tt" + std::to_string(beam) + ".txt";
-    std::ifstream ifs(tt_file);
-    if (ifs.is_open())
-    {
-      int px_file, py_file;
-      if (ifs >> px_file >> py_file)
-      {
-        info("Loaded px=%d py=%d from %s", px_file, py_file, tt_file.c_str());
-        set_pxy(px_file, py_file);
-      }
-    }
-  }
+  // Note that baldr_tt potentally over-writes these values with the values from /usr/local/etc/ttN.txt.
+  // The ZWFS Baldr ignores these values.
+  
   settings.settings.flux_threshold = config["flux_threshold"].value_or(10000.0);
   settings.settings.servo_mode = SERVO_OPEN;
 
@@ -315,8 +305,8 @@ int main(int argc, char *argv[])
 
   errno_t err;
   bool anyerrors = false;
-  const char *name = ("dm" + std::to_string(beam) + "disp01").c_str();
-  err = ImageStreamIO_openIm(&DM_low, name);
+  const char *name = ("dm" + std::to_string(beam) + "disp02").c_str();
+  err = ImageStreamIO_openIm(&DM_high, name);
   if (err != 0)
   {
     anyerrors = true;

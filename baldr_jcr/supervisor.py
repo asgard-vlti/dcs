@@ -44,8 +44,8 @@ BEAM_TO_PORT = {
     3: 6664,
     4: 6665,
 }
-# DEFAULT_HOST = "mimir"
-DEFAULT_HOST = "localhost"
+DEFAULT_HOST = "mimir"
+#DEFAULT_HOST = "localhost"
 
 # Default values, will be overridden by CLI arguments
 POKE: float = 0.1

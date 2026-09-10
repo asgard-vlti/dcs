@@ -27,10 +27,11 @@ clean:
 mrproper: clean
 	rm -rf $(EXEC)
 
-# This was copied over from baldr_tt but I don't recommend using it:
-# install:
-# 	install -D $(EXEC) $(PREFIX)/bin/
-# 	setcap 'cap_sys_nice=eip' $(PREFIX)/bin/$(EXEC)
+# This was copied over from baldr_tt but I don't recommend using it. It is only here 
+# for setcap
+install:
+	install -D $(EXEC) $(PREFIX)/bin/
+	setcap 'cap_sys_nice=eip' $(PREFIX)/bin/$(EXEC)
 # 	cp def1.toml $(PREFIX)/etc
 # 	cp def2.toml $(PREFIX)/etc
 # 	cp def3.toml $(PREFIX)/etc
