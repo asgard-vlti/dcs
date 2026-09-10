@@ -25,6 +25,10 @@ baldr /usr/local/etc/def1.toml --socket=tcp://localhost:6662
 Note: If you are starting `baldr` using the `./run_scripts/run_baldr`, the BALDR_ROOT
 variable will be overridden to the system setting (usually `/usr/local/etc`).
 
+At the time of writing this (September 2026), the `baldr_jcr/defX.toml` config files
+are a strict subset of the `baldr_tt/defX.toml` config files, so the `baldr_tt` ones
+should be copied to `/usr/local/etc/`, and the `baldr_jcr` ones can be removed.
+
 ### Supervisor
 
 A single python script acts as the "supervisor", allowing interaction with the
