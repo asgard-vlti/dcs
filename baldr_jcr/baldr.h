@@ -170,7 +170,6 @@ struct RTStatus
 
 // -------- Extern global definitions ------------
 extern IMAGE DM_low;
-extern IMAGE DM_high;
 extern IMAGE master_DM;
 extern IMAGE subarray;
 

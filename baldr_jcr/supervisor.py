@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import argparse
 import base64
 import numpy as np
@@ -26,6 +28,7 @@ DIST_LEN = 0
 
 # local constants:
 BALDR_ROOT = path.abspath(path.dirname(__file__))
+
 DTYPE = np.float64
 BEAM_TO_PORT = {
     1: 6662,
@@ -233,10 +236,6 @@ class Beam:
         self.writefits(name=name, array=array)
         if push_rtc:
             self.request(name)
-
-    def update_delay(self, delay: float):
-        """Update the delay from a float"""
-        self.request(f"delay {delay}")
 
     ############################################################
     ### High level functions for executing supervisory tasks ###
@@ -472,11 +471,15 @@ class Beam:
     def set_servo_mode(self, mode: ServoMode):
         resp = self.request(f'servo "{mode}"')
         print(resp)
-        
+
     def print_status(self):
         resp = self.request("status")
         print(resp)
         resp = self.request("settings")
+        print(resp)
+        
+    def set_flux_thresh(self, thresh: float):
+        resp = self.request(f"flux_threshold {thresh}")
         print(resp)
 
 
@@ -542,9 +545,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--verbose", "-v", help="use verbose mode", action="count", default=0
     )
-    parser.add_argument(
-        "--status", help="check status of RTC", action="count"
-    )
+    parser.add_argument("--status", help="check status of RTC", action="count")
+    parser.add_argument("--fluxthresh", help="set flux threshold", type=float)
 
     args = parser.parse_args()
     verbose = args.verbose
@@ -582,9 +584,14 @@ This is correct behaviour if the RTC is not yet running.
         print("opening the loop!")
         beam.set_servo_mode(ServoMode.SERVO_OPEN)
         action_performed = True
+
     if args.close is not None:
         print("closing the loop!")
         beam.set_servo_mode(ServoMode.SERVO_CLOSED)
+        action_performed = True
+
+    if args.fluxthresh is not None:
+        beam.set_flux_thresh(args.fluxthresh)
         action_performed = True
 
     if args.clipcom is not None:
@@ -629,7 +636,7 @@ This is correct behaviour if the RTC is not yet running.
         leak = args.leak
         beam.set_leaky_gain_leak(gain=gain, leak=leak)
         action_performed = True
-    
+
     if args.status is not None:
         beam.print_status()
         action_performed = True

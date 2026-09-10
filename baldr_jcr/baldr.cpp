@@ -35,7 +35,6 @@ ControlVariables ctrl;
 
 // Image streams used by servo_loop
 IMAGE DM_low;
-IMAGE DM_high;
 IMAGE master_DM;
 IMAGE subarray;
 
@@ -311,14 +310,6 @@ int main(int argc, char *argv[])
   bool anyerrors = false;
   const char *name = ("dm" + std::to_string(beam) + "disp01").c_str();
   err = ImageStreamIO_openIm(&DM_low, name);
-  if (err != 0)
-  {
-    anyerrors = true;
-    warn("failed to open shm: %s", name);
-  }
-
-  name = ("dm" + std::to_string(beam) + "disp02").c_str();
-  err = ImageStreamIO_openIm(&DM_high, name);
   if (err != 0)
   {
     anyerrors = true;

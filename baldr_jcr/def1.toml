@@ -3,18 +3,14 @@ name = "Default Configuration"
 # Beam. This should be over-written as an input.
 beam = 1
 
-#Wavelength in microns
-wave = 1.65
-
 #Pixels to aim for
 px = 15
 py = 15
 
-#Width with respect to the central pixel. Must be odd!
-focus_amp = 0.00
-
-# Flux threshold 0.1
+# Flux threshold
 flux_threshold = 1000
+
+fits_path = "./baldr_jcr"
 
 meas_offset = "./baldr_jcr/meas_offset.fits"
 flux_mask = "./baldr_jcr/flux_mask.fits"
@@ -30,10 +26,4 @@ com_max = "./baldr_jcr/com_max.fits"
 com_min = "./baldr_jcr/com_min.fits"
 com_dist_buffer = "./baldr_jcr/com_dist_buffer.fits"
 com_offset = "./baldr_jcr/com_offset.fits"
-delay = 1.0
-
-#All units are in radians and microns
-[geometry] 
-beam_diameter   = 3e-2
-pix = 24.0
 
