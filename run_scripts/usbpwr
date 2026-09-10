@@ -1,0 +1,6 @@
+#Turning off port 3 is cusbi /S:ttyUSB0 0:3
+#Querying is cusbi /Q:ttyUSB0
+#Serial number is B001DGUX
+1	HTXP_HTXI
+2	BOTX
+3	HFO1_BTX

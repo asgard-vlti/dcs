@@ -1,0 +1,5 @@
+dmXdisp00.im.shm	flat. Used by Baldr and lab-MDM-gui
+dmXdisp01.im.shm	test and Low-order. Used by lab-MDM-gui, for cross etc
+dmXdisp02.im.shm	baldr. High-order modes.
+dmXdisp03.im.shm	turbulence and Zernikes (including Zernike applied by lab-MDM-gui).
+dmXdisp04.im.shm	heimdallr
