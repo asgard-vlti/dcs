@@ -13,6 +13,7 @@ from os import path
 from dataclasses import dataclass, field
 import modal_basis
 from enum import StrEnum
+import os
 
 # TODO: NOT REALLY SAFE: These parameters are defined both in baldr.h and here,
 # I should find a way to merge these into a single source of truth.
@@ -27,7 +28,7 @@ N_ACTUATORS = N_ACTX * N_ACTX
 DIST_LEN = 0
 
 # local constants:
-BALDR_ROOT = path.abspath(path.dirname(__file__))
+BALDR_ROOT_DEFAULT = path.abspath(path.dirname(__file__))
 
 DTYPE = np.float64
 BEAM_TO_PORT = {
@@ -135,6 +136,7 @@ class Beam:
     socket: Optional[ZmqReq] = field(init=False)
     beam_id: int
     host: str = DEFAULT_HOST
+    baldr_root: str = BALDR_ROOT_DEFAULT
 
     def __post_init__(self):
         try:
@@ -208,7 +210,7 @@ class Beam:
 
     @property
     def file_prefix(self) -> str:
-        return path.join(BALDR_ROOT, "")  # f"B{self.beam_id}_")
+        return path.join(self.baldr_root, f"B{self.beam_id}_")
 
     @staticmethod
     def check_name(name: str):
@@ -376,7 +378,10 @@ class Beam:
             # inject it to matrix
             mode_to_meas[:, i] = meas
         self.flatten_offsets()
-        fits.writeto("mode_to_meas.fits", mode_to_meas, overwrite=True)
+        # This matrix is manually written, since the RTC doesn't need it so it
+        # doesn't enter the list of "controlled" arrays defined at the start
+        # of this script.
+        fits.writeto(self.file_prefix + "mode_to_meas.fits", mode_to_meas, overwrite=True)
         return (mode_to_meas, -ref_meas)
 
     @staticmethod
@@ -477,7 +482,7 @@ class Beam:
         print(resp)
         resp = self.request("settings")
         print(resp)
-        
+
     def set_flux_thresh(self, thresh: float):
         resp = self.request(f"flux_threshold {thresh}")
         print(resp)
@@ -549,6 +554,17 @@ if __name__ == "__main__":
     parser.add_argument("--fluxthresh", help="set flux threshold", type=float)
 
     args = parser.parse_args()
+
+    baldr_root = os.environ.get("BALDR_ROOT")
+    if baldr_root is None:
+        print(
+            "WARNING: Environment variable BALDR_ROOT not set,\n"
+            f"defaulting to {BALDR_ROOT_DEFAULT}.\n"
+            "Consider setting BALDR_ROOT explicitly, for example:\n"
+            "    export BALDR_ROOT=/usr/local/etc"
+        )
+        baldr_root = BALDR_ROOT_DEFAULT
+
     verbose = args.verbose
     if verbose:
         print("VERBOSE MODE ON")
@@ -560,7 +576,7 @@ if __name__ == "__main__":
 
     action_performed = False
 
-    beam = Beam(beam_id=args.beam)
+    beam = Beam(beam_id=args.beam, baldr_root=baldr_root)
 
     if args.reset is not None:
         print("resetting!")

@@ -22,6 +22,7 @@ toml::table config;
 
 // Configured at launch via config
 size_t beam = 1;
+char *baldr_root;
 
 // Configured at launch via config and updated by commander during runtime
 CtrlSettings settings;
@@ -256,13 +257,19 @@ int main(int argc, char *argv[])
     info("Configuration file read: %s", config["name"].value_or("unknown"));
   }
   beam = config["beam"].value_or(1);
+  baldr_root = std::getenv("BALDR_ROOT");
+  if (baldr_root == NULL)
+  {
+    error("BALDR_ROOT environment variable not set. Exiting.");
+    return 1;
+  }
 
   // Exit immediately if another instance of this server is running.
   char lockfile[256];
   sprintf(lockfile, "/tmp/asg.baldr_tt.%zu.lock", beam);
   if (!acquire_single_instance_lock(lockfile))
   {
-    info("Another instance of this server is already running for beam %d. Exiting.", beam);
+    error("Another instance of this server is already running for beam %d. Exiting.", beam);
     return 1;
   }
 
@@ -290,20 +297,20 @@ int main(int argc, char *argv[])
   // lock the mutex.
 
   // read all control matrices/vectors from fits files with same name.
-  LOAD_FROM_FILE(meas_offset, measurement reference)
-  LOAD_FROM_FILE(flux_mask, mask for normalizing measurement)
-  LOAD_FROM_FILE(strehl_mask, mask for estimating strehl)
-  LOAD_FROM_FILE(meas_to_mode, reconstructor matrix)
-  LOAD_FROM_FILE(filter_coeff_in, IIR input filter coefficients)
-  LOAD_FROM_FILE(filter_coeff_out, IIR output filter coefficients)
-  LOAD_FROM_FILE(mode_offset, mode offset vector)
-  LOAD_FROM_FILE(mode_max, maximum mode values(used in antiwinup))
-  LOAD_FROM_FILE(mode_min, minimum mode values(used in antiwinup))
-  LOAD_FROM_FILE(mode_to_com, modal projection matrix)
-  LOAD_FROM_FILE(com_max, maximum command values(used in clipping))
-  LOAD_FROM_FILE(com_min, minimum command values(used in clipping))
+  LOAD_FROM_FILE(meas_offset);
+  LOAD_FROM_FILE(flux_mask)
+  LOAD_FROM_FILE(strehl_mask)
+  LOAD_FROM_FILE(meas_to_mode)
+  LOAD_FROM_FILE(filter_coeff_in)
+  LOAD_FROM_FILE(filter_coeff_out)
+  LOAD_FROM_FILE(mode_offset)
+  LOAD_FROM_FILE(mode_max)
+  LOAD_FROM_FILE(mode_min)
+  LOAD_FROM_FILE(mode_to_com)
+  LOAD_FROM_FILE(com_max)
+  LOAD_FROM_FILE(com_min)
 #if DIST_LEN > 0
-  LOAD_FROM_FILE(com_dist_buffer, command disturbance buffer)
+  LOAD_FROM_FILE(com_dist_buffer)
 #endif
 
   errno_t err;
