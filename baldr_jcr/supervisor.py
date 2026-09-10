@@ -10,6 +10,7 @@ from dcs.ZMQutils import ZmqReq  # type: ignore
 from os import path
 from dataclasses import dataclass, field
 import modal_basis
+from enum import StrEnum
 
 # TODO: NOT REALLY SAFE: These parameters are defined both in baldr.h and here,
 # I should find a way to merge these into a single source of truth.
@@ -110,10 +111,18 @@ for array_name in ARRAY_NAMES:
     assert array_name in INIT_VAL.keys()
 
 
+class ServoMode(StrEnum):
+    SERVO_OPEN = "off"
+    SERVO_CLOSED = "on"
+
+
 class ZmqNoResponse(RuntimeError):
     """local error type for handling an offline RTC"""
 
     pass
+
+
+verbose: int = 0  # non-verbose by default
 
 
 @dataclass
@@ -137,11 +146,16 @@ class Beam:
             )
         port = BEAM_TO_PORT[self.beam_id]
         endpoint = f"tcp://{self.host}:{port}"
-        print(f"Connecting to beam {self.beam_id} on {endpoint}")
+        if verbose:
+            print(f"Connecting to beam {self.beam_id} on {endpoint}")
         return ZmqReq(endpoint)
 
     def request(self, message: str):
+        if verbose > 1:
+            print(f"request: {message}")
         resp = self.socket.send_payload(message, is_str=True, decode_ascii=False)  # type: ignore
+        if verbose > 1:
+            print(f"response: {resp}")
         if not isinstance(resp, dict):
             raise ZmqNoResponse(f"No valid response for command '{message}': {resp}")
         if "status_code" not in resp.keys():
@@ -455,6 +469,10 @@ class Beam:
         )
         self.update_array(name="meas_to_mode", array=meas_to_mode)
 
+    def set_servo_mode(self, mode: ServoMode):
+        resp = self.request(f'servo "{mode}"')
+        print(resp)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Baldr Supervisor")
@@ -509,7 +527,20 @@ if __name__ == "__main__":
 
     parser.add_argument("--nmodes", help="maximum mode index to control", type=int)
 
+    parser.add_argument(
+        "--open", help="open the loop without stopping the RTC process", action="count"
+    )
+    parser.add_argument(
+        "--close", help="close the loop, with existing leak/gain params", action="count"
+    )
+    parser.add_argument(
+        "--verbose", "-v", help="use verbose mode", action="count", default=0
+    )
+
     args = parser.parse_args()
+    verbose = args.verbose
+    if verbose:
+        print("VERBOSE MODE ON")
 
     if args.gain is None and args.leak is not None:
         raise ValueError("gain must only be set if also passing leak")
@@ -536,6 +567,15 @@ update them on the live RTC.
 
 This is correct behaviour if the RTC is not yet running.
 """)
+        action_performed = True
+
+    if args.open is not None:
+        print("opening the loop!")
+        beam.set_servo_mode(ServoMode.SERVO_OPEN)
+        action_performed = True
+    if args.close is not None:
+        print("closing the loop!")
+        beam.set_servo_mode(ServoMode.SERVO_CLOSED)
         action_performed = True
 
     if args.clipcom is not None:
@@ -584,5 +624,5 @@ This is correct behaviour if the RTC is not yet running.
     if not action_performed:
         print("""
 WARNING: no actions were taken during the execution of this program.
-This is probably unintentional. Check your command line arguments!
+This is probably unintentional. Check your command line arguments, or try with --help
 """)

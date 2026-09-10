@@ -36,7 +36,7 @@ if(DCS_BUILD_LEGACY_MAKE_TARGETS)
 
     # Single orchestration target so `cmake --build` also drives legacy Makefiles.
     add_custom_target(dcs_legacy_make_all ALL)
-    add_dependencies(dcs_legacy_make_all baldr)
+    # add_dependencies(dcs_legacy_make_all baldr)
 
     # Legacy Makefiles expect these archives under dcs/lib.
     add_custom_target(dcs_legacy_stage_libs
@@ -52,11 +52,11 @@ if(DCS_BUILD_LEGACY_MAKE_TARGETS)
     )
     add_dependencies(dcs_legacy_stage_libs Commander ImageStreamIO)
 
-    add_custom_target(dcs_make_baldr
-        COMMAND ${DCS_MAKE_EXECUTABLE} -C ${CMAKE_CURRENT_SOURCE_DIR}/baldr clean all
-        USES_TERMINAL
-        VERBATIM
-    )
+    # add_custom_target(dcs_make_baldr
+    #     COMMAND ${DCS_MAKE_EXECUTABLE} -C ${CMAKE_CURRENT_SOURCE_DIR}/baldr clean all
+    #     USES_TERMINAL
+    #     VERBATIM
+    # )
 
     add_custom_target(dcs_make_baldr_tt
         COMMAND ${DCS_MAKE_EXECUTABLE} -C ${CMAKE_CURRENT_SOURCE_DIR}/baldr_tt clean all
@@ -75,11 +75,11 @@ if(DCS_BUILD_LEGACY_MAKE_TARGETS)
 
     add_dependencies(dcs_legacy_make_all
         dcs_legacy_stage_libs
-        dcs_make_baldr
+        # dcs_make_baldr
         dcs_make_baldr_tt
         dcs_make_heimdallr
     )
-    add_dependencies(dcs_make_baldr dcs_legacy_stage_libs)
+    # add_dependencies(dcs_make_baldr dcs_legacy_stage_libs)
     add_dependencies(dcs_make_baldr_tt dcs_legacy_stage_libs)
     add_dependencies(dcs_make_heimdallr dcs_legacy_stage_libs)
 

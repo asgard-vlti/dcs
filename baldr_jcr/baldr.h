@@ -122,7 +122,6 @@ struct Settings
 
 enum ServoMode
 {
-    SERVO_STOP = -1,
     SERVO_OPEN,
     SERVO_CLOSED,
 };

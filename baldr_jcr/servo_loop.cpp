@@ -83,8 +83,12 @@ void servo_loop()
     catch_up_with_sem(&subarray, 2);
 
     // infinite loop while servo is running (not necessarily closed loop)
-    while (settings.settings.servo_mode != SERVO_STOP)
+    int servo_mode;
+    while (true)
     {
+        settings.mutex.lock();
+        servo_mode = settings.settings.servo_mode;
+        settings.mutex.unlock();
         cnt_since_init++; // This should "never" wrap around, as a long int is big.
 
         // See if there was a semaphore signalled for the next frame to be ready in K1 and K2
@@ -124,7 +128,7 @@ void servo_loop()
 
         // filter/integrate the reconstructed modes to produce a good clean
         // compensatory set of modes.
-        filter_modes();
+        filter_modes(servo_mode);
 
         // project the modes into the command space
         project_com();
@@ -140,19 +144,15 @@ void servo_loop()
         write_shm();
 #ifdef PRINT_TIMING
         auto t2 = high_resolution_clock::now();
-#endif
-#ifdef PRINT_TIMING
         if (cnt % 20 == 0)
         {
-            std::cout << "|----------|-----------|-----------|\n";
-            std::cout << "|    cnt   |  critical |   total   |\n";
-            std::cout << "|----------|-----------|-----------|\n";
+            info("|----------|------------|");
+            info("|    cnt   |  critical  |");
+            info("|----------|------------|");
         }
-        auto t3 = high_resolution_clock::now();
-        duration<double, std::micro> us_double = (t2 - t1);
-        printf("| %8d | %6.1f us", cnt, us_double.count());
-        us_double = (t3 - t1);
-        printf(" | %6.1f us |\n", us_double.count());
+        duration<double, std::nano> ns_double = (t2 - t1);
+        std::string msg = fmt::format("| {:8} | {:6} ns |", cnt, ns_double.count());
+        info(msg.c_str());
 #endif
     }
 }
@@ -220,7 +220,7 @@ void calibrate_frame()
     // lookup table. Until then, we have a static measurement offset computed
     // during interaction matrix computation; and we just print the strehl
     // estimate out.
-    std::printf("| %lu | flux = %5.2e | sre = %5.2e |\n", ctrl.cnt, ctrl.flux_est, ctrl.strehl_est);
+    // info("| %lu | flux = %5.2e | sre = %5.2e |", ctrl.cnt, ctrl.flux_est, ctrl.strehl_est);
     // the closed-loop calibrated measurement is the normalised measurement plus
     // the measurement offset (typically the negative of the reference
     // measurement, but may also be a function of NCPAs).
@@ -238,7 +238,7 @@ void reconstruct_modes()
     ctrl.mutex.unlock();
 }
 
-void filter_modes()
+void filter_modes(int servo_mode)
 {
     ctrl.mutex.lock();
 
@@ -259,25 +259,36 @@ void filter_modes()
     // INITIALLY ZERO THE OUTPUT COMING FROM THIS CALCULATION
     ctrl.mode_filt.setZero();
 
-    // COMPUTE COMPONENT FROM INPUTS
-    // add the input part of the IIR filter to the current output
-    // NOTE: This can be done by matrix multiplication, this is just a first
-    // pass to get the pipeline sound.
-    for (size_t i = 0; i < FILTER_LEN; i++)
+    // This is an unconventional way to open the loop, but I'd like to try it.
+    // The logic is that measurements propagate all the way to the IIR filter
+    // always, but the filter is bypassed if the loop is "open". The IIR output
+    // buffer still updates with zeroes in that case.
+    // This design choice allows telemetry to flow as normal, until the IIR
+    // and is equivalent to setting the IIR coefficients to zeros, except that
+    // the IIR coffecients don't need to be modified.
+    if (servo_mode == SERVO_CLOSED)
     {
-        ctrl.mode_filt += (ctrl.mode_raw_buffer.row(i).array() * ctrl.filter_coeff_in.row(i).array()).matrix();
+        // COMPUTE COMPONENT FROM INPUTS
+        // add the input part of the IIR filter to the current output
+        // NOTE: This can be done by matrix multiplication, this is just a first
+        // pass to get the pipeline sound.
+        for (size_t i = 0; i < FILTER_LEN; i++)
+        {
+            ctrl.mode_filt += (ctrl.mode_raw_buffer.row(i).array() * ctrl.filter_coeff_in.row(i).array()).matrix();
+        }
+
+        // COMPUTE COMPONENT FROM OUTPUTS
+        // same for outputs, note there is one less coefficient on the output filter
+        for (size_t i = 0; i < FILTER_LEN; i++)
+        {
+            ctrl.mode_filt += (ctrl.mode_filt_buffer.row(i).array() * ctrl.filter_coeff_out.row(i).array()).matrix();
+        }
+
+        // apply anti-windup saturations:
+        ctrl.mode_filt = (ctrl.mode_filt.array().min(ctrl.mode_max).max(ctrl.mode_min)).matrix();
     }
 
-    // COMPUTE COMPONENT FROM OUTPUTS
-    // same for outputs, note there is one less coefficient on the output filter
-    for (size_t i = 0; i < FILTER_LEN; i++)
-    {
-        ctrl.mode_filt += (ctrl.mode_filt_buffer.row(i).array() * ctrl.filter_coeff_out.row(i).array()).matrix();
-    }
-
-    // apply anti-windup saturations:
-    ctrl.mode_filt = (ctrl.mode_filt.array().min(ctrl.mode_max).max(ctrl.mode_min)).matrix();
-
+    
     // apply modal offset:
     ctrl.mode_filt = ctrl.mode_filt + ctrl.mode_offset;
 

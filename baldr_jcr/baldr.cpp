@@ -129,10 +129,6 @@ Result set_servo_mode(std::string mode)
   {
     new_mode = SERVO_CLOSED;
   }
-  // TODO fix unimplemented:
-  // else if (mode == "stop") {
-  //   new_mode = SERVO_STOP;
-  // }
   else
   {
     const char *msg = "Servo mode not recognised";
@@ -143,7 +139,7 @@ Result set_servo_mode(std::string mode)
   settings.settings.servo_mode = new_mode;
   settings.mutex.unlock();
   // Reset the control_u parameters !!! TODO
-  std::string msg = fmt::format("Servo mode updated to {}", new_mode);
+  std::string msg = fmt::format("Servo mode updated to {}", mode);
   info(msg.c_str());
   return SUCCESS(msg);
 }
@@ -310,8 +306,6 @@ int main(int argc, char *argv[])
 #if DIST_LEN > 0
   LOAD_FROM_FILE(com_dist_buffer, command disturbance buffer)
 #endif
-  // Read in the influence functions from the "modefile" fits file.
-  std::string modefile = config["modefile"].value_or("modes.fits");
 
   errno_t err;
   bool anyerrors = false;
@@ -372,9 +366,7 @@ int main(int argc, char *argv[])
 
   // this code is typically uncreached, except when in "single-command" mode
   // or if the user changes the servo mode to servo stop via commander
-
   // join the servo thread
-  settings.settings.servo_mode = SERVO_STOP;
   servo_thread.join();
 
   unacquire_single_instance_lock();

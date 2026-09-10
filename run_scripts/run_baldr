@@ -3,5 +3,4 @@ if [[ $# -ne 1 ]]; then
   echo "Usage run_baldr N"
   exit 1
 fi 
-echo "Doing nothing for now - baldr servers to be manually started"
-#setsid /usr/local/bin/baldr_tt /usr/local/etc/def$1.toml --socket tcp://*:667$1 1>>/home/asg/logs/baldr_tt/$1/log.txt 2>&1 &
+setsid /usr/local/bin/baldr /usr/local/etc/def$1.toml --socket tcp://*:666$(($1+1)) 1>>/home/asg/logs/baldr/$1/log.txt 2>&1 &
