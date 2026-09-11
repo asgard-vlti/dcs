@@ -42,6 +42,7 @@ baldrtt-recon = "baldr_tt.save_recon:main"
 flatten-beam = "dcs.cmd_scripts.flatten_beam:main"
 dm-zernike = "dcs.cmd_scripts.dm_zernike:main"
 b-movebox = "dcs.cmd_scripts.b_movebox:main"
+b-faint-tweak-botx = "dcs.cmd_scripts.b_faint_tweak_botx:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["dcs", "minimal_baldr_python_rtc"]
