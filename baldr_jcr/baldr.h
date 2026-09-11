@@ -221,7 +221,7 @@ void compute_pol_meas();
 void reconstruct_modes();
 void filter_modes(int servo_mode);
 void project_com();
-void inject_disturb();
+void inject_disturb(int servo_mode);
 void inject_dm_signal();
 void clip_com();
 void write_shm();
