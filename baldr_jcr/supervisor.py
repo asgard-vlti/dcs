@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import argparse
 import base64
 import numpy as np
@@ -10,6 +12,15 @@ from dcs.ZMQutils import ZmqReq  # type: ignore
 from os import path
 from dataclasses import dataclass, field
 import modal_basis
+from enum import Enum
+try:
+    from enum import StrEnum  # Python 3.11+
+except ImportError:
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        pass
+import os
 
 # TODO: NOT REALLY SAFE: These parameters are defined both in baldr.h and here,
 # I should find a way to merge these into a single source of truth.
@@ -24,7 +35,8 @@ N_ACTUATORS = N_ACTX * N_ACTX
 DIST_LEN = 0
 
 # local constants:
-BALDR_ROOT = path.abspath(path.dirname(__file__))
+BALDR_ROOT_DEFAULT = path.abspath(path.dirname(__file__))
+
 DTYPE = np.float64
 BEAM_TO_PORT = {
     1: 6662,
@@ -32,8 +44,8 @@ BEAM_TO_PORT = {
     3: 6664,
     4: 6665,
 }
-# DEFAULT_HOST = "mimir"
-DEFAULT_HOST = "localhost"
+DEFAULT_HOST = "mimir"
+#DEFAULT_HOST = "localhost"
 
 # Default values, will be overridden by CLI arguments
 POKE: float = 0.1
@@ -110,10 +122,18 @@ for array_name in ARRAY_NAMES:
     assert array_name in INIT_VAL.keys()
 
 
+class ServoMode(StrEnum):
+    SERVO_OPEN = "off"
+    SERVO_CLOSED = "on"
+
+
 class ZmqNoResponse(RuntimeError):
     """local error type for handling an offline RTC"""
 
     pass
+
+
+verbose: int = 0  # non-verbose by default
 
 
 @dataclass
@@ -123,6 +143,7 @@ class Beam:
     socket: Optional[ZmqReq] = field(init=False)
     beam_id: int
     host: str = DEFAULT_HOST
+    baldr_root: str = BALDR_ROOT_DEFAULT
 
     def __post_init__(self):
         try:
@@ -137,11 +158,16 @@ class Beam:
             )
         port = BEAM_TO_PORT[self.beam_id]
         endpoint = f"tcp://{self.host}:{port}"
-        print(f"Connecting to beam {self.beam_id} on {endpoint}")
+        if verbose:
+            print(f"Connecting to beam {self.beam_id} on {endpoint}")
         return ZmqReq(endpoint)
 
     def request(self, message: str):
+        if verbose > 1:
+            print(f"request: {message}")
         resp = self.socket.send_payload(message, is_str=True, decode_ascii=False)  # type: ignore
+        if verbose > 1:
+            print(f"response: {resp}")
         if not isinstance(resp, dict):
             raise ZmqNoResponse(f"No valid response for command '{message}': {resp}")
         if "status_code" not in resp.keys():
@@ -191,7 +217,7 @@ class Beam:
 
     @property
     def file_prefix(self) -> str:
-        return path.join(BALDR_ROOT, "")  # f"B{self.beam_id}_")
+        return path.join(self.baldr_root, f"B{self.beam_id}_")
 
     @staticmethod
     def check_name(name: str):
@@ -219,10 +245,6 @@ class Beam:
         self.writefits(name=name, array=array)
         if push_rtc:
             self.request(name)
-
-    def update_delay(self, delay: float):
-        """Update the delay from a float"""
-        self.request(f"delay {delay}")
 
     ############################################################
     ### High level functions for executing supervisory tasks ###
@@ -363,7 +385,10 @@ class Beam:
             # inject it to matrix
             mode_to_meas[:, i] = meas
         self.flatten_offsets()
-        fits.writeto("mode_to_meas.fits", mode_to_meas, overwrite=True)
+        # This matrix is manually written, since the RTC doesn't need it so it
+        # doesn't enter the list of "controlled" arrays defined at the start
+        # of this script.
+        fits.writeto(self.file_prefix + "mode_to_meas.fits", mode_to_meas, overwrite=True)
         return (mode_to_meas, -ref_meas)
 
     @staticmethod
@@ -455,6 +480,20 @@ class Beam:
         )
         self.update_array(name="meas_to_mode", array=meas_to_mode)
 
+    def set_servo_mode(self, mode: ServoMode):
+        resp = self.request(f'servo "{mode}"')
+        print(resp)
+
+    def print_status(self):
+        resp = self.request("status")
+        print(resp)
+        resp = self.request("settings")
+        print(resp)
+
+    def set_flux_thresh(self, thresh: float):
+        resp = self.request(f"flux_threshold {thresh}")
+        print(resp)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Baldr Supervisor")
@@ -509,7 +548,33 @@ if __name__ == "__main__":
 
     parser.add_argument("--nmodes", help="maximum mode index to control", type=int)
 
+    parser.add_argument(
+        "--open", help="open the loop without stopping the RTC process", action="count"
+    )
+    parser.add_argument(
+        "--close", help="close the loop, with existing leak/gain params", action="count"
+    )
+    parser.add_argument(
+        "--verbose", "-v", help="use verbose mode", action="count", default=0
+    )
+    parser.add_argument("--status", help="check status of RTC", action="count")
+    parser.add_argument("--fluxthresh", help="set flux threshold", type=float)
+
     args = parser.parse_args()
+
+    baldr_root = os.environ.get("BALDR_ROOT")
+    if baldr_root is None:
+        print(
+            "WARNING: Environment variable BALDR_ROOT not set,\n"
+            f"defaulting to {BALDR_ROOT_DEFAULT}.\n"
+            "Consider setting BALDR_ROOT explicitly, for example:\n"
+            "    export BALDR_ROOT=/usr/local/etc"
+        )
+        baldr_root = BALDR_ROOT_DEFAULT
+
+    verbose = args.verbose
+    if verbose:
+        print("VERBOSE MODE ON")
 
     if args.gain is None and args.leak is not None:
         raise ValueError("gain must only be set if also passing leak")
@@ -518,7 +583,7 @@ if __name__ == "__main__":
 
     action_performed = False
 
-    beam = Beam(beam_id=args.beam)
+    beam = Beam(beam_id=args.beam, baldr_root=baldr_root)
 
     if args.reset is not None:
         print("resetting!")
@@ -536,6 +601,20 @@ update them on the live RTC.
 
 This is correct behaviour if the RTC is not yet running.
 """)
+        action_performed = True
+
+    if args.open is not None:
+        print("opening the loop!")
+        beam.set_servo_mode(ServoMode.SERVO_OPEN)
+        action_performed = True
+
+    if args.close is not None:
+        print("closing the loop!")
+        beam.set_servo_mode(ServoMode.SERVO_CLOSED)
+        action_performed = True
+
+    if args.fluxthresh is not None:
+        beam.set_flux_thresh(args.fluxthresh)
         action_performed = True
 
     if args.clipcom is not None:
@@ -581,8 +660,12 @@ This is correct behaviour if the RTC is not yet running.
         beam.set_leaky_gain_leak(gain=gain, leak=leak)
         action_performed = True
 
+    if args.status is not None:
+        beam.print_status()
+        action_performed = True
+
     if not action_performed:
         print("""
 WARNING: no actions were taken during the execution of this program.
-This is probably unintentional. Check your command line arguments!
+This is probably unintentional. Check your command line arguments, or try with --help
 """)

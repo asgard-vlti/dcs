@@ -1,0 +1,17 @@
+cam_server	6667
+DM_server	6666
+hdlr		6660
+hdlr_align	6661
+baldr1		6662
+baldr2		6663
+baldr3		6664
+baldr4		6665
+baldrtt1	6671
+baldrtt2	6672
+baldrtt3	6673
+baldrtt4	6674
+baldr_align	6668
+eng_gui		8501
+back_end_server	7001
+mds		5555
+baldrtt2        6671 

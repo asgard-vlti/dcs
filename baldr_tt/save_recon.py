@@ -149,7 +149,7 @@ def parse_args():
         description="Save Baldr TT interaction matrix data"
     )
     parser.add_argument(
-        "--beam", type=int, required=True, choices=[-1] + sorted(BEAM_TO_PORT)
+        "--beam", type=int, default=-1, choices=[-1] + sorted(BEAM_TO_PORT)
     )
     parser.add_argument("--n-iter", type=int, default=1)
     parser.add_argument("--amp", type=float, default=0.04)

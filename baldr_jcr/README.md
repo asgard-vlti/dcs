@@ -2,105 +2,65 @@
 
 Jesse's implementation of the baldr RTC.
 
-## Supervisor: Quick Reference
+## NEW instructions for user/**@MIKE** (10TH SEPTEMBER 2026):
 
-For the simulator, the bench, and on-sky, the following supervisor
-commands should work well enough:
+### RTC
 
----
+Once the `baldr` executable is built, place it somewhere on your PATH (e.g., `/usr/local/bin/baldr`). See [installation](#installation) for build instructions if you run into trouble.
 
-### `--init`
-
-To init on beam 1 (reset all matrices and control variables):
+If you are starting `baldr` manually, you need to set the `BALDR_ROOT` environment
+variable, e.g.,
 
 ```bash
-python supervisor.py 1 --init
+export BALDR_ROOT="/usr/local/etc"
 ```
 
----
-
-### `--reset`
-
-To reset (reset control variables online):
+Then you can start `baldr` for each beam, e.g.:
 
 ```bash
-python supervisor.py 1 --reset
+# start beam 1 rtc
+baldr /usr/local/etc/def1.toml --socket=tcp://localhost:6662
 ```
 
----
+Note: If you are starting `baldr` using the `./run_scripts/run_baldr`, the BALDR_ROOT
+variable will be overridden to the system setting (usually `/usr/local/etc`).
 
-### `--recompute`
+At the time of writing this (September 2026), the `baldr_jcr/defX.toml` config files
+are a strict subset of the `baldr_tt/defX.toml` config files, so the `baldr_tt` ones
+should be copied to `/usr/local/etc/`, and the `baldr_jcr` ones can be removed.
 
-To perform a poke test, to measure interaction matrix, and to compute and set the control matrices:
+### Supervisor
+
+A single python script acts as the "supervisor", allowing interaction with the
+RTC using Commander and ZMQ under the hood. It's recommended to run the
+supervisor script from its directory, but that may not be strictly necessary.
 
 ```bash
-python supervisor.py 1 --recompute
+cd ./baldr_jcr
+./supervisor.py --help
 ```
 
----
-
-### `--poke` and `--nmodes`
-
-To perform a poke test with a specific poke (default=0.1) and/or number of modes (default=max=100) to control:
+The `BALDR_ROOT` environment variable should be set to match the one used when
+launching the RTC. In production mode, this should be:
 
 ```bash
-python supervisor.py 1 --recompute --poke 0.01 --nmodes 50
+export BALDR_ROOT=/usr/local/bin
 ```
 
----
+The following are the main `supervisor.py` commands needed.
 
-### `--gain` and `--leak`
+| argument            | description                                      | example                                     |
+| ------------------- | ------------------------------------------------ | ------------------------------------------- |
+| `--init`            | reset all matrices and control variables         | `./supervisor.py 1 --init`                  |
+| `--reset`           | reset control variables online                   | `./supervisor.py 1 --reset`                 |
+| `--recompute`       | Do poke test, meas imat, compute cmat            | `./supervisor.py 1 --recompute`             |
+| `--poke`            | specify poke during poke test                    | `./supervisor.py 1 --recompute --poke 0.01` |
+| `--nmodes`          | specify number of modes for controller to act on | `./supervisor.py 1 --recompute --nmodes 50` |
+| `--gain` & `--leak` | set leaky integrator gain and leak               | `./supervisor.py 1 --gain 0.3 --leak 0.99`  |
+| `--open`            | open the loop immediately                        | `./supervisor.py 1 --open`                  |
+| `--close`           | close the loop (using previously set gain/leak)  | `./supervisor.py 1 --close`                 |
+| `--status`          | check the status of some variables (WIP)         | `./supervisor.py 1 --status`                |
 
-To set leaky integrator gain and leak:
-
-```bash
-python supervisor.py 1 --gain 0.3 --leak 0.99
-```
-
-To open the loop:
-
-```bash
-python supervisor.py 1 --gain 0.0 --leak 0.0
-```
-
----
-
-## Installation
-
-In the `dcs` root directory, follow the `cmake` instructions in the `README.md`. The executable
-will be built to `./build/baldr_jcr/baldr`.
-
-## Running
-
-The program is split into an **RTC**, and a **supervisor**.
-
-The RTC expects many arrays to exist on disk, but those files are not committed to
-the git repository. To generate them with default values, run (from this directory):
-
-```bash
-python supervisor.py 1 --init  # initialise beam 1 arrays
-```
-
-After initialising these arrays, you should be able to launch the RTC using the `baldr`
-command, for example:
-
-```bash
-./build/baldr_jcr/baldr ./baldr_jcr/def1.toml --socket=tcp://localhost:6662
-```
-
-With the RTC running, you can interact with it via the supervisor. To see a list
-of available supervisor commands, run:
-
-```bash
-python supervisor.py --help
-```
-
-For example, to recompute the interaction and control matrices for a leaky integrator controller
-with a gain of 0.3 and leak of 0.999, run:
-
-```bash
-python supervisor.py 1 --leaky --recompute --gain=0.3 --leak=0.999
-```
 
 ## Todo:
 

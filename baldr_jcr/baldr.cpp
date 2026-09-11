@@ -22,6 +22,7 @@ toml::table config;
 
 // Configured at launch via config
 size_t beam = 1;
+char *baldr_root;
 
 // Configured at launch via config and updated by commander during runtime
 CtrlSettings settings;
@@ -34,7 +35,6 @@ RTStatus rt_status;
 ControlVariables ctrl;
 
 // Image streams used by servo_loop
-IMAGE DM_low;
 IMAGE DM_high;
 IMAGE master_DM;
 IMAGE subarray;
@@ -129,10 +129,6 @@ Result set_servo_mode(std::string mode)
   {
     new_mode = SERVO_CLOSED;
   }
-  // TODO fix unimplemented:
-  // else if (mode == "stop") {
-  //   new_mode = SERVO_STOP;
-  // }
   else
   {
     const char *msg = "Servo mode not recognised";
@@ -143,7 +139,7 @@ Result set_servo_mode(std::string mode)
   settings.settings.servo_mode = new_mode;
   settings.mutex.unlock();
   // Reset the control_u parameters !!! TODO
-  std::string msg = fmt::format("Servo mode updated to {}", new_mode);
+  std::string msg = fmt::format("Servo mode updated to {}", mode);
   info(msg.c_str());
   return SUCCESS(msg);
 }
@@ -249,6 +245,7 @@ COMMANDER_REGISTER(m)
 
 int main(int argc, char *argv[])
 {
+
   // Read in the configuration file
   if (argc < 2)
   {
@@ -261,32 +258,27 @@ int main(int argc, char *argv[])
     info("Configuration file read: %s", config["name"].value_or("unknown"));
   }
   beam = config["beam"].value_or(1);
+  baldr_root = std::getenv("BALDR_ROOT");
+  if (baldr_root == NULL)
+  {
+    error("BALDR_ROOT environment variable not set. Exiting.");
+    return 1;
+  }
 
   // Exit immediately if another instance of this server is running.
   char lockfile[256];
-  sprintf(lockfile, "/tmp/asg.baldr_tt.%zu.lock", beam);
+  sprintf(lockfile, "/tmp/asg.baldr.%zu.lock", beam);
   if (!acquire_single_instance_lock(lockfile))
   {
-    info("Another instance of this server is already running for beam %d. Exiting.", beam);
+    error("Another instance of this server is already running for beam %d. Exiting.", beam);
     return 1;
   }
 
   settings.settings.px = config["px"].value_or(15);
   settings.settings.py = config["py"].value_or(15);
-  // If /usr/local/etc/ttN.txt exists, override px and py with its values.
-  {
-    std::string tt_file = "/usr/local/etc/tt" + std::to_string(beam) + ".txt";
-    std::ifstream ifs(tt_file);
-    if (ifs.is_open())
-    {
-      int px_file, py_file;
-      if (ifs >> px_file >> py_file)
-      {
-        info("Loaded px=%d py=%d from %s", px_file, py_file, tt_file.c_str());
-        set_pxy(px_file, py_file);
-      }
-    }
-  }
+  // Note that baldr_tt potentally over-writes these values with the values from /usr/local/etc/ttN.txt.
+  // The ZWFS Baldr ignores these values.
+  
   settings.settings.flux_threshold = config["flux_threshold"].value_or(10000.0);
   settings.settings.servo_mode = SERVO_OPEN;
 
@@ -295,35 +287,25 @@ int main(int argc, char *argv[])
   // lock the mutex.
 
   // read all control matrices/vectors from fits files with same name.
-  LOAD_FROM_FILE(meas_offset, measurement reference)
-  LOAD_FROM_FILE(flux_mask, mask for normalizing measurement)
-  LOAD_FROM_FILE(strehl_mask, mask for estimating strehl)
-  LOAD_FROM_FILE(meas_to_mode, reconstructor matrix)
-  LOAD_FROM_FILE(filter_coeff_in, IIR input filter coefficients)
-  LOAD_FROM_FILE(filter_coeff_out, IIR output filter coefficients)
-  LOAD_FROM_FILE(mode_offset, mode offset vector)
-  LOAD_FROM_FILE(mode_max, maximum mode values(used in antiwinup))
-  LOAD_FROM_FILE(mode_min, minimum mode values(used in antiwinup))
-  LOAD_FROM_FILE(mode_to_com, modal projection matrix)
-  LOAD_FROM_FILE(com_max, maximum command values(used in clipping))
-  LOAD_FROM_FILE(com_min, minimum command values(used in clipping))
+  LOAD_FROM_FILE(meas_offset);
+  LOAD_FROM_FILE(flux_mask)
+  LOAD_FROM_FILE(strehl_mask)
+  LOAD_FROM_FILE(meas_to_mode)
+  LOAD_FROM_FILE(filter_coeff_in)
+  LOAD_FROM_FILE(filter_coeff_out)
+  LOAD_FROM_FILE(mode_offset)
+  LOAD_FROM_FILE(mode_max)
+  LOAD_FROM_FILE(mode_min)
+  LOAD_FROM_FILE(mode_to_com)
+  LOAD_FROM_FILE(com_max)
+  LOAD_FROM_FILE(com_min)
 #if DIST_LEN > 0
-  LOAD_FROM_FILE(com_dist_buffer, command disturbance buffer)
+  LOAD_FROM_FILE(com_dist_buffer)
 #endif
-  // Read in the influence functions from the "modefile" fits file.
-  std::string modefile = config["modefile"].value_or("modes.fits");
 
   errno_t err;
   bool anyerrors = false;
-  const char *name = ("dm" + std::to_string(beam) + "disp01").c_str();
-  err = ImageStreamIO_openIm(&DM_low, name);
-  if (err != 0)
-  {
-    anyerrors = true;
-    warn("failed to open shm: %s", name);
-  }
-
-  name = ("dm" + std::to_string(beam) + "disp02").c_str();
+  const char *name = ("dm" + std::to_string(beam) + "disp02").c_str();
   err = ImageStreamIO_openIm(&DM_high, name);
   if (err != 0)
   {
@@ -372,9 +354,7 @@ int main(int argc, char *argv[])
 
   // this code is typically uncreached, except when in "single-command" mode
   // or if the user changes the servo mode to servo stop via commander
-
   // join the servo thread
-  settings.settings.servo_mode = SERVO_STOP;
   servo_thread.join();
 
   unacquire_single_instance_lock();

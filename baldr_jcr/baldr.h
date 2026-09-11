@@ -122,7 +122,6 @@ struct Settings
 
 enum ServoMode
 {
-    SERVO_STOP = -1,
     SERVO_OPEN,
     SERVO_CLOSED,
 };
@@ -170,7 +169,6 @@ struct RTStatus
 };
 
 // -------- Extern global definitions ------------
-extern IMAGE DM_low;
 extern IMAGE DM_high;
 extern IMAGE master_DM;
 extern IMAGE subarray;
@@ -220,7 +218,7 @@ void read_shm();
 void calibrate_frame();
 void compute_pol_meas();
 void reconstruct_modes();
-void filter_modes();
+void filter_modes(int servo_mode);
 void project_com();
 void inject_disturb();
 void inject_dm_signal();
@@ -229,10 +227,15 @@ void write_shm();
 void remove_offset();
 
 #define DEF_READ_CTRL_PARAM(PARAM_NAME, DESCRIPTION, NROWS, NCOLS, DATATYPE) \
-    Result read_##PARAM_NAME(std::string filename)                           \
+    Result read_##PARAM_NAME()                                               \
     {                                                                        \
         info("Loading " #DESCRIPTION);                                       \
-        FITS_TO_MATRIX(filename, PARAM_NAME, NROWS, NCOLS, DATATYPE);        \
+        FITS_TO_MATRIX(                                                      \
+            fmt::format(                                                     \
+                "{}/B{:}_" #PARAM_NAME ".fits",                              \
+                baldr_root,                                                  \
+                beam),                                                       \
+            PARAM_NAME, NROWS, NCOLS, DATATYPE);                             \
         info("Updated " #DESCRIPTION " in controller");                      \
         return SUCCESS(status);                                              \
     }
@@ -253,21 +256,12 @@ void remove_offset();
         return FAILURE(status);                                                                          \
     }
 
-#define LOAD_FROM_FILE(PARAM_NAME, DESCRIPTION)                                                     \
-    {                                                                                               \
-        if (config[#PARAM_NAME].is_string())                                                        \
-        {                                                                                           \
-            int status = read_##PARAM_NAME(config[#PARAM_NAME].value_or("")).status_code;           \
-            if (status != 0)                                                                        \
-            {                                                                                       \
-                error("Failed to read file specified by config[" #PARAM_NAME "], code %d", status); \
-                return status;                                                                      \
-            }                                                                                       \
-        }                                                                                           \
-        else                                                                                        \
-        {                                                                                           \
-            warn(#DESCRIPTION " (" #PARAM_NAME ") is not provided in config.");                     \
-            info("Setting " #PARAM_NAME " to zeros.");                                              \
-            ctrl.PARAM_NAME.setZero();                                                              \
-        }                                                                                           \
+#define LOAD_FROM_FILE(PARAM_NAME)                                                                \
+    {                                                                                             \
+        int status = read_##PARAM_NAME().status_code;                                             \
+        if (status != 0)                                                                          \
+        {                                                                                         \
+            error("Failed to read file at %s/" #PARAM_NAME ".fits, code %d", baldr_root, status); \
+            return status;                                                                        \
+        }                                                                                         \
     }
