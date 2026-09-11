@@ -1,60 +1,102 @@
 import numpy as np
-import asgard_alignment.DM_modes2 as DM_modes2
-import minimal_baldr_python_rtc.model as model
+import numpy as onp
 import zmq
 import time
-import toml
-import os
 import argparse
-import datetime
+from pathlib import Path
 import subprocess
 
-from asgard_alignment.bcam import Bcam
-
 from astropy.io import fits
-from xaosim.shmlib import shm
-from asgard_alignment.DM_shm_ctrl import dmclass
-import common.DM_basis_functions as dmbases
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import hcipy
-from asgard_alignment import FLI_Cameras as FLI
 import scipy.optimize as opt
 import scipy.ndimage as ndi
 
-parser = argparse.ArgumentParser(
-    description="Flatten beam wavefront using hardware in the loop optimization."
-)
-parser.add_argument("beam", type=int, help="Beam number")
+# Current calibration products are maintained externally at the fixed beam paths.
+USE_FITS = True
 
-parser.add_argument(
-    "--target",
-    choices=["stddev", "model", "amp-model"],
-    default="model",
-    help="Whether the target should be visual flatness or a model based reference. "
-    "The model is generated using the pupil only image and the propagation system. "
-    "Each is saved into its own flat file at the end",
-)
-parser.add_argument(
-    "--no-plots",
-    action="store_true",
-    default=False,
-    help="Suppress plots at the end of optimization",
-)
-parser.add_argument(
-    "--pupil",
-    type=str,
-    choices=["Lab", "AT", "UT"],
-    default="Lab",
-    help="Which pupil to use for the model image generation. Only used if target is 'model' or 'amp-model'.",
-)
-parser.add_argument(
-    "--mask",
-    choices=[*(f"J{i}" for i in range(1, 6)), *(f"H{i}" for i in range(1, 6))],
-    default="H3",
-    help="Which ZWFS mask to use for the model image generation. Only used if target is 'model' or 'amp-model'.",
-)
-args = parser.parse_args()
+
+def create_parser():
+    parser = argparse.ArgumentParser(
+        description="Flatten beam wavefront using hardware in the loop optimization."
+    )
+    parser.add_argument("beam", type=int, help="Beam number")
+
+    parser.add_argument(
+        "--target",
+        choices=["stddev", "model", "amp-model"],
+        default="model",
+        help="Whether the target should be visual flatness or a model based reference. "
+        "The model is generated using the pupil only image and the propagation system. "
+        "With saved-ref, model and amp-model both use the saved ZWFS image directly.",
+    )
+    parser.add_argument(
+        "--no-plots",
+        action="store_true",
+        default=False,
+        help="Suppress plots at the end of optimization",
+    )
+    parser.add_argument(
+        "--pupil",
+        type=str,
+        choices=["Lab", "AT", "UT"],
+        default="Lab",
+        help="Which pupil to use for the model image generation. Only used if target is 'model' or 'amp-model'.",
+    )
+    parser.add_argument(
+        "--mask",
+        choices=[*(f"J{i}" for i in range(1, 6)), *(f"H{i}" for i in range(1, 6))],
+        default="H3",
+        help="Which ZWFS mask to use for the model image generation. Only used if target is 'model' or 'amp-model'.",
+    )
+
+    parser.add_argument(
+        "--source",
+        choices=["live", "saved-pupil", "saved-ref"],
+        default="live",
+        help="Use a live clear pupil (default), a saved clear pupil from "
+        "~/etc/b-pupils/beam{beam}.fits, or a saved ZWFS reference from "
+        "~/etc/b-references/beam{beam}.fits. FITS images use CLEAR_PUPIL or "
+        "PHASE_MASK respectively. Set USE_FITS=False in the script to load .npy "
+        "instead. All sources acquire a fresh dark and optimize against live frames.",
+    )
+    return parser
+
+
+def parse_args(argv=None):
+    parser = create_parser()
+    args = parser.parse_args(argv)
+    if args.source == "saved-ref" and args.target == "stddev":
+        parser.error("--source saved-ref requires --target model or amp-model")
+    return args
+
+
+def load_saved_image(beam, source):
+    """Load a calibrated detector image; never subtract the current live dark."""
+    directory, extension = {
+        "saved-pupil": ("b-pupils", "CLEAR_PUPIL"),
+        "saved-ref": ("b-references", "PHASE_MASK"),
+    }[source]
+    suffix = ".fits" if USE_FITS else ".npy"
+    path = Path.home() / "etc" / directory / f"beam{beam}{suffix}"
+    try:
+        if USE_FITS:
+            with fits.open(path) as hdus:
+                data = onp.array(hdus[extension].data, copy=True)
+        else:
+            data = onp.load(path, allow_pickle=False)
+        if data.dtype.kind not in "fiu" or data.shape != (32, 32):
+            raise ValueError("expected a numeric 32x32 image")
+        image = onp.array(data, dtype=float, copy=True)
+        flux = image.sum()
+        if not onp.isfinite(image).all() or not onp.isfinite(flux) or flux <= 0:
+            raise ValueError("expected finite pixels and positive finite total flux")
+    except (OSError, KeyError, ValueError, TypeError) as exc:
+        raise ValueError(f"Cannot load {source} from {path}: {exc}") from exc
+    print(f"Loaded {source} from {path}")
+    return image
+
 
 TARGET_TO_FLAT_NAME = {
     "stddev": "night-standard",
@@ -436,41 +478,7 @@ def generate_zwfs_model_image(
     return np.array(img / img.max())
 
 
-def main():
-    beam = args.beam
-    show_plots = not args.no_plots
-
-    def mds_connect(host: str, port: int = 5555, timeout_ms: int = 5000):
-        ctx = zmq.Context()
-        sock = ctx.socket(zmq.REQ)
-        sock.setsockopt(zmq.RCVTIMEO, timeout_ms)
-        sock.connect(f"tcp://{host}:{port}")
-        return ctx, sock
-
-    def mds_send(sock, msg: str) -> str:
-        sock.send_string(msg)
-        return sock.recv_string().strip()
-
-    ctx, sock = mds_connect("mimir")
-
-    dm = dmclass(beam)
-
-    cam = Bcam(beam)
-
-    print(f"")
-
-    cur_bmy = mds_send(sock, f"read BMY{beam}")
-    mds_send(sock, f"moveabs BMY{beam} 500.0")
-    time.sleep(3)
-    cam.take_dark(256)
-    # if show_plots:
-    #     plt.imshow(cam.dark)
-    #     plt.colorbar()
-    #     plt.show()
-
-    mds_send(sock, f"moveabs BMY{beam} {cur_bmy}")
-    time.sleep(3)
-
+def acquire_pupil(beam, cam, sock, mds_send):
     print(f"Taking pupil only image for beam {beam}...")
     offset = 200.0
     mds_send(sock, f"moverel BMX{beam} {offset}")
@@ -488,17 +496,10 @@ def main():
     #     plt.colorbar()
     #     plt.show()
 
-    act_grid = DM_modes2.make_hc_act_grid()
-    fourier, freqs_used = DM_modes2.fourier_basis(
-        act_grid,
-        min_freq_HO=1.1,
-        max_freq_HO=5.01,
-        spacing_HO=1.0,
-        start_HO=0.0,
-        orthogonalise=False,
-        pin_edges=True,
-    )
+    return pupil_only
 
+
+def prepare_pupil(pupil_only, show_plots=False):
     cam_grid = hcipy.make_pupil_grid(32, diameter=32)
 
     def smooth_circle(grid, radius, softening=0.1, centre=(0, 0)):
@@ -513,10 +514,6 @@ def main():
         ).reshape(grid.shape)
         model /= model.sum()
         return -np.sum(img * model)
-
-    def xcor_sum(params, args):
-        (img,) = args
-        img /= np.sum(img)
 
     res = opt.minimize(
         xcor_sum_model,
@@ -555,62 +552,14 @@ def main():
         plt.contour(scattered_flux_mask, ":", levels=[0.1], colors="w")
         plt.show()
 
-    def flux_outside_pupil(img, scatter_mask):
-        return np.sum(img * scatter_mask)
-
-    def uniformity_in_pupil(img, pupil_mask):
-        img_in_pupil = img * pupil_mask
-        mean_in_pupil = np.sum(img_in_pupil) / np.sum(pupil_mask)
-        # want a uniform distribution in the pupil, so penalise the variance
-        return np.sqrt(np.sum(pupil_mask * (img_in_pupil - mean_in_pupil) ** 2))
-
-    def stddev_loss(cmd, lamb_unif, scatter_mask, pupil_mask):
-        dm.set_data(cmd)
-        time.sleep(0.01)
-        img = cam.take_stack(64).mean(0)
-
-        f = flux_outside_pupil(img, scatter_mask=scatter_mask)
-        u = uniformity_in_pupil(img, pupil_mask=pupil_mask)
-        l = float(-f + lamb_unif * u)
-        print(np.sqrt(np.mean(cmd**2)), f"{l:.3f}")
-        return l
-
-    init_cmd = np.zeros(144)
     scattered_flux_mask /= scattered_flux_mask.sum()
+    return pupil_mask, scattered_flux_mask, pupil_center, pupil_radius
 
-    dm.set_data(init_cmd)
 
-    time.sleep(1)
-
-    def basis_loss(coeffs, basis, lamb_unif, scatter_mask, pupil_mask, scale=0.05):
-        coeffs_scaled = coeffs * scale
-        cmd = basis.linear_combination(coeffs_scaled)
-        return stddev_loss(cmd, lamb_unif, scatter_mask, pupil_mask)
-
-    def model_loss(coeffs, basis, model_img, pupil_mask, scale=0.05):
-        coeffs_scaled = coeffs * scale
-        cmd = basis.linear_combination(coeffs_scaled)
-        dm.set_data(cmd)
-        time.sleep(0.01)
-        img = cam.take_stack(64).mean(0)
-
-        img_in_pupil = img * pupil_mask
-        model_in_pupil = model_img * pupil_mask
-        #img_in_pupil = img
-        #model_in_pupil = model_img
-
-        img_in_pupil /= np.sum(img_in_pupil)
-        model_in_pupil /= np.sum(model_in_pupil)
-
-        # return -np.sum(img_in_pupil * model_in_pupil)
-        rmse = np.sqrt(np.mean((img_in_pupil - model_in_pupil) ** 2))
-        return rmse
-
-    if args.target == "stddev":
-        loss = basis_loss
-        loss_args = (0.3, scattered_flux_mask, pupil_mask, 0.1)
-    elif args.target == "model":
-        loss = model_loss
+def generate_target_image(
+    target, beam, pupil_only, pupil_center, pupil_radius, show_plots=False
+):
+    if target == "model":
         print(f"Generating model image for beam {beam}, centre {pupil_center}...")
         model_img = generate_zwfs_model_image(
             "Lab",
@@ -618,9 +567,7 @@ def main():
             centre=np.array(pupil_center) + (32 - 1) / 2,
             include_cold_stop=True,
         )
-        loss_args = (model_img, pupil_mask, 0.1)
-    elif args.target == "amp-model":
-        loss = model_loss
+    elif target == "amp-model":
         print("fitting amplitude errors to pupil only image...")
         pupil_grid = hcipy.make_pupil_grid(256, 2)
 
@@ -695,7 +642,6 @@ def main():
             n_pix_pupil=256,
             n_pix_final=32,
         )
-        loss_args = (model_img, pupil_mask, 0.1)
 
         if show_plots:
             plt.figure()
@@ -711,8 +657,143 @@ def main():
 
     else:
         raise ValueError(
-            f"Invalid target: {args.target}. Must be one of ['stddev', 'model', 'amp-model']"
+            f"Invalid model target: {target}. Must be 'model' or 'amp-model'"
         )
+
+    return model_img
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    saved_image = None
+    if args.source != "live":
+        try:
+            saved_image = load_saved_image(args.beam, args.source)
+        except ValueError as exc:
+            create_parser().error(str(exc))
+
+    from asgard_alignment import DM_modes2
+    from asgard_alignment.bcam import Bcam
+    from asgard_alignment.DM_shm_ctrl import dmclass
+
+    beam = args.beam
+    show_plots = not args.no_plots
+
+    def mds_connect(host: str, port: int = 5555, timeout_ms: int = 5000):
+        ctx = zmq.Context()
+        sock = ctx.socket(zmq.REQ)
+        sock.setsockopt(zmq.RCVTIMEO, timeout_ms)
+        sock.connect(f"tcp://{host}:{port}")
+        return ctx, sock
+
+    def mds_send(sock, msg: str) -> str:
+        sock.send_string(msg)
+        return sock.recv_string().strip()
+
+    ctx, sock = mds_connect("mimir")
+
+    dm = dmclass(beam)
+
+    cam = Bcam(beam)
+
+    print(f"")
+
+    cur_bmy = mds_send(sock, f"read BMY{beam}")
+    mds_send(sock, f"moveabs BMY{beam} 500.0")
+    time.sleep(3)
+    cam.take_dark(256)
+    # if show_plots:
+    #     plt.imshow(cam.dark)
+    #     plt.colorbar()
+    #     plt.show()
+
+    mds_send(sock, f"moveabs BMY{beam} {cur_bmy}")
+    time.sleep(3)
+
+    if args.source == "live":
+        pupil_only = acquire_pupil(beam, cam, sock, mds_send)
+    elif args.source == "saved-pupil":
+        pupil_only = saved_image
+
+    act_grid = DM_modes2.make_hc_act_grid()
+    fourier, freqs_used = DM_modes2.fourier_basis(
+        act_grid,
+        min_freq_HO=1.1,
+        max_freq_HO=5.01,
+        spacing_HO=1.0,
+        start_HO=0.0,
+        orthogonalise=False,
+        pin_edges=True,
+    )
+
+    pupil_mask = None
+    if args.source != "saved-ref":
+        pupil_mask, scattered_flux_mask, pupil_center, pupil_radius = prepare_pupil(
+            pupil_only, show_plots
+        )
+
+    def flux_outside_pupil(img, scatter_mask):
+        return np.sum(img * scatter_mask)
+
+    def uniformity_in_pupil(img, pupil_mask):
+        img_in_pupil = img * pupil_mask
+        mean_in_pupil = np.sum(img_in_pupil) / np.sum(pupil_mask)
+        # want a uniform distribution in the pupil, so penalise the variance
+        return np.sqrt(np.sum(pupil_mask * (img_in_pupil - mean_in_pupil) ** 2))
+
+    def stddev_loss(cmd, lamb_unif, scatter_mask, pupil_mask):
+        dm.set_data(cmd)
+        time.sleep(0.01)
+        img = cam.take_stack(64).mean(0)
+
+        f = flux_outside_pupil(img, scatter_mask=scatter_mask)
+        u = uniformity_in_pupil(img, pupil_mask=pupil_mask)
+        l = float(-f + lamb_unif * u)
+        print(np.sqrt(np.mean(cmd**2)), f"{l:.3f}")
+        return l
+
+    init_cmd = np.zeros(144)
+
+    dm.set_data(init_cmd)
+
+    time.sleep(1)
+
+    def basis_loss(coeffs, basis, lamb_unif, scatter_mask, pupil_mask, scale=0.05):
+        coeffs_scaled = coeffs * scale
+        cmd = basis.linear_combination(coeffs_scaled)
+        return stddev_loss(cmd, lamb_unif, scatter_mask, pupil_mask)
+
+    def model_loss(coeffs, basis, model_img, pupil_mask, scale=0.05):
+        coeffs_scaled = coeffs * scale
+        cmd = basis.linear_combination(coeffs_scaled)
+        dm.set_data(cmd)
+        time.sleep(0.01)
+        img = cam.take_stack(64).mean(0)
+
+        # img_in_pupil = img * pupil_mask
+        # model_in_pupil = model_img * pupil_mask
+        img_in_pupil = img
+        model_in_pupil = model_img
+
+        img_in_pupil /= np.sum(img_in_pupil)
+        model_in_pupil /= np.sum(model_in_pupil)
+
+        # return -np.sum(img_in_pupil * model_in_pupil)
+        rmse = np.sqrt(np.mean((img_in_pupil - model_in_pupil) ** 2))
+        return rmse
+
+    if args.target == "stddev":
+        loss = basis_loss
+        loss_args = (0.3, scattered_flux_mask, pupil_mask, 0.1)
+    else:
+        loss = model_loss
+        if args.source == "saved-ref":
+            model_img = saved_image
+        else:
+            model_img = generate_target_image(
+                args.target, beam, pupil_only, pupil_center, pupil_radius, show_plots
+            )
+        loss_args = (model_img, pupil_mask, 0.1)
 
     freqs = [2.01, 3.51, 5.01]
     n_iters = [50, 120, 240]
