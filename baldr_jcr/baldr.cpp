@@ -123,9 +123,13 @@ Result set_servo_mode(std::string mode)
   int new_mode;
   if (mode == "off")
   {
+    new_mode = SERVO_OFF;
+  }
+  else if (mode == "open")
+  {
     new_mode = SERVO_OPEN;
   }
-  else if (mode == "on")
+  else if ((mode == "closed") || (mode == "on"))
   {
     new_mode = SERVO_CLOSED;
   }
