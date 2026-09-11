@@ -24,8 +24,8 @@
   "pupil": {
     "geometry": "solarstein",
     "rotation_deg": 0,
-    "array_size": 256,
-    "pixels_across_pupil": 64,
+    "array_size": 512,
+    "pixels_across_pupil": 128,
     "physical_diameter_m": 1.8
   },
   "flat_dm": {
@@ -62,7 +62,7 @@
     "pupil_misconjugation_m": 0
   },
   "detector": {
-    "binning": 4,
+    "binning": 8,
     "crop": null,
     "exposure_s": 0.001,
     "quantum_efficiency": 0.7

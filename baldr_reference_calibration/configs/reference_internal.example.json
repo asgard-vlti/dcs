@@ -24,8 +24,8 @@
   "pupil": {
     "geometry": "solarstein",
     "rotation_deg": 0.0,
-    "array_size": 256,
-    "pixels_across_pupil": 64,
+    "array_size": 512,
+    "pixels_across_pupil": 128,
     "physical_diameter_m": 1.8
   },
   "flat_dm": {
@@ -52,7 +52,7 @@
     "collimator_focal_length_m": 0.040,
     "distance_to_mirror_m": 0.50,
     "mirror_diameter_m": 0.0254,
-    "edge_offset_m": -0.001,
+    "edge_offset_m": -0.009,
     "edge_angle_rad": 0.0,
     "imaging_focal_length_m": 0.184,
     "cold_stop_diameter_m": 0.002145,
@@ -62,7 +62,7 @@
     "pupil_misconjugation_m": 0.0
   },
   "detector": {
-    "binning": 4,
+    "binning": 8,
     "crop": null,
     "exposure_s": 0.001,
     "quantum_efficiency": 0.7
