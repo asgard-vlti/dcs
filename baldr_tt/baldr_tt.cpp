@@ -291,28 +291,34 @@ std::string set_bad_pixels(std::vector<int> x, std::vector<int> y) {
     return "OK";
 }
 
-void zero_tt(){
-    // Based on the curent average subarr, find the maximum pixel and set
-    // (px, py) to this. 
-    int px_new = 0;
-    int py_new = 0;
+Peak peak(){
+    Peak p;
+    p.px_new = 0;
+    p.py_new = 0;
+    p.sz = sz;
+
     double max = 0.0;
     for (int i=0;i<sz;i++){
         for (int j=0;j<sz;j++){
             if (im_av[i*sz+j] > max){
                 max = im_av[i*sz+j];
-                px_new = j;
-                py_new = i;
+                p.px_new = j;
+                p.py_new = i;
             }
         }
     }
+    return p;
+}
+
+void zero_tt(){
+    Peak p = peak();
     // Set the new px and py. Error checking is done in set_pxy.
-    set_pxy(px_new, py_new);
+    set_pxy(p.px_new, p.py_new);
     // Log the new px and py to /usr/local/etc/ttN.txt
     std::string tt_file = "/usr/local/etc/tt" + std::to_string(beam) + ".txt";
     std::ofstream ofs(tt_file, std::ofstream::trunc);
     if (ofs.is_open()) {
-        ofs << px_new << " " << py_new << std::endl;
+        ofs << p.px_new << " " << p.py_new << std::endl;
     } else {
         info("Warning: could not write to %s", tt_file.c_str());
     }
@@ -391,6 +397,7 @@ COMMANDER_REGISTER(m)
     m.def("pxy", set_pxy, "Set the origin pixels for tip/tilt", "px"_arg=15, "py"_arg=15);
     m.def("tto", set_tto, "Set tip/tilt offsets", "tx"_arg=0, "ty"_arg=0);
     m.def("flux_threshold", set_flux_threshold, "Set flux threshold", "value"_arg=100.0);
+    m.def("peak", peak, "Find the current peak pixel in the average image");
     m.def("zero_tt", zero_tt, "Zero tip/tilt based on current image position");
     m.def("ttmet", get_ttmet, "Get the saved tip/tilt metrology", "last_cnt"_arg=0);
     m.def("poke", poke_mode, "Poke the DM with a given mode and amplitude", "mode_ix"_arg=0, "amplitude"_arg=0.1);

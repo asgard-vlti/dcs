@@ -119,6 +119,13 @@ struct ImAvgs
     std::string im_minus_sum_encoded;
 };
 
+struct Peak
+{
+    int px_new;
+    int py_new;
+    int sz;
+};
+
 //-------End of Commander structs------
 
 // Settings including a mutex.
@@ -162,6 +169,7 @@ void servo_loop();
 
 extern std::mutex control_u_mutex;
 
+Peak peak();
 void start_camera_client();
 void stop_camera_client();
 

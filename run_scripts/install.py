@@ -12,6 +12,7 @@ def main():
 
     pwd = Path(__file__).parent
     run_scripts = [str(_) for _ in pwd.glob("run_*")]
+    run_scripts += [str(_) for _ in pwd.glob("dm-*")]
 
     try:
         subprocess.run(
