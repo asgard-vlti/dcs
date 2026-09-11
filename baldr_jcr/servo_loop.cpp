@@ -83,9 +83,10 @@ void servo_loop()
     catch_up_with_sem(&subarray, 1);
 
     // infinite loop while servo is running (not necessarily closed loop)
-    int servo_mode;
+    int servo_mode, last_servo_mode = SERVO_OFF;
     while (true)
     {
+        last_servo_mode = servo_mode;
         settings.mutex.lock();
         servo_mode = settings.settings.servo_mode;
         settings.mutex.unlock();
@@ -136,10 +137,13 @@ void servo_loop()
         clip_com();
 
         // inject a disturbance (nominally just zeros)
-        inject_disturb();
+        inject_disturb(servo_mode);
 
         // write to shared memory and post the semaphore for that DM shmim
-        write_shm();
+        if (servo_mode != SERVO_OFF || last_servo_mode != SERVO_OFF) 
+        {
+            write_shm();
+        } 
 #ifdef PRINT_TIMING
         auto t2 = high_resolution_clock::now();
         if (cnt % 20 == 0)
@@ -316,7 +320,7 @@ void clip_com()
     ctrl.mutex.unlock();
 }
 
-void inject_disturb()
+void inject_disturb(int servo_mode)
 {
     ctrl.mutex.lock();
 // add the next disturbance buffer element to the command vector
@@ -325,6 +329,8 @@ void inject_disturb()
 #else
     ctrl.com_write = ctrl.com_clean;
 #endif
+    if (servo_mode == SERVO_OFF)
+        ctrl.com_write.setZero();
     ctrl.mutex.unlock();
 }
 
