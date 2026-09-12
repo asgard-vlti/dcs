@@ -17,6 +17,7 @@ toml::table config;
 
 // Servo parameters. These are the parameters that will be adjusted by the commander
 int beam=1, width=21, sz=0;
+bool update_DM_when_off=true;
 std::string recon_dir = "";
 PIDSettings settings;
 RTStatus rt_status;
@@ -159,6 +160,7 @@ void set_servo_mode(std::string mode) {
     int new_mode;
     if (mode == "off") {
         new_mode = SERVO_OFF;
+        update_DM_when_off = true;
     } else if (mode == "tt") {
         new_mode = SERVO_TT;
     } else if (mode == "ho") {
@@ -239,12 +241,14 @@ void set_tto(double x, double y){
     settings.s.ttxo = x;
     settings.s.ttyo = y;
     settings.mutex.unlock();
+    update_DM_when_off = true;
 }
 
 void set_focus_offset(double offset){
     settings.mutex.lock();
     settings.s.focus_offset = offset;
     settings.mutex.unlock();
+    update_DM_when_off = true;
 }
 
 void set_coupling(double ttx_coupling, double tty_coupling){

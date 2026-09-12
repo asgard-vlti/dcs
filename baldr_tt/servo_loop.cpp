@@ -238,8 +238,10 @@ void servo_loop(){
             set_dm_tilt_foc(control_u.tx + settings.s.ttx_coupling * settings.s.focus_amp * control_u.ho_sign / PIX_PER_TT, 
             				control_u.ty + settings.s.tty_coupling * settings.s.focus_amp * control_u.ho_sign / PIX_PER_TT, 
             				settings.s.focus_offset + settings.s.focus_amp * control_u.ho_sign);
-        else
+        else if (update_DM_when_off) {
             set_dm_tilt_foc(settings.s.ttxo, settings.s.ttyo, settings.s.focus_offset);
+            update_DM_when_off = false;
+        }
 
         // Update the saved tip/tilt metrology.
         ttmet_save.mx[ttmet_save.cnt] = control_u.tx;

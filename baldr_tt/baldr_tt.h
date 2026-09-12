@@ -150,6 +150,7 @@ extern toml::table config;
 
 // Parameters that really don't change after startup.
 extern int beam, width, sz;
+extern bool update_DM_when_off;
 
 // Servo parameters. These are the parameters that will be adjusted by the commander
 extern PIDSettings settings;
