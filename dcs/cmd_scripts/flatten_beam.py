@@ -699,7 +699,7 @@ def main(argv=None):
     print(f"")
 
     cur_bmy = mds_send(sock, f"read BMY{beam}")
-    mds_send(sock, f"moveabs BMY{beam} 500.0")
+    mds_send(sock, f"moveabs BMY{beam} 0.0")
     time.sleep(3)
     cam.take_dark(256)
     # if show_plots:
