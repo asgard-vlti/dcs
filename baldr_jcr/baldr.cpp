@@ -129,7 +129,7 @@ Result set_servo_mode(std::string mode)
   {
     new_mode = SERVO_OPEN;
   }
-  else if ((mode == "closed") || (mode == "on"))
+  else if (mode == "closed")
   {
     new_mode = SERVO_CLOSED;
   }

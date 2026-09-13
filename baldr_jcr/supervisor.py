@@ -52,6 +52,7 @@ POKE: float = 0.01
 ALPHA: float = 0.001
 # MEAS_SCALE: float = 1 / 1000
 CNT_MIN: int = 3  # minimum number of measurements to wait after applying poke
+NAVG: int = 5  # number of frames to average for a poke
 
 XC_OFFSET: float = 0.0
 YC_OFFSET: float = 0.0
@@ -122,8 +123,9 @@ for array_name in ARRAY_NAMES:
 
 
 class ServoMode(StrEnum):
-    SERVO_OPEN = "off"
-    SERVO_CLOSED = "on"
+    SERVO_OFF = "off"
+    SERVO_OPEN = "open"
+    SERVO_CLOSED = "closed"
 
 
 class ZmqNoResponse(RuntimeError):
@@ -554,6 +556,12 @@ if __name__ == "__main__":
         type=float,
         default=ALPHA,
     )
+    parser.add_argument(
+        "--navg",
+        help=f"number of frames to average for each poke in iMat, default: {NAVG}",
+        default=NAVG,
+        type=int,
+    )
 
     parser.add_argument(
         "--open", help="open the loop without stopping the RTC process", action="count"
@@ -658,7 +666,9 @@ This is correct behaviour if the RTC is not yet running.
         action_performed = True
 
     if args.recompute is not None:
-        beam.create_leaky_matrices(nmodes=args.nmodes, poke=args.poke)
+        beam.create_leaky_matrices(
+            nmodes=args.nmodes, poke=args.poke, alpha=args.alpha, navg=args.navg
+        )
         action_performed = True
 
     if args.gain is not None and args.leak is not None:

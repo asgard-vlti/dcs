@@ -222,10 +222,8 @@ void reconstruct_modes();
 void filter_modes(int servo_mode);
 void project_com();
 void inject_disturb(int servo_mode);
-void inject_dm_signal();
 void clip_com();
 void write_shm();
-void remove_offset();
 
 #define DEF_READ_CTRL_PARAM(PARAM_NAME, DESCRIPTION, NROWS, NCOLS, DATATYPE) \
     Result read_##PARAM_NAME()                                               \
