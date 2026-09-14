@@ -212,12 +212,14 @@ class DMTelemetry:
 
             # import same basis that was used in controller
             #  we only import this if using analysis tools to minimize risk of breaking for just basic reading in telemetry functions
-            DCS_ROOT = Path(__file__).resolve().parents[1]
-            if str(DCS_ROOT) not in sys.path:
-                sys.path.insert(0, str(DCS_ROOT))
+            dcs_root = Path(__file__).resolve().parents[1]
+            baldr_root = dcs_root / "baldr_jcr"
+
+            for path in (dcs_root, baldr_root):
+                if str(path) not in sys.path:
+                    sys.path.insert(0, str(path))
 
             from baldr_jcr import modal_basis
-
             self._basis_generator = getattr(modal_basis, options[basis])()
             modes = self._basis_generator.modes_on_unit_disk(
                 nsamplex=N_SIDE, nmodes=nmodes
@@ -517,6 +519,8 @@ telemetry.plot_psd(
 
 animation = telemetry.animate(1)
 
+animation = telemetry.animate(1)
+
 # more details to convert to opd space
 animation = telemetry.animate(
     1,
@@ -527,6 +531,14 @@ animation = telemetry.animate(
     coupling=0.75,
     difference = True 
 )
+
+telemetry.animate(1,
+        space="opd", 
+        nsample=48,
+        difference=False, 
+        start=500, 
+        stop=1500, 
+        step=20)
 
 # save as movie
 telemetry.save_movie(
