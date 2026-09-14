@@ -49,18 +49,20 @@ export BALDR_ROOT=/usr/local/bin
 
 The following are the main `supervisor.py` commands needed.
 
-| argument            | description                                      | example                                     |
-| ------------------- | ------------------------------------------------ | ------------------------------------------- |
-| `--init`            | reset all matrices and control variables         | `./supervisor.py 1 --init`                  |
-| `--reset`           | reset control variables online                   | `./supervisor.py 1 --reset`                 |
-| `--recompute`       | Do poke test, meas imat, compute cmat            | `./supervisor.py 1 --recompute`             |
-| `--poke`            | specify poke during poke test                    | `./supervisor.py 1 --recompute --poke 0.01` |
-| `--nmodes`          | specify number of modes for controller to act on | `./supervisor.py 1 --recompute --nmodes 50` |
-| `--gain` & `--leak` | set leaky integrator gain and leak               | `./supervisor.py 1 --gain 0.3 --leak 0.99`  |
-| `--open`            | open the loop immediately                        | `./supervisor.py 1 --open`                  |
-| `--close`           | close the loop (using previously set gain/leak)  | `./supervisor.py 1 --close`                 |
-| `--status`          | check the status of some variables (WIP)         | `./supervisor.py 1 --status`                |
-
+| argument            | description                                             | example                                                 |
+| ------------------- | ------------------------------------------------------- | ------------------------------------------------------- |
+| `--init`            | reset all matrices and control variables                | `./supervisor.py 1 --init`                              |
+| `--reset`           | reset control variables online                          | `./supervisor.py 1 --reset`                             |
+| `--recompute`       | Do poke test, meas imat, compute cmat                   | `./supervisor.py 1 --recompute`                         |
+| `--poke`            | specify poke during poke test                           | `./supervisor.py 1 --recompute --poke 0.01`             |
+| `--nmodes`          | specify number of modes for controller to act on        | `./supervisor.py 1 --recompute --nmodes 50`             |
+| `--alpha`           | specify reconstructor regularisation param              | `./supervisor.py 1 --recompute --alpha 0.01`            |
+| `--navg`            | specify number of frames to avg per poke during imat    | `./supervisor.py 1 --recompute --navg 10`               |
+| `--reinvert`        | compute cmat with different `--alpha` and/or `--nmodes` | `./supervisor.py 1 --reinvert --alpha 0.003` |
+| `--gain` & `--leak` | set leaky integrator gain and leak                      | `./supervisor.py 1 --gain 0.3 --leak 0.99`              |
+| `--open`            | open the loop immediately                               | `./supervisor.py 1 --open`                              |
+| `--close`           | close the loop (using previously set gain/leak)         | `./supervisor.py 1 --close`                             |
+| `--status`          | check the status of some variables (WIP)                | `./supervisor.py 1 --status`                            |
 
 ## Todo:
 

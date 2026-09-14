@@ -13,13 +13,13 @@ from os import path
 from dataclasses import dataclass, field
 import modal_basis
 from enum import Enum
-try:
-    from enum import StrEnum  # Python 3.11+
-except ImportError:
-    from enum import Enum
 
-    class StrEnum(str, Enum):
-        pass
+
+# for python < 3.11 compatibility, define StrEnum here instead of importing
+class StrEnum(str, Enum):
+    pass
+
+
 import os
 
 # TODO: NOT REALLY SAFE: These parameters are defined both in baldr.h and here,
@@ -45,14 +45,14 @@ BEAM_TO_PORT = {
     4: 6665,
 }
 DEFAULT_HOST = "mimir"
-#DEFAULT_HOST = "localhost"
+# DEFAULT_HOST = "localhost"
 
 # Default values, will be overridden by CLI arguments
-POKE: float = 0.1
+POKE: float = 0.01
 ALPHA: float = 0.001
-BETA: float = 0.0
 # MEAS_SCALE: float = 1 / 1000
 CNT_MIN: int = 3  # minimum number of measurements to wait after applying poke
+NAVG: int = 5  # number of frames to average for a poke
 
 XC_OFFSET: float = 0.0
 YC_OFFSET: float = 0.0
@@ -123,8 +123,9 @@ for array_name in ARRAY_NAMES:
 
 
 class ServoMode(StrEnum):
-    SERVO_OPEN = "off"
-    SERVO_CLOSED = "on"
+    SERVO_OFF = "off"
+    SERVO_OPEN = "open"
+    SERVO_CLOSED = "closed"
 
 
 class ZmqNoResponse(RuntimeError):
@@ -388,7 +389,9 @@ class Beam:
         # This matrix is manually written, since the RTC doesn't need it so it
         # doesn't enter the list of "controlled" arrays defined at the start
         # of this script.
-        fits.writeto(self.file_prefix + "mode_to_meas.fits", mode_to_meas, overwrite=True)
+        fits.writeto(
+            self.file_prefix + "mode_to_meas.fits", mode_to_meas, overwrite=True
+        )
         return (mode_to_meas, -ref_meas)
 
     @staticmethod
@@ -547,6 +550,18 @@ if __name__ == "__main__":
     )
 
     parser.add_argument("--nmodes", help="maximum mode index to control", type=int)
+    parser.add_argument(
+        "--alpha",
+        help=f"reconstructor regularisation factor, default: {ALPHA}",
+        type=float,
+        default=ALPHA,
+    )
+    parser.add_argument(
+        "--navg",
+        help=f"number of frames to average for each poke in iMat, default: {NAVG}",
+        default=NAVG,
+        type=int,
+    )
 
     parser.add_argument(
         "--open", help="open the loop without stopping the RTC process", action="count"
@@ -647,11 +662,13 @@ This is correct behaviour if the RTC is not yet running.
             action_performed = True
 
     if args.reinvert is not None:
-        beam.reinvert_control_matrix(nmodes=args.nmodes)
+        beam.reinvert_control_matrix(nmodes=args.nmodes, alpha=args.alpha)
         action_performed = True
 
     if args.recompute is not None:
-        beam.create_leaky_matrices(nmodes=args.nmodes, poke=args.poke)
+        beam.create_leaky_matrices(
+            nmodes=args.nmodes, poke=args.poke, alpha=args.alpha, navg=args.navg
+        )
         action_performed = True
 
     if args.gain is not None and args.leak is not None:

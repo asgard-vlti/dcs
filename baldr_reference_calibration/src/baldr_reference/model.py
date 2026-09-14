@@ -59,41 +59,170 @@ def _disc(dim: int, diameter: float, obstruction: float = 0.0) -> np.ndarray:
     return (outer & ~inner).astype(float)
 
 
-def _rotate_about(array: np.ndarray, angle_deg: float, center) -> np.ndarray:
-    angle = -np.deg2rad(angle_deg)
-    y, x = np.indices(array.shape, dtype=float)
-    xp = (x - center[0]) * np.cos(angle) + (y - center[1]) * np.sin(angle) + center[0]
-    yp = -(x - center[0]) * np.sin(angle) + (y - center[1]) * np.cos(angle) + center[1]
-    return ndimage.map_coordinates(array, [yp, xp], mode="constant", cval=0, order=3)
+## 13-9-26
+# def _rotate_about(array: np.ndarray, angle_deg: float, center) -> np.ndarray:
+#     angle = -np.deg2rad(angle_deg)
+#     y, x = np.indices(array.shape, dtype=float)
+#     xp = (x - center[0]) * np.cos(angle) + (y - center[1]) * np.sin(angle) + center[0]
+#     yp = -(x - center[0]) * np.sin(angle) + (y - center[1]) * np.cos(angle) + center[1]
+#     return ndimage.map_coordinates(array, [yp, xp], mode="constant", cval=0, order=3)
 
 
-def _telescope_pupil(dim: int, diameter: float, geometry: str) -> np.ndarray:
+# def _telescope_pupil(dim: int, diameter: float, geometry: str) -> np.ndarray:
+#     if geometry == "ut":
+#         obstruction, spider_tilt = 1100 / 8000, 5.5
+#         thickness = int(max(1, 0.008 * dim))
+#     elif geometry == "at":
+#         obstruction, spider_tilt = 0.13 / 1.8, 2.5
+#         thickness = int(max(1, 0.0008 * dim))
+#     else:
+#         raise ValueError("Telescope pupil must be UT or AT.")
+
+#     padded_size = dim + 50
+#     center = padded_size // 2
+#     #thickness = int(max(1, 0.008 * dim))
+#     spiders = []
+#     reference = np.zeros((padded_size, padded_size))
+#     reference[center:, center:center + thickness] = 1
+#     spiders.append(_rotate_about(reference, -spider_tilt, (center, center + diameter / 2)))
+#     reference = np.zeros((padded_size, padded_size))
+#     reference[:center, center - thickness + 1:center + 1] = 1
+#     spiders.append(_rotate_about(reference, -spider_tilt, (center, center - diameter / 2)))
+#     reference = np.zeros((padded_size, padded_size))
+#     reference[center:center + thickness, center:] = 1
+#     spiders.append(_rotate_about(reference, spider_tilt, (center + diameter / 2, center)))
+#     reference = np.zeros((padded_size, padded_size))
+#     reference[center - thickness + 1:center + 1, :center] = 1
+#     spiders.append(_rotate_about(reference, spider_tilt, (center - diameter / 2, center)))
+#     spider_transmission = 1 - _rotate_about(sum(spiders), 45, (center, center))
+#     spider_transmission = spider_transmission[25:-25, 25:-25]
+#     return (_disc(dim, diameter, obstruction) * spider_transmission >= 0.5).astype(float)
+
+def _rotate_xy(x, y, angle_deg):
+    angle = np.deg2rad(angle_deg)
+    c = np.cos(angle)
+    s = np.sin(angle)
+    return c * x - s * y, s * x + c * y
+
+
+def _telescope_pupil(
+    dim: int,
+    diameter: float,
+    geometry: str,
+    rotation_deg: float = 0.0,
+    supersample: int = 8,
+) -> np.ndarray:
+
     if geometry == "ut":
-        obstruction, spider_tilt = 1100 / 8000, 5.5
+        obstruction = 1100 / 8000
+        spider_tilt = 5.5
     elif geometry == "at":
-        obstruction, spider_tilt = 0.13 / 1.8, 2.5
+        obstruction = 0.13 / 1.8
+        spider_tilt = 2.5
     else:
         raise ValueError("Telescope pupil must be UT or AT.")
 
-    padded_size = dim + 50
-    center = padded_size // 2
-    thickness = int(max(1, 0.008 * dim))
-    spiders = []
-    reference = np.zeros((padded_size, padded_size))
-    reference[center:, center:center + thickness] = 1
-    spiders.append(_rotate_about(reference, -spider_tilt, (center, center + diameter / 2)))
-    reference = np.zeros((padded_size, padded_size))
-    reference[:center, center - thickness + 1:center + 1] = 1
-    spiders.append(_rotate_about(reference, -spider_tilt, (center, center - diameter / 2)))
-    reference = np.zeros((padded_size, padded_size))
-    reference[center:center + thickness, center:] = 1
-    spiders.append(_rotate_about(reference, spider_tilt, (center + diameter / 2, center)))
-    reference = np.zeros((padded_size, padded_size))
-    reference[center - thickness + 1:center + 1, :center] = 1
-    spiders.append(_rotate_about(reference, spider_tilt, (center - diameter / 2, center)))
-    spider_transmission = 1 - _rotate_about(sum(spiders), 45, (center, center))
-    spider_transmission = spider_transmission[25:-25, 25:-25]
-    return (_disc(dim, diameter, obstruction) * spider_transmission >= 0.5).astype(float)
+    # Spider width in pupil pixels.
+    #
+    # This preserves the current nominal 0.8%-of-aperture width,
+    # but does NOT force it to an integer number of pixels.
+    spider_width = 0.008 * diameter
+
+    ss = int(supersample)
+
+    # Coordinates are expressed in native pupil pixels, but evaluated
+    # at sub-pixel sampling.
+    q = (np.arange(dim * ss, dtype=float) + 0.5) / ss - dim / 2.0
+    y, x = np.meshgrid(q, q, indexing="ij")
+
+    radius = np.hypot(x, y)
+    outer_radius = diameter / 2.0
+    inner_radius = obstruction * outer_radius
+
+    pupil = (
+        (radius <= outer_radius)
+        & (radius >= inner_radius)
+    )
+
+    blocked = np.zeros_like(pupil, dtype=bool)
+
+    # Reproduce the existing geometry:
+    # four vanes nominally extending from the centre to the pupil edge,
+    # each tilted about its outer attachment point.
+    outer_points = (
+        (0.0, +outer_radius),
+        (0.0, -outer_radius),
+        (+outer_radius, 0.0),
+        (-outer_radius, 0.0),
+    )
+
+    spider_tilts = (
+        -spider_tilt,
+        -spider_tilt,
+        +spider_tilt,
+        +spider_tilt,
+    )
+
+    # Existing code finally rotates the full spider pattern by 45 deg.
+    global_rotation = 45.0 + rotation_deg
+
+    for (outer_x, outer_y), tilt in zip(outer_points, spider_tilts):
+
+        # Start with an inner endpoint at the pupil centre and rotate
+        # it around the fixed outer spider attachment point.
+        vector_x = -outer_x
+        vector_y = -outer_y
+
+        vector_x, vector_y = _rotate_xy(
+            vector_x,
+            vector_y,
+            tilt,
+        )
+
+        inner_x = outer_x + vector_x
+        inner_y = outer_y + vector_y
+
+        # Apply the global telescope-pupil rotation analytically.
+        inner_x, inner_y = _rotate_xy(
+            inner_x,
+            inner_y,
+            global_rotation,
+        )
+        outer_x_rot, outer_y_rot = _rotate_xy(
+            outer_x,
+            outer_y,
+            global_rotation,
+        )
+
+        # Coordinates along/across this finite rectangular spider.
+        dx = outer_x_rot - inner_x
+        dy = outer_y_rot - inner_y
+        length = np.hypot(dx, dy)
+
+        ux = dx / length
+        uy = dy / length
+
+        px = x - inner_x
+        py = y - inner_y
+
+        along = px * ux + py * uy
+        across = -px * uy + py * ux
+
+        blocked |= (
+            (along >= 0.0)
+            & (along <= length)
+            & (np.abs(across) <= spider_width / 2.0)
+        )
+
+    pupil &= ~blocked
+
+    # Fractional open-aperture amplitude at the native model sampling.
+    pupil = pupil.reshape(
+        dim, ss,
+        dim, ss,
+    ).mean(axis=(1, 3))
+
+    return pupil
 
 
 def _custom_pupil(dim: int, diameter: float, pupil: dict) -> np.ndarray:
@@ -140,30 +269,76 @@ def _custom_pupil(dim: int, diameter: float, pupil: dict) -> np.ndarray:
     return result
 
 
+##13-9-26 
+# def make_pupil(config: dict) -> np.ndarray:
+#     pupil = config["pupil"]
+#     dim = int(pupil["array_size"])
+#     diameter = float(pupil["pixels_across_pupil"])
+#     geometry_value = pupil.get("geometry")
+#     if geometry_value is None or not str(geometry_value).strip():
+#         result = _custom_pupil(dim, diameter, pupil)
+#     else:
+#         geometry = str(geometry_value).strip().lower()
+#         if geometry == "solarstein":
+#             result = _disc(dim, diameter, 1100 / 8000)
+#         elif geometry in {"disc", "disk"}:
+#             result = _disc(dim, diameter)
+#         elif geometry in {"ut", "at"}:
+#             result = _telescope_pupil(dim, diameter, geometry)
+#         else:
+#             raise ValueError(
+#                 "pupil.geometry must be 'solarstein', 'disc', 'UT', 'AT', "
+#                 "or omitted for a custom pupil."
+#             )
+#     rotation = float(pupil.get("rotation_deg", 0.0))
+#     if rotation:
+#         center = ((dim - 1) / 2, (dim - 1) / 2)
+#         result = (_rotate_about(result, rotation, center) >= 0.5).astype(float)
+#     return result
+
 def make_pupil(config: dict) -> np.ndarray:
     pupil = config["pupil"]
     dim = int(pupil["array_size"])
     diameter = float(pupil["pixels_across_pupil"])
     geometry_value = pupil.get("geometry")
+    rotation = float(pupil.get("rotation_deg", 0.0))
+
     if geometry_value is None or not str(geometry_value).strip():
         result = _custom_pupil(dim, diameter, pupil)
+
     else:
         geometry = str(geometry_value).strip().lower()
+
         if geometry == "solarstein":
             result = _disc(dim, diameter, 1100 / 8000)
+
         elif geometry in {"disc", "disk"}:
             result = _disc(dim, diameter)
+
         elif geometry in {"ut", "at"}:
-            result = _telescope_pupil(dim, diameter, geometry)
+            # Rotation is included analytically here.
+            return _telescope_pupil(
+                dim,
+                diameter,
+                geometry,
+                rotation_deg=rotation,
+                supersample=8,
+            )
+
         else:
             raise ValueError(
                 "pupil.geometry must be 'solarstein', 'disc', 'UT', 'AT', "
                 "or omitted for a custom pupil."
             )
-    rotation = float(pupil.get("rotation_deg", 0.0))
+
     if rotation:
         center = ((dim - 1) / 2, (dim - 1) / 2)
-        result = (_rotate_about(result, rotation, center) >= 0.5).astype(float)
+        result = np.clip(
+            _rotate_about(result, rotation, center),
+            0.0,
+            1.0,
+        )
+
     return result
 
 
