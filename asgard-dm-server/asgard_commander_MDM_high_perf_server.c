@@ -93,6 +93,8 @@ static int save_buffer_count = 0;
 static dm_save_record_t *save_buffer = NULL;
 static pthread_mutex_t save_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int save_thread_active = 0;
+static int shm_changed = 0;
+static pthread_mutex_t shm_changed_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* =========================================================================
  *                       function prototypes
@@ -237,6 +239,9 @@ void* dm_control_loop(void *_dmid) {
     shmarray[dmid-1][nch].md->cnt0++;
     // ImageStreamIO_sempost(&shmarray[dmid-1][nch], -1);
     shmarray[dmid-1][nch].md->write = 0;  // signaling done writing
+    pthread_mutex_lock(&shm_changed_mutex);
+    shm_changed = 1;
+    pthread_mutex_unlock(&shm_changed_mutex);
   }
   return NULL;
 }
@@ -475,6 +480,7 @@ void* dms_refresh(void *) {
   FILE* fd;
   // char logname[200];
   int kk;
+  int changed;
 
   printf("From dms_refresh thread!\n");
   if (timelog == 1)
@@ -490,7 +496,11 @@ void* dms_refresh(void *) {
       free(cmd);
     }
     clock_gettime(CLOCK_REALTIME, &now);   // get time after issuing
-    if (save_mode_flag == 1) {
+    pthread_mutex_lock(&shm_changed_mutex);
+    changed = shm_changed;
+    shm_changed = 0;
+    pthread_mutex_unlock(&shm_changed_mutex);
+    if (save_mode_flag == 1 && changed) {
       dm_save_record_t record;
       int ii;
       memset(&record, 0, sizeof(record));
