@@ -394,6 +394,12 @@ class Beam:
         )
         return (mode_to_meas, -ref_meas)
 
+    def take_flat(self, *, navg: int = 5):
+        # record reference measurement
+        ref_meas = self.avg_meas(navg=navg, after_frame=CNT_MIN)
+        meas_offset = -ref_meas
+        self.update_array(name="meas_offset", array=meas_offset)
+
     @staticmethod
     def build_meas_to_mode(
         *,
@@ -538,6 +544,11 @@ if __name__ == "__main__":
         action="count",
     )
     parser.add_argument(
+        "--flat",
+        help="take a new flat",
+        action="count",
+    )
+    parser.add_argument(
         "--reinvert",
         action="count",
         help="rebuild the reconstructor from the imat on disk (e.g., to tweak reg params)",
@@ -663,6 +674,10 @@ This is correct behaviour if the RTC is not yet running.
 
     if args.reinvert is not None:
         beam.reinvert_control_matrix(nmodes=args.nmodes, alpha=args.alpha)
+        action_performed = True
+
+    if args.flat is not None:
+        beam.take_flat(navg=args.navg)
         action_performed = True
 
     if args.recompute is not None:
