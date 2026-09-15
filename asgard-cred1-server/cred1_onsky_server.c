@@ -609,6 +609,24 @@ void* save_roi_cubes(void *) {
 /* =========================================================================
  *                                Save a dark
  * ========================================================================= */
+void set_dark_observing_directory(time_t timestamp) {
+  struct tm observing_time;
+
+  // Keep a night's darks together until the following UT noon.
+  if (gmtime_r(&timestamp, &observing_time) == NULL) {
+    error("Unable to determine the observing date for dark files");
+    return;
+  }
+  if (observing_time.tm_hour < 12) {
+    timestamp -= 24 * 60 * 60;
+    gmtime_r(&timestamp, &observing_time);
+  }
+
+  snprintf(savedir, sizeof(savedir), "/data/darks/%04d%02d%02d/",
+           1900 + observing_time.tm_year, 1 + observing_time.tm_mon,
+           observing_time.tm_mday);
+}
+
 void* save_dark(void *) {
   unsigned int axis3 = 1;
   if (camconf->ndmr_mode == 1)
@@ -693,8 +711,7 @@ void* save_dark(void *) {
   sprintf(camconf->utdate, "%04d-%02d-%02d",
 	  1900 + uttime->tm_year, 1 + uttime->tm_mon, uttime->tm_mday);
 
-  sprintf(savedir, "/data/darks/%04d%02d%02d/",
-	  1900 + uttime->tm_year, 1 + uttime->tm_mon, uttime->tm_mday); 
+  set_dark_observing_directory(tnow.tv_sec);
 
   if (stat(savedir, &st) == -1)
     mkdir(savedir, 0700);
@@ -757,8 +774,7 @@ void update_dark() {
   sprintf(camconf->utdate, "%04d-%02d-%02d",
 	  1900 + uttime->tm_year, 1 + uttime->tm_mon, uttime->tm_mday);
 
-  sprintf(savedir, "/data/darks/%04d%02d%02d/",
-	  1900 + uttime->tm_year, 1 + uttime->tm_mon, uttime->tm_mday); 
+  set_dark_observing_directory(tnow.tv_sec);
 
   sprintf(fname, "%sdark_cred1_%s_%s_%s_fps_%04.0f_gain_%03d.fits",
 	  savedir, CROP, camconf->readmode, NBFR,

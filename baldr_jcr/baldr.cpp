@@ -284,7 +284,9 @@ int main(int argc, char *argv[])
   // The ZWFS Baldr ignores these values.
   
   settings.settings.flux_threshold = config["flux_threshold"].value_or(10000.0);
-  settings.settings.servo_mode = SERVO_OPEN;
+
+  // We start in off mode - no writing to the DM.
+  settings.settings.servo_mode = SERVO_OFF;
 
   // Now we initialise the servo control matrices/parameters.
   // We haven't spawned any other threads yet, so there is no need to
