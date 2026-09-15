@@ -25,7 +25,7 @@ import os
 # TODO: NOT REALLY SAFE: These parameters are defined both in baldr.h and here,
 # I should find a way to merge these into a single source of truth.
 N_MODES = 100  # TODO: change to 144, also in baldr.cpp
-WIDTH = 15
+WIDTH = 17
 N_PIXELS = WIDTH * WIDTH
 SUBARRAY_WIDTH = 32
 N_SUBARRAY_PIXELS = SUBARRAY_WIDTH * SUBARRAY_WIDTH
@@ -394,6 +394,12 @@ class Beam:
         )
         return (mode_to_meas, -ref_meas)
 
+    def take_flat(self, *, navg: int = 5):
+        # record reference measurement
+        ref_meas = self.avg_meas(navg=navg, after_frame=CNT_MIN)
+        meas_offset = -ref_meas
+        self.update_array(name="meas_offset", array=meas_offset)
+
     @staticmethod
     def build_meas_to_mode(
         *,
@@ -538,6 +544,11 @@ if __name__ == "__main__":
         action="count",
     )
     parser.add_argument(
+        "--flat",
+        help="take a new flat",
+        action="count",
+    )
+    parser.add_argument(
         "--reinvert",
         action="count",
         help="rebuild the reconstructor from the imat on disk (e.g., to tweak reg params)",
@@ -663,6 +674,10 @@ This is correct behaviour if the RTC is not yet running.
 
     if args.reinvert is not None:
         beam.reinvert_control_matrix(nmodes=args.nmodes, alpha=args.alpha)
+        action_performed = True
+
+    if args.flat is not None:
+        beam.take_flat(navg=args.navg)
         action_performed = True
 
     if args.recompute is not None:
