@@ -1,4 +1,5 @@
 
+## KEEP THIS 
 #!/usr/bin/env python3
 """Generate cropped Baldr reference FITS with command-line config overrides.
 
@@ -171,45 +172,6 @@ def extract_frame(
     )
 
 
-def crop_about_measured_center(
-    image: np.ndarray,
-    frame_shape: tuple[int, int],
-    source_center_xy: tuple[float, float],
-    output_center_xy: tuple[float, float],
-    fill_value: float = 0.0,
-) -> np.ndarray:
-    """Crop/resample an image so a measured centre lands on a chosen pixel."""
-    image = np.asarray(image, dtype=float)
-    if image.ndim != 2:
-        raise ValueError(f"Expected a 2-D image, got shape {image.shape}.")
-
-    height, width = frame_shape
-    if height > image.shape[0] or width > image.shape[1]:
-        raise ValueError(
-            f"Requested frame {frame_shape} is larger than source image "
-            f"{image.shape}."
-        )
-
-    source_center_x, source_center_y = source_center_xy
-    output_center_x, output_center_y = output_center_xy
-    centres = [source_center_x, source_center_y, output_center_x, output_center_y]
-    if not np.all(np.isfinite(centres)):
-        raise ValueError("Source and output pupil centres must be finite.")
-
-    rows, columns = np.indices((height, width), dtype=float)
-    source_rows = rows + source_center_y - output_center_y
-    source_columns = columns + source_center_x - output_center_x
-
-    return ndimage.map_coordinates(
-        image,
-        (source_rows, source_columns),
-        order=1,
-        mode="constant",
-        cval=float(fill_value),
-        prefilter=False,
-    )
-
-
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path, help="Output reference FITS file")
@@ -287,11 +249,7 @@ def parse_arguments() -> argparse.Namespace:
         type=int,
         metavar=("HEIGHT", "WIDTH"),
         default=(32, 32),
-        help=(
-            "Final output frame size in pixels. In measurement mode the fitted "
-            "pupil centre is placed on the central integer pixel "
-            "(default: 32 32 -> centre 15 15)."
-        ),
+        help="Output frame size in pixels (default: 32 32)",
     )
     parser.add_argument(
         "--pupil-center",
@@ -367,17 +325,21 @@ def main() -> None:
                 "Do not provide --pupil-center with --measure-clear; the centre "
                 "is fitted from the measured clear pupil."
             )
-
-        # Acquire and fit the complete camera frame. Cropping before the fit
-        # would discard information useful for estimating the pupil geometry.
         measured_clear, shared_memory_path = acquire_clear_pupil(
             args.beam_id, args.n_clear, args.frame_sleep
         )
+
         if height > measured_clear.shape[0] or width > measured_clear.shape[1]:
             raise ValueError(
-                f"--frame-size requested {frame_shape}, but the measured frame "
-                f"has shape {measured_clear.shape}."
+                f"Requested frame {frame_shape} is larger than measured frame "
+                f"{measured_clear.shape}."
             )
+
+        # if measured_clear.shape != frame_shape:
+        #     raise ValueError(
+        #         f"The measured frame has shape {measured_clear.shape}, but "
+        #         f"--frame-size requested {frame_shape}."
+        #     )
 
         fit_output_directory = args.pupil_fit_output_dir
         if fit_output_directory is None:
@@ -399,38 +361,15 @@ def main() -> None:
                 int(config["spectrum"]["samples"]),
             )
 
+        clear = measured_clear
+        masked = predicted_masked
         clear_background = float(fit_summary["background"])
         masked_background = clear_background
         config = copy.deepcopy(fit_summary["config"])
-
-        # Register the fitted centre from the complete measured frame onto the
-        # lower of the two central pixels for an even-sized output. Therefore a
-        # 32x32 output has its pupil centre at zero-indexed pixel (15, 15).
         centre_result = fit_summary["measured_pupil_center_subpixel"]
-        measured_center_xy = (
+        pupil_center_xy = (
             float(centre_result["center_x"]),
             float(centre_result["center_y"]),
-        )
-        pupil_center_xy = (
-            float((width - 1) // 2),
-            float((height - 1) // 2),
-        )
-
-        # Apply precisely the same crop and subpixel registration to the
-        # measured clear pupil and its fitted, predicted ZWFS reference.
-        clear = crop_about_measured_center(
-            measured_clear,
-            frame_shape,
-            measured_center_xy,
-            pupil_center_xy,
-            fill_value=clear_background,
-        )
-        masked = crop_about_measured_center(
-            predicted_masked,
-            frame_shape,
-            measured_center_xy,
-            pupil_center_xy,
-            fill_value=masked_background,
         )
     else:
         if args.pupil_center is None:
@@ -536,25 +475,57 @@ def main() -> None:
         ),
     ]).writeto(args.output, overwrite=args.overwrite)
 
-    # Also write the final cropped ZWFS reference as a simple 1-D FITS array,
-    # normalized so that the total subframe flux is one.
-    simple_output = args.output.with_name(f"{args.output.stem}_simple.fits")
-    masked_sum = float(np.sum(masked))
-    if not np.isfinite(masked_sum) or masked_sum <= 0.0:
+    # Also write simplified 1-D normalized ZWFS reference.
+    simple_output = args.output.with_name(
+        f"{args.output.stem}_simple.fits"
+    )
+
+    #### ALWAYS ASSUMES CENTERING 
+    crop_height, crop_width = map(int, args.frame_size)
+
+    source_height, source_width = masked.shape
+    source_center_y = (source_height - 1) // 2
+    source_center_x = (source_width - 1) // 2
+
+    output_center_y = (crop_height - 1) // 2
+    output_center_x = (crop_width - 1) // 2
+
+    start_y = source_center_y - output_center_y
+    start_x = source_center_x - output_center_x
+    end_y = start_y + crop_height
+    end_x = start_x + crop_width
+
+    if start_y < 0 or start_x < 0 or end_y > source_height or end_x > source_width:
         raise ValueError(
-            "Cannot normalize simplified ZWFS reference: cropped subframe sum "
-            "is non-positive."
+            f"Requested crop {(crop_height, crop_width)} does not fit inside "
+            f"the measured frame {masked.shape}."
         )
-    simple_masked = -masked / np.sum(clear)#/ masked_sum
+
+    cropped_mask = masked[start_y:end_y, start_x:end_x]
+
+    # normalise by sum of full frame (jesse RTC method as of sept 2026)
+    cropped_norm = float(np.sum(masked))
+
+    # if not np.isfinite(cropped_sum) or cropped_sum <= 0.0:
+    #     raise ValueError("Cannot normalize cropped ZWFS reference.")
+
+    # Jesse RTC defines reference as negative! 
+    simple_masked = (-cropped_mask / cropped_norm).ravel()
+        
+    # cropped_mask = masked.reshape(32,32)
     fits.PrimaryHDU(
-        np.asarray(simple_masked, dtype=np.float64).ravel()
-    ).writeto(simple_output, overwrite=args.overwrite)
+        np.asarray( simple_masked, dtype=np.float64).ravel()
+    ).writeto(
+        simple_output,
+        overwrite=args.overwrite,
+    )
+
+    print(f"Wrote simplified reference: {simple_output}")
 
     print(
         f"Wrote {args.output.resolve()} ({width}x{height} pixels; "
         f"pupil centre x={pupil_center_x:.6f}, y={pupil_center_y:.6f})"
     )
-    print(f"Wrote simplified reference: {simple_output.resolve()}")
     print(
         f"Normalized both frames by the clear-pupil interior mean "
         f"({normalization:.8g} from {np.count_nonzero(normalization_mask)} pixels)."
@@ -567,7 +538,12 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
-### KEEP THIS 
+
+
+
+# old rushed version , this did work on sky, but clunky
+
+
 # #!/usr/bin/env python3
 # """Generate cropped Baldr reference FITS with command-line config overrides.
 
@@ -740,6 +716,45 @@ if __name__ == "__main__":
 #     )
 
 
+# def crop_about_measured_center(
+#     image: np.ndarray,
+#     frame_shape: tuple[int, int],
+#     source_center_xy: tuple[float, float],
+#     output_center_xy: tuple[float, float],
+#     fill_value: float = 0.0,
+# ) -> np.ndarray:
+#     """Crop/resample an image so a measured centre lands on a chosen pixel."""
+#     image = np.asarray(image, dtype=float)
+#     if image.ndim != 2:
+#         raise ValueError(f"Expected a 2-D image, got shape {image.shape}.")
+
+#     height, width = frame_shape
+#     if height > image.shape[0] or width > image.shape[1]:
+#         raise ValueError(
+#             f"Requested frame {frame_shape} is larger than source image "
+#             f"{image.shape}."
+#         )
+
+#     source_center_x, source_center_y = source_center_xy
+#     output_center_x, output_center_y = output_center_xy
+#     centres = [source_center_x, source_center_y, output_center_x, output_center_y]
+#     if not np.all(np.isfinite(centres)):
+#         raise ValueError("Source and output pupil centres must be finite.")
+
+#     rows, columns = np.indices((height, width), dtype=float)
+#     source_rows = rows + source_center_y - output_center_y
+#     source_columns = columns + source_center_x - output_center_x
+
+#     return ndimage.map_coordinates(
+#         image,
+#         (source_rows, source_columns),
+#         order=1,
+#         mode="constant",
+#         cval=float(fill_value),
+#         prefilter=False,
+#     )
+
+
 # def parse_arguments() -> argparse.Namespace:
 #     parser = argparse.ArgumentParser(description=__doc__)
 #     parser.add_argument("output", type=Path, help="Output reference FITS file")
@@ -817,7 +832,11 @@ if __name__ == "__main__":
 #         type=int,
 #         metavar=("HEIGHT", "WIDTH"),
 #         default=(32, 32),
-#         help="Output frame size in pixels (default: 32 32)",
+#         help=(
+#             "Final output frame size in pixels. In measurement mode the fitted "
+#             "pupil centre is placed on the central integer pixel "
+#             "(default: 32 32 -> centre 15 15)."
+#         ),
 #     )
 #     parser.add_argument(
 #         "--pupil-center",
@@ -893,13 +912,16 @@ if __name__ == "__main__":
 #                 "Do not provide --pupil-center with --measure-clear; the centre "
 #                 "is fitted from the measured clear pupil."
 #             )
+
+#         # Acquire and fit the complete camera frame. Cropping before the fit
+#         # would discard information useful for estimating the pupil geometry.
 #         measured_clear, shared_memory_path = acquire_clear_pupil(
 #             args.beam_id, args.n_clear, args.frame_sleep
 #         )
-#         if measured_clear.shape != frame_shape:
+#         if height > measured_clear.shape[0] or width > measured_clear.shape[1]:
 #             raise ValueError(
-#                 f"The measured frame has shape {measured_clear.shape}, but "
-#                 f"--frame-size requested {frame_shape}."
+#                 f"--frame-size requested {frame_shape}, but the measured frame "
+#                 f"has shape {measured_clear.shape}."
 #             )
 
 #         fit_output_directory = args.pupil_fit_output_dir
@@ -922,15 +944,38 @@ if __name__ == "__main__":
 #                 int(config["spectrum"]["samples"]),
 #             )
 
-#         clear = measured_clear
-#         masked = predicted_masked
 #         clear_background = float(fit_summary["background"])
 #         masked_background = clear_background
 #         config = copy.deepcopy(fit_summary["config"])
+
+#         # Register the fitted centre from the complete measured frame onto the
+#         # lower of the two central pixels for an even-sized output. Therefore a
+#         # 32x32 output has its pupil centre at zero-indexed pixel (15, 15).
 #         centre_result = fit_summary["measured_pupil_center_subpixel"]
-#         pupil_center_xy = (
+#         measured_center_xy = (
 #             float(centre_result["center_x"]),
 #             float(centre_result["center_y"]),
+#         )
+#         pupil_center_xy = (
+#             float((width - 1) // 2),
+#             float((height - 1) // 2),
+#         )
+
+#         # Apply precisely the same crop and subpixel registration to the
+#         # measured clear pupil and its fitted, predicted ZWFS reference.
+#         clear = crop_about_measured_center(
+#             measured_clear,
+#             frame_shape,
+#             measured_center_xy,
+#             pupil_center_xy,
+#             fill_value=clear_background,
+#         )
+#         masked = crop_about_measured_center(
+#             predicted_masked,
+#             frame_shape,
+#             measured_center_xy,
+#             pupil_center_xy,
+#             fill_value=masked_background,
 #         )
 #     else:
 #         if args.pupil_center is None:
@@ -1036,25 +1081,25 @@ if __name__ == "__main__":
 #         ),
 #     ]).writeto(args.output, overwrite=args.overwrite)
 
-#     # Also write simplified 1-D normalized ZWFS reference.
-#     simple_output = args.output.with_name(
-#         f"{args.output.stem}_simple.fits"
-#     )
-
-#     cropped_mask = masked.reshape(32,32)[3]
+#     # Also write the final cropped ZWFS reference as a simple 1-D FITS array,
+#     # normalized so that the total subframe flux is one.
+#     simple_output = args.output.with_name(f"{args.output.stem}_simple.fits")
+#     masked_sum = float(np.sum(masked))
+#     if not np.isfinite(masked_sum) or masked_sum <= 0.0:
+#         raise ValueError(
+#             "Cannot normalize simplified ZWFS reference: cropped subframe sum "
+#             "is non-positive."
+#         )
+#     simple_masked = -masked / np.sum(clear)#/ masked_sum
 #     fits.PrimaryHDU(
-#         np.asarray( -1 * masked/np.sum(masked), dtype=np.float64).ravel()
-#     ).writeto(
-#         simple_output,
-#         overwrite=args.overwrite,
-#     )
-
-#     print(f"Wrote simplified reference: {simple_output}")
+#         np.asarray(simple_masked, dtype=np.float64).ravel()
+#     ).writeto(simple_output, overwrite=args.overwrite)
 
 #     print(
 #         f"Wrote {args.output.resolve()} ({width}x{height} pixels; "
 #         f"pupil centre x={pupil_center_x:.6f}, y={pupil_center_y:.6f})"
 #     )
+#     print(f"Wrote simplified reference: {simple_output.resolve()}")
 #     print(
 #         f"Normalized both frames by the clear-pupil interior mean "
 #         f"({normalization:.8g} from {np.count_nonzero(normalization_mask)} pixels)."
