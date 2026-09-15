@@ -66,5 +66,10 @@
     "crop": null,
     "exposure_s": 0.001,
     "quantum_efficiency": 0.7
-  }
+  },
+  "pupil_fit": {
+        "rotation_coarse_points": 7,
+        "geometric_max_function_evaluations": 12,
+        "fit_smooth_amplitude": false
+    }
 }
