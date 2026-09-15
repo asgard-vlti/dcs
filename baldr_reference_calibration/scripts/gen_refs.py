@@ -472,7 +472,7 @@ def main() -> None:
     )
 
     fits.PrimaryHDU(
-        np.asarray(masked/np.sum(masked), dtype=np.float64).ravel()
+        np.asarray(-0.5*masked/np.sum(masked), dtype=np.float64).ravel()
     ).writeto(
         simple_output,
         overwrite=args.overwrite,
