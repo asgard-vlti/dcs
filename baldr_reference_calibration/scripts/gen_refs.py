@@ -466,6 +466,20 @@ def main() -> None:
         ),
     ]).writeto(args.output, overwrite=args.overwrite)
 
+    # Also write simplified 1-D normalized ZWFS reference.
+    simple_output = args.output.with_name(
+        f"{args.output.stem}_simple.fits"
+    )
+
+    fits.PrimaryHDU(
+        np.asarray(masked/np.sum(masked), dtype=np.float64).ravel()
+    ).writeto(
+        simple_output,
+        overwrite=args.overwrite,
+    )
+
+    print(f"Wrote simplified reference: {simple_output}")
+
     print(
         f"Wrote {args.output.resolve()} ({width}x{height} pixels; "
         f"pupil centre x={pupil_center_x:.6f}, y={pupil_center_y:.6f})"
