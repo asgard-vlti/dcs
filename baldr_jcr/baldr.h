@@ -35,7 +35,7 @@
 // #define SIMULATE
 
 #define N_MODES 100              // Number of modes to control
-#define WIDTH 15                 // Number of pixels across subim
+#define WIDTH 17                 // Number of pixels across subim
 #define N_PIXELS (WIDTH * WIDTH) // Total number of pixels in subim
 #define SUBARRAY_WIDTH 32        // Number of pixels across subarray
 // Total number of pixels in subarray

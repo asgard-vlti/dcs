@@ -25,7 +25,7 @@ import os
 # TODO: NOT REALLY SAFE: These parameters are defined both in baldr.h and here,
 # I should find a way to merge these into a single source of truth.
 N_MODES = 100  # TODO: change to 144, also in baldr.cpp
-WIDTH = 15
+WIDTH = 17
 N_PIXELS = WIDTH * WIDTH
 SUBARRAY_WIDTH = 32
 N_SUBARRAY_PIXELS = SUBARRAY_WIDTH * SUBARRAY_WIDTH
