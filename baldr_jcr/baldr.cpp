@@ -307,7 +307,7 @@ int main(int argc, char *argv[])
 
   // read all control matrices/vectors from fits files with same name.
   LOAD_FROM_FILE(meas_offset_0);
-  LOAD_FROM_FILE(meas_offset_0);
+  LOAD_FROM_FILE(meas_offset_1);
   LOAD_FROM_FILE(flux_mask)
   LOAD_FROM_FILE(strehl_mask)
   LOAD_FROM_FILE(meas_to_mode)
