@@ -188,7 +188,7 @@ void read_shm()
         {
             int y = settings.settings.py - WIDTH / 2 + ii;
             int x = settings.settings.px - WIDTH / 2 + jj;
-            ctrl.meas_raw(ii * WIDTH + jj) = (double)(subarray.array.SI32[y * sz + x]);
+            ctrl.meas_raw(ii * WIDTH + jj) = (double)(subarray.array.SI32[y * sz + x]) - 1000.0;
         }
     }
     // perform strehl and flux estimation
@@ -199,7 +199,7 @@ void read_shm()
     ctrl.strehl_est = 0.0;
     for (size_t i = 0; i < N_SUBARRAY_PIXELS; i++)
     {
-        double element = (double)subarray.array.SI32[i];
+        double element = (double)subarray.array.SI32[i] - 1000.0;
         ctrl.flux_est += ctrl.flux_mask(i, 0) * element;
         ctrl.strehl_est += ctrl.strehl_mask(i, 0) * element;
     }
