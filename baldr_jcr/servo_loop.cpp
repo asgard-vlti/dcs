@@ -203,11 +203,10 @@ void read_shm()
         ctrl.flux_est += ctrl.flux_mask(i, 0) * element;
         ctrl.strehl_est += ctrl.strehl_mask(i, 0) * element;
     }
-    if (ctrl.flux_est <= 0.0)
-    {
-        throw std::runtime_error("flux estimate is equal to zero, quitting now to avoid div by 0");
-    }
-    ctrl.strehl_est /= ctrl.flux_est;
+    // if (ctrl.flux_est <= 0.0)
+    // {
+    //     throw std::runtime_error("flux estimate is equal to zero, quitting now to avoid div by 0");
+    // }
     ctrl.cnt = cnt;
     ctrl.mutex.unlock();
 }
@@ -215,6 +214,7 @@ void read_shm()
 void calibrate_frame()
 {
     ctrl.mutex.lock();
+    ctrl.strehl_est /= ctrl.flux_est;
     // First, we divide the full frame by the flux estimate
     ctrl.meas_norm = ctrl.meas_raw / ctrl.flux_est;
 
