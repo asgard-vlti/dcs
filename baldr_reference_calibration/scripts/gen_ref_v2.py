@@ -83,7 +83,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--output", type=Path, default=None)
 #to do: make reference onskyconfigs for each phasemask , then make this default None, and automatically find based on phasemask name
 parser.add_argument("--config", type=Path, default='configs/reference_onsky.example.json')
-parser.add_argument("--beam-id", type=int, default=1)
+parser.add_argument("--beam_id", type=int, default=1)
 parser.add_argument(
     "--phasemask",
     type=str.upper,
@@ -432,14 +432,14 @@ posterior = posterior[start_y:end_y, start_x:end_x]
 posterior_sum = np.sum(posterior)
 
 if not np.isfinite(posterior_sum) or posterior_sum <= 0:
-    raise ValueError("The cropped posterior has a non-positive sum.")
+    raise ValueError("The cropped posterior has a non sum.")
 
 # Negative sign retained for the Jesse RTC convention.
 rtc_reference = -posterior / posterior_sum
 rtc_reference = np.asarray(rtc_reference, dtype=np.float64).reshape(-1)
 
 if args.output is None:
-    args.output = Path(f"output/B{args.beam_id}_{args.phasemask}_meas_offset.fits")
+    args.output = Path(f"usr/local/etc/B{args.beam_id}_meas_offset.fits") #f"output/B{args.beam_id}_{args.phasemask}_meas_offset.fits")
 args.output.parent.mkdir(parents=True, exist_ok=True)
 
 fits.PrimaryHDU(rtc_reference).writeto(
