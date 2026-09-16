@@ -103,7 +103,7 @@ parser.add_argument(
     nargs=2,
     type=float,
     metavar=("X", "Y"),
-    default=None,
+    default=(15,15),
 )
 parser.add_argument(
     "--crop-size",
