@@ -3,7 +3,7 @@ from typing import Tuple
 import numpy as np
 from aotools import zernike  # type: ignore
 import math
-from modal_ordering import power_order
+from modal_ordering import power_order  # type: ignore
 
 
 class ModalBasis(ABC):
@@ -105,23 +105,6 @@ class FourierModified(Fourier):
     @staticmethod
     def spiral_coords(i: int) -> Tuple[int, int]:
         return power_order[i]
-
-    def sample(self, i: int, x: float, y: float) -> float:
-        if i == 0:
-            # pure tip
-            return x
-        if i == 1:
-            # pure tilt
-            return y
-        # for the remainder, just use the fourier modes
-        # return super().sample(i, x, y)
-        # optionally uncomment this to skip the cos[0,1] and cos[1,0] terms
-        # because they're pretty pistoney
-        return super().sample(i + 2, x, y)
-        # TODO: test the difference between including and excluding those two
-        # modes. I suspect they are important for (e.g.) defocus, but there is
-        # concern that they correlate with piston over the active pupil area so
-        # for now we deliberately exclude them.
 
 
 class Zonal(ModalBasis):
