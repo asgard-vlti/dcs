@@ -14,13 +14,14 @@ from pathlib import Path
 import numpy as np
 from astropy.io import fits
 from scipy import ndimage
+import time
 from xaosim.shmlib import shm
 from baldr_reference.model import generate_references, load_config
 from baldr_reference.pupil_fitting import estimate_pupil_center_subpixel
 
 
 
-def get_frames(beam_id, n_frames, frame_sleep=None):
+def get_frames(beam_id, n_frames, frame_sleep=0.001):
     shm_path = f"/dev/shm/baldr{beam_id}.im.shm"
     print(f"Opening shared memory: {shm_path}")
     camera = shm(shm_path)
@@ -37,8 +38,6 @@ def get_frames(beam_id, n_frames, frame_sleep=None):
     return total , shm_path
 
 
-    # Return shape: (number_of_frames, height, width)
-    raise NotImplementedError
 
 
 def get_background(image):
@@ -85,14 +84,26 @@ parser.add_argument("--output", type=Path, default=None)
 #to do: make reference onskyconfigs for each phasemask , then make this default None, and automatically find based on phasemask name
 parser.add_argument("--config", type=Path, default='configs/reference_onsky.example.json')
 parser.add_argument("--beam-id", type=int, default=1)
-parser.add_argument("--phasemask", type=str, default="H3")
-
+parser.add_argument(
+    "--phasemask",
+    type=str.upper,
+    choices=("H1", "H2", "H3", "H4", "H5",
+             "J1", "J2", "J3", "J4", "J5"),
+    default="H3",
+)
+# parser.add_argument(
+#     "--crop-center",
+#     nargs=2,
+#     type=float,
+#     metavar=("X", "Y"),
+#     default=(15,15),
+# )
 parser.add_argument(
     "--crop-center",
     nargs=2,
     type=float,
     metavar=("X", "Y"),
-    default=(15,15),
+    default=None,
 )
 parser.add_argument(
     "--crop-size",
@@ -178,7 +189,7 @@ clear_normalized = clear / np.sum(clear[support])
 # -------------------------------------------------------------------------
 
 config = load_config(args.config)
-
+config["phase_mask"]["name"] = args.phasemask.upper() # update to user input phasemask for theoretical calculation
 # Make the theoretical detector image match the measured camera frame.
 config.setdefault("detector", {})["crop"] = list(clear.shape)
 
@@ -380,9 +391,15 @@ posterior = (
 # Crop around the requested centre
 # -------------------------------------------------------------------------
 
-crop_center_x = int(round(args.crop_center[0]))
-crop_center_y = int(round(args.crop_center[1]))
-
+# crop_center_x = int(round(args.crop_center[0]))
+# crop_center_y = int(round(args.crop_center[1]))
+if args.crop_center is None:
+    crop_center_x = int(round(measured_center_x))
+    crop_center_y = int(round(measured_center_y))
+else:
+    crop_center_x = int(round(args.crop_center[0]))
+    crop_center_y = int(round(args.crop_center[1]))
+    
 crop_height = args.crop_size[0]
 crop_width = args.crop_size[1]
 
