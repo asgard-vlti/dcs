@@ -130,6 +130,7 @@ if __name__ == "__main__":
         a.imshow(modes[:, i].reshape([12, 12]))
         a.set_xticks([])
         a.set_yticks([])
+        a.get_images()[0].set_clim([modes[:, 0].min(), modes[:, 0].max()])
     plt.tight_layout()
     plt.savefig("tmp.png", dpi=100)
     # import time
