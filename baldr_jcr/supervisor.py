@@ -356,6 +356,7 @@ class Beam:
         poke: float = POKE,
         nmodes: Optional[int] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
+        self.set_servo_mode(mode=ServoMode.SERVO_OPEN)
         self.flatten_offsets()
 
         # we only want to poke the first `nmodes`, but if it's not specified we
