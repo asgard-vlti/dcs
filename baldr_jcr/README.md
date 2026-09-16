@@ -49,20 +49,20 @@ export BALDR_ROOT=/usr/local/bin
 
 The following are the main `supervisor.py` commands needed.
 
-| argument            | description                                             | example                                                 |
-| ------------------- | ------------------------------------------------------- | ------------------------------------------------------- |
-| `--init`            | reset all matrices and control variables                | `./supervisor.py 1 --init`                              |
-| `--reset`           | reset control variables online                          | `./supervisor.py 1 --reset`                             |
-| `--recompute`       | Do poke test, meas imat, compute cmat                   | `./supervisor.py 1 --recompute`                         |
-| `--poke`            | specify poke during poke test                           | `./supervisor.py 1 --recompute --poke 0.01`             |
-| `--nmodes`          | specify number of modes for controller to act on        | `./supervisor.py 1 --recompute --nmodes 50`             |
-| `--alpha`           | specify reconstructor regularisation param              | `./supervisor.py 1 --recompute --alpha 0.01`            |
-| `--navg`            | specify number of frames to avg per poke during imat    | `./supervisor.py 1 --recompute --navg 10`               |
+| argument            | description                                             | example                                      |
+| ------------------- | ------------------------------------------------------- | -------------------------------------------- |
+| `--init`            | reset all matrices and control variables                | `./supervisor.py 1 --init`                   |
+| `--reset`           | reset control variables online                          | `./supervisor.py 1 --reset`                  |
+| `--recompute`       | Do poke test, meas imat, compute cmat                   | `./supervisor.py 1 --recompute`              |
+| `--poke`            | specify poke during poke test                           | `./supervisor.py 1 --recompute --poke 0.01`  |
+| `--nmodes`          | specify number of modes for controller to act on        | `./supervisor.py 1 --recompute --nmodes 50`  |
+| `--alpha`           | specify reconstructor regularisation param              | `./supervisor.py 1 --recompute --alpha 0.01` |
+| `--navg`            | specify number of frames to avg per poke during imat    | `./supervisor.py 1 --recompute --navg 10`    |
 | `--reinvert`        | compute cmat with different `--alpha` and/or `--nmodes` | `./supervisor.py 1 --reinvert --alpha 0.003` |
-| `--gain` & `--leak` | set leaky integrator gain and leak                      | `./supervisor.py 1 --gain 0.3 --leak 0.99`              |
-| `--open`            | open the loop immediately                               | `./supervisor.py 1 --open`                              |
-| `--close`           | close the loop (using previously set gain/leak)         | `./supervisor.py 1 --close`                             |
-| `--status`          | check the status of some variables (WIP)                | `./supervisor.py 1 --status`                            |
+| `--gain` & `--leak` | set leaky integrator gain and leak                      | `./supervisor.py 1 --gain 0.3 --leak 0.99`   |
+| `--open`            | open the loop immediately                               | `./supervisor.py 1 --open`                   |
+| `--close`           | close the loop (using previously set gain/leak)         | `./supervisor.py 1 --close`                  |
+| `--status`          | check the status of some variables (WIP)                | `./supervisor.py 1 --status`                 |
 
 ## Todo:
 
@@ -80,24 +80,25 @@ The following are the main `supervisor.py` commands needed.
 
 ### Data Object Implementation
 
-| Data Object         | Diagram | c-header | servo loop | baldr | config | Commander | supervisor |
-| ------------------- | :-----: | :------: | :--------: | :---: | :----: | :-------: | :--------: |
-| `meas_offset`\*     |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
-| `meas_offset_lut`\* |   :x:   |   :x:    |    :x:     |  :x:  |  :x:   |    :x:    |    :x:     |
-| `flux_mask`         |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
-| `strehl_mask`       |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
-| `meas_to_mode`      |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
-| `filter_coeff_in`   |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
-| `filter_coeff_out`  |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
-| `mode_offset`       |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :x:     |
-| `mode_max`          |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :x:     |
-| `mode_min`          |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :x:     |
-| `mode_to_com`       |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
-| `com_max`           |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :x:     |
-| `com_min`           |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :x:     |
-| `com_dist_buffer`   |  :ok:   |   :ok:   |    :ok:    | :ok:  |  :ok:  |   :ok:    |    :ok:    |
+| Data Object          | Diagram | c-header | servo loop | baldr | config | Commander | supervisor |
+| -------------------- | :-----: | :------: | :--------: | :---: | :----: | :-------: | :--------: |
+| `meas_offset_0`      |  :ok:   |   :ok:   |    :ok:    | :ok:  |  N/A   |   :ok:    |    :ok:    |
+| `meas_offset_1`      |  :ok:   |   :ok:   |    :ok:    | :ok:  |  N/A   |   :ok:    |    :ok:    |
+| `meas_offset_interp` |  :ok:   |   :ok:   |    :ok:    | :ok:  |  N/A   |   :ok:    |    :ok:    |
+| `flux_mask`          |  :ok:   |   :ok:   |    :ok:    | :ok:  |  N/A   |   :ok:    |    :ok:    |
+| `strehl_mask`        |  :ok:   |   :ok:   |    :ok:    | :ok:  |  N/A   |   :ok:    |    :ok:    |
+| `meas_to_mode`       |  :ok:   |   :ok:   |    :ok:    | :ok:  |  N/A   |   :ok:    |    :ok:    |
+| `filter_coeff_in`    |  :ok:   |   :ok:   |    :ok:    | :ok:  |  N/A   |   :ok:    |    :ok:    |
+| `filter_coeff_out`   |  :ok:   |   :ok:   |    :ok:    | :ok:  |  N/A   |   :ok:    |    :ok:    |
+| `mode_offset`        |  :ok:   |   :ok:   |    :ok:    | :ok:  |  N/A   |   :ok:    |    :x:     |
+| `mode_max`           |  :ok:   |   :ok:   |    :ok:    | :ok:  |  N/A   |   :ok:    |    :x:     |
+| `mode_min`           |  :ok:   |   :ok:   |    :ok:    | :ok:  |  N/A   |   :ok:    |    :x:     |
+| `mode_to_com`        |  :ok:   |   :ok:   |    :ok:    | :ok:  |  N/A   |   :ok:    |    :ok:    |
+| `com_max`            |  :ok:   |   :ok:   |    :ok:    | :ok:  |  N/A   |   :ok:    |    :x:     |
+| `com_min`            |  :ok:   |   :ok:   |    :ok:    | :ok:  |  N/A   |   :ok:    |    :x:     |
+| `com_dist_buffer`    |  :ok:   |   :ok:   |    :ok:    | :ok:  |  N/A   |   :ok:    |    :ok:    |
 
-\* note that meas_offset_lut should supercede meas_offset.
+Note that `meas_offset_0` and `meas_offset_1` are to be interpolated between, ideally based on strehl but initially by the user. `meas_offset_0` is the startup reference, e.g., the reference obtained on-sky. `meas_offset_1` is the reference produced by a flat beam, and represents the ideal reference to be targetted.
 
 ### HRTC Pipeline
 

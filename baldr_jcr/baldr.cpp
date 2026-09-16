@@ -82,7 +82,8 @@ std::string encode(const char *input, unsigned int size)
 
 //----------commander functions from here---------------
 
-DEF_READ_CTRL_PARAM(meas_offset, measurement reference, N_PIXELS, 1, DOUBLE)
+DEF_READ_CTRL_PARAM(meas_offset_0, measurement reference when meas_offset_interp==0, N_PIXELS, 1, DOUBLE)
+DEF_READ_CTRL_PARAM(meas_offset_1, measurement reference when meas_offset_interp==0, N_PIXELS, 1, DOUBLE)
 DEF_READ_CTRL_PARAM(flux_mask, mask for normalizing measurement, N_SUBARRAY_PIXELS, 1, DOUBLE)
 DEF_READ_CTRL_PARAM(strehl_mask, mask for estimating strehl, N_SUBARRAY_PIXELS, 1, DOUBLE)
 DEF_READ_CTRL_PARAM(meas_to_mode, reconstructor matrix, N_MODES, N_PIXELS, DOUBLE)
@@ -113,6 +114,7 @@ Result reset_ctrl()
   ctrl.mode_filt_buffer.setZero();
   ctrl.strehl_est = 0.5; // reset to a safe value.
   ctrl.flux_est = 1.0e8; // reset to an unlikely but safe value.
+  ctrl.meas_offset_interp = 0.0;  // always start with the "zero"th reference, then ramp up to 1.0
   ctrl.mutex.unlock();
   return SUCCESS();
 }
@@ -135,8 +137,8 @@ Result set_servo_mode(std::string mode)
   }
   else
   {
-    const char *msg = "Servo mode not recognised";
-    info(msg);
+    const char *msg = "ERROR!!! Servo mode not recognised";
+    error("Servo mode '%s' not recognised, should be 'off' 'open' or 'closed'");
     return FAILURE(msg);
   }
   settings.mutex.lock();
@@ -148,13 +150,22 @@ Result set_servo_mode(std::string mode)
   return SUCCESS(msg);
 }
 
-// Setter functions for thresholds.
+// Setter function for thresholds.
 Result set_flux_threshold(double val)
 {
   settings.mutex.lock();
   settings.settings.flux_threshold = val;
   settings.mutex.unlock();
   return SUCCESS(settings.settings.flux_threshold);
+}
+
+// Setter function for meas_offset_interp.
+Result set_meas_offset_interp(double val)
+{
+  ctrl.mutex.lock();
+  ctrl.meas_offset_interp = val;
+  ctrl.mutex.unlock();
+  return SUCCESS(val);
 }
 
 Result set_pxy(size_t px_new, size_t py_new)
@@ -228,9 +239,11 @@ COMMANDER_REGISTER(m)
   m.def("settings", get_settings, "Get current system settings");
   m.def("pxy", set_pxy, "Set the origin pixels", "px"_arg = 15, "py"_arg = 15);
   m.def("flux_threshold", set_flux_threshold, "Set flux threshold", "value"_arg = 100.0);
+  m.def("meas_offset_interp", set_meas_offset_interp, "Set offset interpolation", "value"_arg = 0.0);
   m.def("meas", get_measurement_encoded, "Read meas_norm in Base64 encoding");
   m.def("mode", get_mode_encoded, "Read mode_filt in Base64 encoding");
-  m.def("meas_offset", read_meas_offset, "Read meas_offset from file", "filename"_arg = "./baldr_jcr/meas_offset.fits");
+  m.def("meas_offset_0", read_meas_offset_0, "Read meas_offset_0 from file", "filename"_arg = "./baldr_jcr/meas_offset_0.fits");
+  m.def("meas_offset_1", read_meas_offset_1, "Read meas_offset_1 from file", "filename"_arg = "./baldr_jcr/meas_offset_1.fits");
   m.def("flux_mask", read_flux_mask, "Read flux_mask from file", "filename"_arg = "./baldr_jcr/flux_mask.fits");
   m.def("strehl_mask", read_strehl_mask, "Read strehl_mask from file", "filename"_arg = "./baldr_jcr/strehl_mask.fits");
   m.def("meas_to_mode", read_meas_to_mode, "Read meas_to_mode from file", "filename"_arg = "./baldr_jcr/meas_to_mode.fits");
@@ -293,7 +306,8 @@ int main(int argc, char *argv[])
   // lock the mutex.
 
   // read all control matrices/vectors from fits files with same name.
-  LOAD_FROM_FILE(meas_offset);
+  LOAD_FROM_FILE(meas_offset_0);
+  LOAD_FROM_FILE(meas_offset_0);
   LOAD_FROM_FILE(flux_mask)
   LOAD_FROM_FILE(strehl_mask)
   LOAD_FROM_FILE(meas_to_mode)

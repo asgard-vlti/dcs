@@ -6,7 +6,7 @@
 #include "./baldr.h"
 #include "commander/commander.h"
 #include "baldr.h"
-//#define PRINT_TIMING
+// #define PRINT_TIMING
 
 #ifdef PRINT_TIMING
 #include <chrono>
@@ -140,10 +140,10 @@ void servo_loop()
         inject_disturb(servo_mode);
 
         // write to shared memory and post the semaphore for that DM shmim
-        if (servo_mode != SERVO_OFF || last_servo_mode != SERVO_OFF) 
+        if (servo_mode != SERVO_OFF || last_servo_mode != SERVO_OFF)
         {
             write_shm();
-        } 
+        }
 #ifdef PRINT_TIMING
         auto t2 = high_resolution_clock::now();
         if (cnt % 20 == 0)
@@ -226,7 +226,9 @@ void calibrate_frame()
     // the closed-loop calibrated measurement is the normalised measurement plus
     // the measurement offset (typically the negative of the reference
     // measurement, but may also be a function of NCPAs).
-    ctrl.meas_cl = ctrl.meas_norm + ctrl.meas_offset;
+    ctrl.meas_cl = ctrl.meas_norm +
+                   ctrl.meas_offset_0 * (1.0 - ctrl.meas_offset_interp) +
+                   ctrl.meas_offset_1 * ctrl.meas_offset_interp;
     ctrl.mutex.unlock();
 }
 
@@ -290,7 +292,6 @@ void filter_modes(int servo_mode)
         ctrl.mode_filt = (ctrl.mode_filt.array().min(ctrl.mode_max).max(ctrl.mode_min)).matrix();
     }
 
-    
     // apply modal offset:
     ctrl.mode_filt = ctrl.mode_filt + ctrl.mode_offset;
 
