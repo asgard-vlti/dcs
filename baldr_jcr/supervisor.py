@@ -473,6 +473,7 @@ class Beam:
             mode_to_meas=mode_to_meas, alpha=alpha, nmodes=nmodes
         )
         self.update_array(name="meas_to_mode", array=meas_to_mode)
+        self.update_array(name="meas_offset_0", array=meas_offset)  # this will get overwritten on-sky
         self.update_array(name="meas_offset_1", array=meas_offset)
 
     def reinvert_control_matrix(

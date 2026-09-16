@@ -422,6 +422,8 @@ if (
         f"the measured frame {posterior.shape}."
     )
 
+posterior_sum = np.sum(posterior)
+# now crop
 posterior = posterior[start_y:end_y, start_x:end_x]
 
 
@@ -429,7 +431,7 @@ posterior = posterior[start_y:end_y, start_x:end_x]
 # Normalize and write Jesse RTC format
 # -------------------------------------------------------------------------
 
-posterior_sum = np.sum(posterior)
+
 
 if not np.isfinite(posterior_sum) or posterior_sum <= 0:
     raise ValueError("The cropped posterior has a non sum.")
@@ -439,7 +441,7 @@ rtc_reference = -posterior / posterior_sum
 rtc_reference = np.asarray(rtc_reference, dtype=np.float64).reshape(-1)
 
 if args.output is None:
-    args.output = Path(f"usr/local/etc/B{args.beam_id}_meas_offset.fits") #f"output/B{args.beam_id}_{args.phasemask}_meas_offset.fits")
+    args.output = Path(f"/usr/local/etc/B{args.beam_id}_meas_offset_{args.beam_id}.fits") #f"output/B{args.beam_id}_{args.phasemask}_meas_offset.fits")
 args.output.parent.mkdir(parents=True, exist_ok=True)
 
 fits.PrimaryHDU(rtc_reference).writeto(
