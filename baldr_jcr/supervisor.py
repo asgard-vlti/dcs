@@ -48,8 +48,8 @@ DEFAULT_HOST = "mimir"
 # DEFAULT_HOST = "localhost"
 
 # Default values, will be overridden by CLI arguments
-POKE: float = 0.01
-ALPHA: float = 0.001
+POKE: float = 0.02
+ALPHA: float = 1.0
 # MEAS_SCALE: float = 1 / 1000
 CNT_MIN: int = 5  # minimum number of measurements to wait after applying poke
 NAVG: int = 5  # number of frames to average for a poke
