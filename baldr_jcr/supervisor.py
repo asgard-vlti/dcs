@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 from dcs.ZMQutils import ZmqReq  # type: ignore
 from os import path
 from dataclasses import dataclass, field
-import modal_basis
+import modal_basis  # type: ignore
 from enum import Enum
 
 
