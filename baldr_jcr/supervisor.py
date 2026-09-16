@@ -61,7 +61,8 @@ STREHL_MASK_INNER_RADIUS: float = WIDTH / 2.0 + 2.0
 STREHL_MASK_OUTER_RADIUS: float = WIDTH / 2.0 + 5.0
 
 ARRAY_NAMES = [
-    "meas_offset",
+    "meas_offset_0",
+    "meas_offset_1",
     "flux_mask",
     "strehl_mask",
     "meas_to_mode",
@@ -78,7 +79,8 @@ if DIST_LEN > 0:
     ARRAY_NAMES += ["com_dist_buffer"]
 
 ARRAY_SHAPES = {
-    "meas_offset": (N_PIXELS,),
+    "meas_offset_0": (N_PIXELS,),
+    "meas_offset_1": (N_PIXELS,),
     "flux_mask": (N_SUBARRAY_PIXELS,),
     "strehl_mask": (N_SUBARRAY_PIXELS,),
     "meas_to_mode": (N_MODES, N_PIXELS),
@@ -103,7 +105,8 @@ for array_name in ARRAY_NAMES:
     assert array_name in ARRAY_SHAPES.keys()
 
 INIT_VAL = {
-    "meas_offset": 0.0,
+    "meas_offset_0": 0.0,
+    "meas_offset_1": 0.0,
     "flux_mask": 1.0,
     "strehl_mask": 1.0,
     "meas_to_mode": 0.0,
@@ -469,7 +472,7 @@ class Beam:
             mode_to_meas=mode_to_meas, alpha=alpha, nmodes=nmodes
         )
         self.update_array(name="meas_to_mode", array=meas_to_mode)
-        self.update_array(name="meas_offset", array=meas_offset)
+        self.update_array(name="meas_offset_1", array=meas_offset)
 
     def reinvert_control_matrix(
         self,
