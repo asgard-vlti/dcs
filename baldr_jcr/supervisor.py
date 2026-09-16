@@ -514,7 +514,7 @@ class Beam:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Baldr Supervisor")
     parser.add_argument(
-        "beam", type=int, help="index of beam [1-4]", choices=[1, 2, 3, 4]
+        "beam", type=int, help="index of beam [1-4]", choices=[-1, 1, 2, 3, 4]
     )
     parser.add_argument(
         "--init",
@@ -626,17 +626,27 @@ if __name__ == "__main__":
 
     action_performed = False
 
-    beam = Beam(beam_id=args.beam, baldr_root=baldr_root)
+    if args.beam == -1:
+        beams = [
+            Beam(beam_id=1, baldr_root=baldr_root),
+            Beam(beam_id=2, baldr_root=baldr_root),
+            Beam(beam_id=3, baldr_root=baldr_root),
+            Beam(beam_id=4, baldr_root=baldr_root),
+        ]
+    else:
+        beams = [
+            Beam(beam_id=args.beam, baldr_root=baldr_root)
+        ]
 
     if args.reset is not None:
         print("resetting!")
-        beam.reset()
+        [beam.reset() for beam in beams]
         action_performed = True
 
     if args.init is not None:
         print("initing!")
         try:
-            beam.reset(init=True)
+            [beam.reset(init=True) for beam in beams]
         except ZmqNoResponse:
             print("""
 Succesfullly initialised arrays and wrote them to disk, but didn't
@@ -648,24 +658,24 @@ This is correct behaviour if the RTC is not yet running.
 
     if args.open is not None:
         print("opening the loop!")
-        beam.set_servo_mode(mode=ServoMode.SERVO_OPEN)
+        [beam.set_servo_mode(mode=ServoMode.SERVO_OPEN) for beam in beams]
         action_performed = True
 
     if args.close is not None:
         print("closing the loop!")
-        beam.set_servo_mode(mode=ServoMode.SERVO_CLOSED)
+        [beam.set_servo_mode(mode=ServoMode.SERVO_CLOSED) for beam in beams]
         action_performed = True
 
     if args.fluxthresh is not None:
-        beam.set_flux_thresh(thresh=args.fluxthresh)
+        [beam.set_flux_thresh(thresh=args.fluxthresh) for beam in beams]
         action_performed = True
 
     if args.clipcom is not None:
-        beam.set_com_clip(clip_val=args.clipcom)
+        [beam.set_com_clip(clip_val=args.clipcom) for beam in beams]
         action_performed = True
 
     if args.interp is not None:
-        beam.set_meas_offset_interp(meas_offset_interp=args.interp)
+        [beam.set_meas_offset_interp(meas_offset_interp=args.interp) for beam in beams]
         action_performed = True
 
     if DIST_LEN > 0:
@@ -685,39 +695,39 @@ This is correct behaviour if the RTC is not yet running.
             disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
             for i, t in enumerate(np.linspace(0, 2 * np.pi, DIST_LEN + 1)[:-1]):
                 disturbance[:, i] = 0.1 * np.sin(xx_flat + t)
-            beam.update_array(name="com_dist_buffer", array=disturbance)
+            [beam.update_array(name="com_dist_buffer", array=disturbance) for beam in beams]
             action_performed = True
 
         if args.disturboff is not None:
             disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
-            beam.update_array(name="com_dist_buffer", array=disturbance)
+            [beam.update_array(name="com_dist_buffer", array=disturbance) for beam in beams]
             action_performed = True
 
     if args.reinvert is not None:
-        beam.reinvert_control_matrix(nmodes=args.nmodes, alpha=args.alpha)
+        [beam.reinvert_control_matrix(nmodes=args.nmodes, alpha=args.alpha) for beam in beams]
         action_performed = True
 
     if args.flat0 is not None:
-        beam.take_flat(0, navg=args.navg)
+        [beam.take_flat(0, navg=args.navg) for beam in beams]
         action_performed = True
     if args.flat1 is not None:
-        beam.take_flat(1, navg=args.navg)
+        [beam.take_flat(1, navg=args.navg) for beam in beams]
         action_performed = True
 
     if args.recompute is not None:
-        beam.create_leaky_matrices(
+        [beam.create_leaky_matrices(
             nmodes=args.nmodes, poke=args.poke, alpha=args.alpha, navg=args.navg
-        )
+        ) for beam in beams]
         action_performed = True
 
     if args.gain is not None and args.leak is not None:
         gain = args.gain
         leak = args.leak
-        beam.set_leaky_gain_leak(gain=gain, leak=leak)
+        [beam.set_leaky_gain_leak(gain=gain, leak=leak) for beam in beams]
         action_performed = True
 
     if args.status is not None:
-        beam.print_status()
+        [beam.print_status() for beam in beams]
         action_performed = True
 
     if not action_performed:
