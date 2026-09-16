@@ -60,6 +60,7 @@ struct ControlVariables
     uint64_t cnt; // controller iteration (increments even when controller is not running)
     double strehl_est;
     double flux_est;
+    double meas_offset_interp;
     // real-time variables
     // admittedly, this is a LOT of copying, so I might change this to a single
     // "buffer" that we work on through the pipeline, and only keep variables
@@ -76,7 +77,8 @@ struct ControlVariables
     Eigen::Matrix<double, N_ACTUATORS, 1> com_write;
 
     // dynamically configurable variables
-    Eigen::Matrix<double, N_PIXELS, 1> meas_offset;
+    Eigen::Matrix<double, N_PIXELS, 1> meas_offset_0;
+    Eigen::Matrix<double, N_PIXELS, 1> meas_offset_1;
     Eigen::Matrix<double, N_SUBARRAY_PIXELS, 1> flux_mask;
     Eigen::Matrix<double, N_SUBARRAY_PIXELS, 1> strehl_mask;
     Eigen::Matrix<double, N_MODES, N_PIXELS, Eigen::RowMajor> meas_to_mode;

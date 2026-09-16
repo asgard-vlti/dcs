@@ -88,10 +88,12 @@ disturb<y:LabelModel><y:SmartNodeLabelModel distance="4.0"/></y:LabelModel><y:Mo
     <node id="n6">
       <data key="d6">
         <y:GenericNode configuration="com.yworks.entityRelationship.small_entity">
-          <y:Geometry height="32.23999999999998" width="148.26399999999967" x="772.854428571429" y="447.0"/>
+          <y:Geometry height="68.99999999999997" width="162.26399999999967" x="765.854428571429" y="439.0"/>
           <y:Fill color="#E8EEF7" color2="#B7C9E3" transparent="false"/>
           <y:BorderStyle color="#000000" type="line" width="1.0"/>
-          <y:NodeLabel alignment="left" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="20.344114303588867" horizontalTextPosition="center" iconTextGap="4" modelName="custom" textColor="#000000" verticalTextPosition="bottom" visible="true" width="140.21298217773438" x="4.025508911132647" xml:space="preserve" y="5.947942848205571">meas_offset: Meas&lt;f64&gt;<y:LabelModel><y:SmartNodeLabelModel distance="4.0"/></y:LabelModel><y:ModelParameter><y:SmartNodeLabelModelParameter labelRatioX="0.0" labelRatioY="0.0" nodeRatioX="0.0" nodeRatioY="0.0" offsetX="0.0" offsetY="0.0" upX="0.0" upY="-1.0"/></y:ModelParameter></y:NodeLabel>
+          <y:NodeLabel alignment="left" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="53.0323429107666" horizontalTextPosition="center" iconTextGap="4" modelName="custom" textColor="#000000" verticalTextPosition="bottom" visible="true" width="152.40505981445312" x="4.929470092773272" xml:space="preserve" y="7.983828544616699">meas_offset_0: Meas&lt;f64&gt;
+meas_offset_1: Meas&lt;f64&gt;
+meas_offset_interp: f64<y:LabelModel><y:SmartNodeLabelModel distance="4.0"/></y:LabelModel><y:ModelParameter><y:SmartNodeLabelModelParameter labelRatioX="0.0" labelRatioY="0.0" nodeRatioX="0.0" nodeRatioY="0.0" offsetX="0.0" offsetY="0.0" upX="0.0" upY="-1.0"/></y:ModelParameter></y:NodeLabel>
           <y:StyleProperties>
             <y:Property class="java.lang.Boolean" name="y.view.ShadowNodePainter.SHADOW_PAINTING" value="false"/>
             <y:Property class="java.lang.Boolean" name="doubleBorder" value="true"/>
@@ -213,7 +215,7 @@ com_min: Com&lt;f64&gt;<y:LabelModel><y:SmartNodeLabelModel distance="4.0"/></y:
     <node id="n15">
       <data key="d6">
         <y:GenericNode configuration="com.yworks.entityRelationship.small_entity">
-          <y:Geometry height="42.96000000000001" width="158.26399999999967" x="627.7280000000005" y="494.24"/>
+          <y:Geometry height="42.96000000000001" width="158.26399999999967" x="627.7280000000005" y="530.12"/>
           <y:Fill color="#E8EEF7" color2="#B7C9E3" transparent="false"/>
           <y:BorderStyle color="#000000" type="line" width="1.0"/>
           <y:NodeLabel alignment="left" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="36.688228607177734" horizontalTextPosition="center" iconTextGap="4" modelName="custom" textColor="#000000" verticalTextPosition="bottom" visible="true" width="145.57699584960938" x="6.343502075195147" xml:space="preserve" y="3.135885696411151">strehl_mask: Frame&lt;f64&gt;
@@ -404,7 +406,6 @@ mode_filt_buffer<y:LabelModel><y:SmartEdgeLabelModel autoRotationEnabled="false"
       </data>
     </edge>
     <edge id="e16" source="n15" target="n11">
-      <data key="d9"/>
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="0.0" sy="0.0" tx="0.0" ty="0.0"/>

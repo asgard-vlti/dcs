@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 from dcs.ZMQutils import ZmqReq  # type: ignore
 from os import path
 from dataclasses import dataclass, field
-import modal_basis
+import modal_basis  # type: ignore
 from enum import Enum
 
 
@@ -394,11 +394,11 @@ class Beam:
         )
         return (mode_to_meas, -ref_meas)
 
-    def take_flat(self, *, navg: int = 5):
+    def take_flat(self, flat_idx: int, *, navg: int = 5):
         # record reference measurement
         ref_meas = self.avg_meas(navg=navg, after_frame=CNT_MIN)
         meas_offset = -ref_meas
-        self.update_array(name="meas_offset", array=meas_offset)
+        self.update_array(name=f"meas_offset_{flat_idx}", array=meas_offset)
 
     @staticmethod
     def build_meas_to_mode(
@@ -489,7 +489,7 @@ class Beam:
         )
         self.update_array(name="meas_to_mode", array=meas_to_mode)
 
-    def set_servo_mode(self, mode: ServoMode):
+    def set_servo_mode(self, *, mode: ServoMode):
         resp = self.request(f'servo "{mode}"')
         print(resp)
 
@@ -499,8 +499,12 @@ class Beam:
         resp = self.request("settings")
         print(resp)
 
-    def set_flux_thresh(self, thresh: float):
+    def set_flux_thresh(self, *, thresh: float):
         resp = self.request(f"flux_threshold {thresh}")
+        print(resp)
+
+    def set_meas_offset_interp(self, *, meas_offset_interp: float):
+        resp = self.request(f"meas_offset_interp {meas_offset_interp}")
         print(resp)
 
 
@@ -544,9 +548,19 @@ if __name__ == "__main__":
         action="count",
     )
     parser.add_argument(
-        "--flat",
-        help="take a new flat",
+        "--flat0",
+        help="take a new measurement reference (meas_offset_0), defining the 'flat' to be targetted",
         action="count",
+    )
+    parser.add_argument(
+        "--flat1",
+        help="take a new measurement reference (meas_offset_1), defining the 'flat' to be targetted",
+        action="count",
+    )
+    parser.add_argument(
+        "--interp",
+        help="interpolate between meas_offset_0 (interp=0) and meas_offset_1 (interp=1)",
+        type=float,
     )
     parser.add_argument(
         "--reinvert",
@@ -631,20 +645,24 @@ This is correct behaviour if the RTC is not yet running.
 
     if args.open is not None:
         print("opening the loop!")
-        beam.set_servo_mode(ServoMode.SERVO_OPEN)
+        beam.set_servo_mode(mode=ServoMode.SERVO_OPEN)
         action_performed = True
 
     if args.close is not None:
         print("closing the loop!")
-        beam.set_servo_mode(ServoMode.SERVO_CLOSED)
+        beam.set_servo_mode(mode=ServoMode.SERVO_CLOSED)
         action_performed = True
 
     if args.fluxthresh is not None:
-        beam.set_flux_thresh(args.fluxthresh)
+        beam.set_flux_thresh(thresh=args.fluxthresh)
         action_performed = True
 
     if args.clipcom is not None:
         beam.set_com_clip(clip_val=args.clipcom)
+        action_performed = True
+
+    if args.interp is not None:
+        beam.set_meas_offset_interp(meas_offset_interp=args.interp)
         action_performed = True
 
     if DIST_LEN > 0:
@@ -676,8 +694,11 @@ This is correct behaviour if the RTC is not yet running.
         beam.reinvert_control_matrix(nmodes=args.nmodes, alpha=args.alpha)
         action_performed = True
 
-    if args.flat is not None:
-        beam.take_flat(navg=args.navg)
+    if args.flat0 is not None:
+        beam.take_flat(0, navg=args.navg)
+        action_performed = True
+    if args.flat1 is not None:
+        beam.take_flat(1, navg=args.navg)
         action_performed = True
 
     if args.recompute is not None:
