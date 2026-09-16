@@ -20,6 +20,10 @@ from baldr_reference.model import generate_references, load_config
 from baldr_reference.pupil_fitting import estimate_pupil_center_subpixel
 
 
+# # take pupil only image
+# offset = 200.0
+# utils.mds_send(sock, f"moverel BMY{beam} {-offset}")
+# time.sleep(1)
 
 def get_frames(beam_id, n_frames, frame_sleep=0.001):
     shm_path = f"/dev/shm/baldr{beam_id}.im.shm"
@@ -305,9 +309,7 @@ outer_radius = args.annulus_radius + args.annulus_thickness / 2
 annulus = (
     (radius >= inner_radius)
     & (radius <= outer_radius)
-    & support
 )
-
 if np.count_nonzero(annulus) == 0:
     raise ValueError("The selected annulus contains no pupil pixels.")
 
