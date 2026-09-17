@@ -472,9 +472,20 @@ class Beam:
         meas_to_mode = self.build_meas_to_mode(
             mode_to_meas=mode_to_meas, alpha=alpha, nmodes=nmodes
         )
+        if verbose > 0:
+            print("writing interaction matrix")
         self.update_array(name="meas_to_mode", array=meas_to_mode)
-        self.update_array(name="meas_offset_0", array=meas_offset)  # this will get overwritten on-sky
+
+        if verbose > 0:
+            print("writing meas_offset_1")
         self.update_array(name="meas_offset_1", array=meas_offset)
+
+        if verbose > 0:
+            print(
+                "setting interp to 1.0, since we might want "
+                "to immediately test that the loop closes"
+            )
+        self.set_meas_offset_interp(meas_offset_interp=1.0)
 
     def reinvert_control_matrix(
         self,
@@ -636,9 +647,7 @@ if __name__ == "__main__":
             Beam(beam_id=4, baldr_root=baldr_root),
         ]
     else:
-        beams = [
-            Beam(beam_id=args.beam, baldr_root=baldr_root)
-        ]
+        beams = [Beam(beam_id=args.beam, baldr_root=baldr_root)]
 
     if args.reset is not None:
         print("resetting!")
@@ -697,16 +706,25 @@ This is correct behaviour if the RTC is not yet running.
             disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
             for i, t in enumerate(np.linspace(0, 2 * np.pi, DIST_LEN + 1)[:-1]):
                 disturbance[:, i] = 0.1 * np.sin(xx_flat + t)
-            [beam.update_array(name="com_dist_buffer", array=disturbance) for beam in beams]
+            [
+                beam.update_array(name="com_dist_buffer", array=disturbance)
+                for beam in beams
+            ]
             action_performed = True
 
         if args.disturboff is not None:
             disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
-            [beam.update_array(name="com_dist_buffer", array=disturbance) for beam in beams]
+            [
+                beam.update_array(name="com_dist_buffer", array=disturbance)
+                for beam in beams
+            ]
             action_performed = True
 
     if args.reinvert is not None:
-        [beam.reinvert_control_matrix(nmodes=args.nmodes, alpha=args.alpha) for beam in beams]
+        [
+            beam.reinvert_control_matrix(nmodes=args.nmodes, alpha=args.alpha)
+            for beam in beams
+        ]
         action_performed = True
 
     if args.flat0 is not None:
@@ -717,9 +735,12 @@ This is correct behaviour if the RTC is not yet running.
         action_performed = True
 
     if args.recompute is not None:
-        [beam.create_leaky_matrices(
-            nmodes=args.nmodes, poke=args.poke, alpha=args.alpha, navg=args.navg
-        ) for beam in beams]
+        [
+            beam.create_leaky_matrices(
+                nmodes=args.nmodes, poke=args.poke, alpha=args.alpha, navg=args.navg
+            )
+            for beam in beams
+        ]
         action_performed = True
 
     if args.gain is not None and args.leak is not None:
