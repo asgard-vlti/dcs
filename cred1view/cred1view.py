@@ -193,6 +193,7 @@ class MyMainWidget(QtWidgets.QWidget):
 
         self.pB_updt_roi = QtWidgets.QPushButton("Update ROI", self)
         self.chB_auto_roi = QtWidgets.QCheckBox("Auto ROI update", self)
+        self.chB_auto_roi.setChecked(True)
 
         # 1 Hz timer for optional ROI auto-refresh
         self.roi_timer = QtCore.QTimer(self)
