@@ -19,16 +19,28 @@ template <> struct adl_serializer<EncodedImage> {
 template <> struct adl_serializer<Status> {
     static void to_json(json& j, const Status& p) {
         j = json::object();
-        j["flux"] = p.flux;
         j["nerrors"] = p.nerrors;
         j["nlowflux"] = p.nlowflux;
+        j["flux"] = p.flux;
+        j["strehl_flux"] = p.strehl_flux;
+        j["meas_cl_rms"] = p.meas_cl_rms;
+        j["mode_raw_rms"] = p.mode_raw_rms;
+        j["mode_filt_rms"] = p.mode_filt_rms;
+        j["com_raw_rms"] = p.com_raw_rms;
+        j["com_clean_rms"] = p.com_clean_rms;
         j["cnt"] = p.cnt;
     }
     static void from_json(const json& j, Status& p) {
         p = Status();
-        j.at("flux").get_to(p.flux);
         j.at("nerrors").get_to(p.nerrors);
         j.at("nlowflux").get_to(p.nlowflux);
+        j.at("flux").get_to(p.flux);
+        j.at("strehl_flux").get_to(p.strehl_flux);
+        j.at("meas_cl_rms").get_to(p.meas_cl_rms);
+        j.at("mode_raw_rms").get_to(p.mode_raw_rms);
+        j.at("mode_filt_rms").get_to(p.mode_filt_rms);
+        j.at("com_raw_rms").get_to(p.com_raw_rms);
+        j.at("com_clean_rms").get_to(p.com_clean_rms);
         j.at("cnt").get_to(p.cnt);
     }
    };

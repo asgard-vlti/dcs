@@ -1,6 +1,6 @@
 CC=g++
 
-CFLAGS  = -std=c++17 -Wall -Wextra -ggdb -O1 -I../libImageStreamIO -I../commander/include -DEIGEN_STACK_ALLOCATION_LIMIT=259200
+CFLAGS  = -std=c++17 -Wall -Wextra -ggdb -O1 -I../libImageStreamIO -I../commander/include -DEIGEN_STACK_ALLOCATION_LIMIT=332928
 LDFLAGS = -L../libImageStreamIO -L../lib -lcommander -lm -lzmq -lImageStreamIO -lb64 -lpthread -lboost_program_options -lfmt -lfftw3 -lcfitsio
 EXEC    = baldr
 OBJECTS = baldr.o servo_loop.o

@@ -105,6 +105,13 @@ class FourierModified(Fourier):
     @staticmethod
     def spiral_coords(i: int) -> Tuple[int, int]:
         return power_order[i]
+    
+    def sample(self, i: int, x: float, y: float) -> float:
+        if i == 0:
+            return x
+        if i == 1:
+            return y
+        return super().sample(i + 6, x, y)
 
 
 class Zonal(ModalBasis):

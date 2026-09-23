@@ -5,7 +5,7 @@ import base64
 import numpy as np
 from astropy.io import fits  # type: ignore
 import time
-from typing import Tuple, Optional
+from typing import List, Sequence, Tuple, Optional
 
 from numpy.typing import NDArray
 from dcs.ZMQutils import ZmqReq  # type: ignore
@@ -24,7 +24,7 @@ import os
 
 # TODO: NOT REALLY SAFE: These parameters are defined both in baldr.h and here,
 # I should find a way to merge these into a single source of truth.
-N_MODES = 100  # TODO: change to 144, also in baldr.cpp
+N_MODES = 144  # TODO: change to 144, also in baldr.cpp
 WIDTH = 17
 N_PIXELS = WIDTH * WIDTH
 SUBARRAY_WIDTH = 32
@@ -32,7 +32,7 @@ N_SUBARRAY_PIXELS = SUBARRAY_WIDTH * SUBARRAY_WIDTH
 FILTER_LEN = 1
 N_ACTX = 12
 N_ACTUATORS = N_ACTX * N_ACTX
-DIST_LEN = 0
+DIST_LEN = 10
 
 # local constants:
 BALDR_ROOT_DEFAULT = path.abspath(path.dirname(__file__))
@@ -44,14 +44,15 @@ BEAM_TO_PORT = {
     3: 6664,
     4: 6665,
 }
-DEFAULT_HOST = "mimir"
-# DEFAULT_HOST = "localhost"
+
+DEFAULT_HOST = os.environ.get("BALDR_HOST", default="mimir")
+print(f"host: {DEFAULT_HOST}")
 
 # Default values, will be overridden by CLI arguments
 POKE: float = 0.02
 ALPHA: float = 1.0
 # MEAS_SCALE: float = 1 / 1000
-CNT_MIN: int = 5  # minimum number of measurements to wait after applying poke
+CNT_MIN: int = 3  # minimum number of measurements to wait after applying poke
 NAVG: int = 5  # number of frames to average for a poke
 
 XC_OFFSET: float = 0.0
@@ -116,8 +117,8 @@ INIT_VAL = {
     "mode_max": 1e6,
     "mode_min": -1e6,
     "mode_to_com": 0.0,
-    "com_max": 1e6,
-    "com_min": -1e6,
+    "com_max": 0.5,
+    "com_min": -0.5,
     "com_dist_buffer": 0.0,
 }
 # make sure that all named arrays have an entry in this dict:
@@ -454,7 +455,9 @@ class Beam:
 
         ### Measure mode_to_slope interaction
         # flatten DM
-        self.flatten_dm()
+        # self.flatten_dm() # <- this sets the gain/leak to zeros, and is now not needed
+        #    because we "open the loop", disabling the output of the
+        #    IIR filter.
         self.flatten_offsets()
         self.reset()
 
@@ -506,7 +509,7 @@ class Beam:
         self.update_array(name="meas_to_mode", array=meas_to_mode)
 
     def set_servo_mode(self, *, mode: ServoMode):
-        resp = self.request(f'servo "{mode}"')
+        resp = self.request(f'servo "{mode.value}"')
         print(resp)
 
     def print_status(self):
@@ -522,6 +525,17 @@ class Beam:
     def set_meas_offset_interp(self, *, meas_offset_interp: float):
         resp = self.request(f"meas_offset_interp {meas_offset_interp}")
         print(resp)
+
+    def apply_offsets(self, *, offsets: NDArray):
+        mode_vec = np.zeros(N_MODES)
+        mode_vec[: offsets.shape[0]] = np.r_[offsets]
+        print(mode_vec)
+        self.poke(mode_vec)
+
+
+def parse_offset(encoded_string: str) -> NDArray:
+    s = encoded_string.lstrip().rstrip()
+    return np.array([float(x) for x in s.replace(",", " ").split()])
 
 
 if __name__ == "__main__":
@@ -615,6 +629,12 @@ if __name__ == "__main__":
     )
     parser.add_argument("--status", help="check status of RTC", action="count")
     parser.add_argument("--fluxthresh", help="set flux threshold", type=float)
+    parser.add_argument(
+        "--offset",
+        help="apply some offsets, e.g., '--offset 5.0 -4.0 40.0' will put 5.0 "
+        "on mode 1, -4.0 on mode 2, 40.0 on mode 3",
+        type=parse_offset,
+    )
 
     args = parser.parse_args()
 
@@ -703,9 +723,10 @@ This is correct behaviour if the RTC is not yet running.
                 indexing="ij",
             )
             xx_flat = xx.flatten()
+            xx_flat -= xx_flat.mean()
             disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
             for i, t in enumerate(np.linspace(0, 2 * np.pi, DIST_LEN + 1)[:-1]):
-                disturbance[:, i] = 0.1 * np.sin(xx_flat + t)
+                disturbance[:, i] = 0.02 * xx_flat
             [
                 beam.update_array(name="com_dist_buffer", array=disturbance)
                 for beam in beams
@@ -751,6 +772,11 @@ This is correct behaviour if the RTC is not yet running.
 
     if args.status is not None:
         [beam.print_status() for beam in beams]
+        action_performed = True
+
+    if args.offset is not None:
+        for beam in beams:
+            beam.apply_offsets(offsets=args.offset)
         action_performed = True
 
     if not action_performed:
