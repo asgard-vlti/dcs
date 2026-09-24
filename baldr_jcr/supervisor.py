@@ -539,9 +539,16 @@ def parse_offset(encoded_string: str) -> NDArray:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("Baldr Supervisor")
+    parser = argparse.ArgumentParser(description="""
+        This tool is a high-layer abstraction over the Baldr RTC configuration
+        intended to be used from the command line while the baldr RTC is running.
+        It connects with the RTC instance via ZMQ over a pre-defined TCP socket.
+        """)
     parser.add_argument(
-        "beam", type=int, help="index of beam [1-4]", choices=[-1, 1, 2, 3, 4]
+        "beam",
+        type=int,
+        help="index of beam [1-4], -1 will perform the operation on all beams sequentially",
+        choices=[-1, 1, 2, 3, 4],
     )
     parser.add_argument(
         "--init",
@@ -597,8 +604,6 @@ if __name__ == "__main__":
         action="count",
         help="rebuild the reconstructor from the imat on disk (e.g., to tweak reg params)",
     )
-
-    parser.add_argument("--clipcom", help="value to clip commands to", type=float)
 
     parser.add_argument(
         "--poke", help="value to poke each mode, try 0.01", type=float, default=POKE
@@ -726,7 +731,7 @@ This is correct behaviour if the RTC is not yet running.
             xx_flat -= xx_flat.mean()
             disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
             for i, t in enumerate(np.linspace(0, 2 * np.pi, DIST_LEN + 1)[:-1]):
-                disturbance[:, i] = 0.02 * xx_flat
+                disturbance[:, i] = 0.02 * xx_flat + 0.5
             [
                 beam.update_array(name="com_dist_buffer", array=disturbance)
                 for beam in beams
@@ -734,7 +739,7 @@ This is correct behaviour if the RTC is not yet running.
             action_performed = True
 
         if args.disturboff is not None:
-            disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
+            disturbance = np.zeros([N_ACTUATORS, DIST_LEN]) + 0.5
             [
                 beam.update_array(name="com_dist_buffer", array=disturbance)
                 for beam in beams
