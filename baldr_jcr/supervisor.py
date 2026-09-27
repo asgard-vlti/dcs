@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import argparse
+import click
 import base64
 import numpy as np
 from astropy.io import fits  # type: ignore
@@ -538,111 +538,160 @@ def parse_offset(encoded_string: str) -> NDArray:
     return np.array([float(x) for x in s.replace(",", " ").split()])
 
 
+@click.group()
+def main():
+    pass
+
+
+@main.command()
+def imat():
+    pass
+
+
+@main.command()
+def cmat():
+    pass
+
+
+@main.command()
+def status():
+    pass
+
+
+@main.command()
+def init():
+    pass
+
+
+@main.command()
+def reset():
+    pass
+
+
+@main.command()
+@click.option("--scale", "scale", type=float)
+@click.option("--off", "off")
+def disturb(scale: float, off: bool):
+    print(scale)
+    print(off)
+    pass
+
+
+@main.command()
+def ctrl():
+    pass
+
+
+@main.command()
+def ref():
+    pass
+
+
+# parser = argparse.ArgumentParser(description="""
+#     This tool is a high-layer abstraction over the Baldr RTC configuration
+#     intended to be used from the command line while the baldr RTC is running.
+#     It connects with the RTC instance via ZMQ over a pre-defined TCP socket.
+#     """)
+# parser.add_argument(
+#     "beam",
+#     type=int,
+#     help="index of beam [1-4], -1 will perform the operation on all beams sequentially",
+#     choices=[-1, 1, 2, 3, 4],
+# )
+# parser.add_argument(
+#     "--init",
+#     "-i",
+#     help="initialise all arrays with zeros and save them to disk",
+#     action="count",
+# )
+# parser.add_argument(
+#     "--reset",
+#     help="send a reset command to the RTC",
+#     action="count",
+# )
+# if DIST_LEN > 0:
+#     parser.add_argument(
+#         "--disturboff",
+#         help="resets the disturbance to zero",
+#         action="count",
+#     )
+#     parser.add_argument(
+#         "--disturb",
+#         help="inject a test signal onto the dms",
+#         action="count",
+#     )
+
+# parser.add_argument(
+#     "--gain", help="gain, requires leak to be specified too", type=float
+# )
+# parser.add_argument(
+#     "--leak", help="leak, requires gain to be specified too", type=float
+# )
+# parser.add_argument(
+#     "--recompute",
+#     help="remeasure the interaction matrix and update control matrices",
+#     action="count",
+# )
+# parser.add_argument(
+#     "--flat0",
+#     help="take a new measurement reference (meas_offset_0), defining the 'flat' to be targetted",
+#     action="count",
+# )
+# parser.add_argument(
+#     "--flat1",
+#     help="take a new measurement reference (meas_offset_1), defining the 'flat' to be targetted",
+#     action="count",
+# )
+# parser.add_argument(
+#     "--interp",
+#     help="interpolate between meas_offset_0 (interp=0) and meas_offset_1 (interp=1)",
+#     type=float,
+# )
+# parser.add_argument(
+#     "--reinvert",
+#     action="count",
+#     help="rebuild the reconstructor from the imat on disk (e.g., to tweak reg params)",
+# )
+
+# parser.add_argument(
+#     "--poke", help="value to poke each mode, try 0.01", type=float, default=POKE
+# )
+
+# parser.add_argument("--nmodes", help="maximum mode index to control", type=int)
+# parser.add_argument(
+#     "--alpha",
+#     help=f"reconstructor regularisation factor, default: {ALPHA}",
+#     type=float,
+#     default=ALPHA,
+# )
+# parser.add_argument(
+#     "--navg",
+#     help=f"number of frames to average for each poke in iMat, default: {NAVG}",
+#     default=NAVG,
+#     type=int,
+# )
+
+# parser.add_argument(
+#     "--open", help="open the loop without stopping the RTC process", action="count"
+# )
+# parser.add_argument(
+#     "--close", help="close the loop, with existing leak/gain params", action="count"
+# )
+# parser.add_argument(
+#     "--verbose", "-v", help="use verbose mode", action="count", default=0
+# )
+# parser.add_argument("--status", help="check status of RTC", action="count")
+# parser.add_argument("--fluxthresh", help="set flux threshold", type=float)
+# parser.add_argument(
+#     "--offset",
+#     help="apply some offsets, e.g., '--offset 5.0 -4.0 40.0' will put 5.0 "
+#     "on mode 1, -4.0 on mode 2, 40.0 on mode 3",
+#     type=parse_offset,
+# )
+
+# args = parser.parse_args()
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="""
-        This tool is a high-layer abstraction over the Baldr RTC configuration
-        intended to be used from the command line while the baldr RTC is running.
-        It connects with the RTC instance via ZMQ over a pre-defined TCP socket.
-        """)
-    parser.add_argument(
-        "beam",
-        type=int,
-        help="index of beam [1-4], -1 will perform the operation on all beams sequentially",
-        choices=[-1, 1, 2, 3, 4],
-    )
-    parser.add_argument(
-        "--init",
-        "-i",
-        help="initialise all arrays with zeros and save them to disk",
-        action="count",
-    )
-    parser.add_argument(
-        "--reset",
-        help="send a reset command to the RTC",
-        action="count",
-    )
-    if DIST_LEN > 0:
-        parser.add_argument(
-            "--disturboff",
-            help="resets the disturbance to zero",
-            action="count",
-        )
-        parser.add_argument(
-            "--disturb",
-            help="inject a test signal onto the dms",
-            action="count",
-        )
-
-    parser.add_argument(
-        "--gain", help="gain, requires leak to be specified too", type=float
-    )
-    parser.add_argument(
-        "--leak", help="leak, requires gain to be specified too", type=float
-    )
-    parser.add_argument(
-        "--recompute",
-        help="remeasure the interaction matrix and update control matrices",
-        action="count",
-    )
-    parser.add_argument(
-        "--flat0",
-        help="take a new measurement reference (meas_offset_0), defining the 'flat' to be targetted",
-        action="count",
-    )
-    parser.add_argument(
-        "--flat1",
-        help="take a new measurement reference (meas_offset_1), defining the 'flat' to be targetted",
-        action="count",
-    )
-    parser.add_argument(
-        "--interp",
-        help="interpolate between meas_offset_0 (interp=0) and meas_offset_1 (interp=1)",
-        type=float,
-    )
-    parser.add_argument(
-        "--reinvert",
-        action="count",
-        help="rebuild the reconstructor from the imat on disk (e.g., to tweak reg params)",
-    )
-
-    parser.add_argument(
-        "--poke", help="value to poke each mode, try 0.01", type=float, default=POKE
-    )
-
-    parser.add_argument("--nmodes", help="maximum mode index to control", type=int)
-    parser.add_argument(
-        "--alpha",
-        help=f"reconstructor regularisation factor, default: {ALPHA}",
-        type=float,
-        default=ALPHA,
-    )
-    parser.add_argument(
-        "--navg",
-        help=f"number of frames to average for each poke in iMat, default: {NAVG}",
-        default=NAVG,
-        type=int,
-    )
-
-    parser.add_argument(
-        "--open", help="open the loop without stopping the RTC process", action="count"
-    )
-    parser.add_argument(
-        "--close", help="close the loop, with existing leak/gain params", action="count"
-    )
-    parser.add_argument(
-        "--verbose", "-v", help="use verbose mode", action="count", default=0
-    )
-    parser.add_argument("--status", help="check status of RTC", action="count")
-    parser.add_argument("--fluxthresh", help="set flux threshold", type=float)
-    parser.add_argument(
-        "--offset",
-        help="apply some offsets, e.g., '--offset 5.0 -4.0 40.0' will put 5.0 "
-        "on mode 1, -4.0 on mode 2, 40.0 on mode 3",
-        type=parse_offset,
-    )
-
-    args = parser.parse_args()
-
+    main()
     baldr_root = os.environ.get("BALDR_ROOT")
     if baldr_root is None:
         print(
