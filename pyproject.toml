@@ -12,6 +12,7 @@ dependencies = [
     "aotools>=1.0.7",
     "astropy>=5.2.2",
     #"black>=24.8.0",
+    "click>=8.1.8",
     "numpy>=1.23.0",
     #"taguchi>=1.1.5",
     #"tqdm>=4.67.3",
