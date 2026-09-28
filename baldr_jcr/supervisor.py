@@ -708,10 +708,6 @@ This is correct behaviour if the RTC is not yet running.
         [beam.set_flux_thresh(thresh=args.fluxthresh) for beam in beams]
         action_performed = True
 
-    if args.clipcom is not None:
-        [beam.set_com_clip(clip_val=args.clipcom) for beam in beams]
-        action_performed = True
-
     if args.interp is not None:
         [beam.set_meas_offset_interp(meas_offset_interp=args.interp) for beam in beams]
         action_performed = True
