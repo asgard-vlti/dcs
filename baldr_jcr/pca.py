@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import os
+from matplotlib.figure import Figure
 import numpy as np
 from numpy.typing import NDArray
 import matplotlib.pyplot as plt
@@ -13,16 +14,17 @@ BEAM = int(os.environ.get("BEAM", 1))
 
 PLOT_LIM = int(os.environ.get("PLOT_LIM", 8))
 
-if __name__ == "__main__":
-    imat: NDArray = fits.getdata(BALDR_ROOT + f"/B{BEAM}_mode_to_meas.fits")  # type: ignore
+
+def main(beam: int, baldr_root: str, plot_lim: int) -> Figure:
+    imat: NDArray = fits.getdata(baldr_root + f"/B{beam}_mode_to_meas.fits")  # type: ignore
     n_meas, n_mode = imat.shape
     n_mode_sqrt: int = int(np.ceil(n_mode**0.5))
     n_meas_sqrt: int = int(np.ceil(n_meas**0.5))
-    eigval, eigvec = np.linalg.eigh(imat.T @ imat + 1e-4 * np.eye(imat.shape[1]))
+    eigval, eigvec = np.linalg.eigh(imat.T @ imat)
     eigval = eigval[::-1]
     eigvec = eigvec[:, ::-1]
-    if PLOT_LIM > 0:
-        n_plot_sqrt = min(PLOT_LIM, n_meas_sqrt)
+    if plot_lim > 0:
+        n_plot_sqrt = min(plot_lim, n_meas_sqrt)
     else:
         n_plot_sqrt = n_meas_sqrt
     fig, axs = plt.subplots(n_plot_sqrt, n_plot_sqrt, figsize=[12, 12])
@@ -34,4 +36,9 @@ if __name__ == "__main__":
         ax.set_xticks([])
         ax.set_yticks([])
     plt.tight_layout()
+    return fig
+
+
+if __name__ == "__main__":
+    fig = main(beam=BEAM, baldr_root=BALDR_ROOT, plot_lim=PLOT_LIM)
     plt.savefig("pca.png", dpi=200)

@@ -13,7 +13,7 @@ from os import path
 from dataclasses import dataclass, field
 import modal_basis  # type: ignore
 from enum import Enum
-
+import pca  # type: ignore
 
 # for python < 3.11 compatibility, define StrEnum here instead of importing
 class StrEnum(str, Enum):
@@ -397,6 +397,8 @@ class Beam:
         fits.writeto(
             self.file_prefix + "mode_to_meas.fits", mode_to_meas, overwrite=True
         )
+        fig = pca.main(self.beam_id, baldr_root=self.baldr_root, plot_lim=8)
+        fig.savefig(self.file_prefix + "pca.png")
         return (mode_to_meas, -ref_meas)
 
     def take_flat(self, flat_idx: int, *, navg: int = 5):
