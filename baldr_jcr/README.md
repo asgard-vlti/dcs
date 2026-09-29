@@ -45,106 +45,68 @@ launching the RTC. In production mode, this should be:
 export BALDR_ROOT=/usr/local/bin
 ```
 
-The following are the main `supervisor.py` commands needed.
+If using a local simulator, you also need to explicitly set `BALDR_HOST` to `localhost`, otherwise it will use `mimir` by default.
+```bash
+export BALDR_HOST=localhost  # only if using a local simulator
+```
 
-| argument            | description                                             | example                                      |
-| ------------------- | ------------------------------------------------------- | -------------------------------------------- |
-| `--init`            | reset all matrices and control variables                | `./supervisor.py 1 --init`                   |
-| `--reset`           | reset control variables online                          | `./supervisor.py 1 --reset`                  |
-| `--recompute`       | Do poke test, meas imat, compute cmat                   | `./supervisor.py 1 --recompute`              |
-| `--poke`            | specify poke during poke test                           | `./supervisor.py 1 --recompute --poke 0.01`  |
-| `--nmodes`          | specify number of modes for controller to act on        | `./supervisor.py 1 --recompute --nmodes 50`  |
-| `--alpha`           | specify reconstructor regularisation param              | `./supervisor.py 1 --recompute --alpha 0.01` |
-| `--navg`            | specify number of frames to avg per poke during imat    | `./supervisor.py 1 --recompute --navg 10`    |
-| `--reinvert`        | compute cmat with different `--alpha` and/or `--nmodes` | `./supervisor.py 1 --reinvert --alpha 0.003` |
-| `--gain` & `--leak` | set leaky integrator gain and leak                      | `./supervisor.py 1 --gain 0.3 --leak 0.99`   |
-| `--open`            | open the loop immediately                               | `./supervisor.py 1 --open`                   |
-| `--close`           | close the loop (using previously set gain/leak)         | `./supervisor.py 1 --close`                  |
-| `--status`          | check the status of some variables (WIP)                | `./supervisor.py 1 --status`                 |
+Since 29 Sep 2026, the supervisor commands have been re-organised (for the 
+unattainable goal of simplicity). Run `./supervisor.py --help` for more info.
+An example `help` output is copied below:
+```bash
+$  ./supervisor.py --help
+
+Usage: supervisor.py [OPTIONS] BEAM COMMAND [ARGS]...
+
+  This tool is a high-layer abstraction over the Baldr RTC configuration
+  intended to be used from the command line while the baldr RTC is running.
+  It connects with the RTC instance via ZMQ over a pre-defined TCP socket.
+
+Options:
+  -v, --verbose  set the verbosity level
+  --help         Show this message and exit.
+
+Commands:
+  cmat     build a control matrix from the interaction matrix
+  ctrl     modify live RTC parameters online
+  disturb  inject or disable a disturbance on the DM
+  imat     construct an interaction matrix/perform a poke test
+  init     initialise offline RTC parameters.
+  ref      measure a reference image for the control pipeline
+  status   probe and print the RTC status
+```
+
+The CLI has a similar interface to git, with subcommands that reveal more options.
+For example, to modify control parameters like gain and leak, check the ctrl
+subcommand:
+```bash
+$  ./supervisor.py 1 ctrl --help
+
+Usage: supervisor.py BEAM ctrl [OPTIONS]
+
+  modify live RTC parameters online
+
+Options:
+  --gain FLOAT         set the gain (must also pass leak)
+  --leak FLOAT         set the leak (must also pass gain)
+  --interp FLOAT       set the interpolation parameter
+  --flux-thresh FLOAT  set the flux threshold
+  --reset              reset all live values in the RTC
+  --open               open the loop
+  --close              close the loop
+  --off                stop the loop
+  --help               Show this message and exit.
+```
+so to set BEAM=3 to have gain=0.4 and leak=0.9 (for example):
+```bash
+./supervisor.py 3 ctrl --gain 0.4 --leak 0.9
+```
 
 ## Tuning the AO loop
 
-The following works well in simulation, but hasn't been tested yet on-sky.
-
-The main parameters to be tuned are (in chronological order of tuning):
-
-- `poke` (on-bench)
-- `alpha` (on-bench)
-- `gain` and `leak` (on-sky)
-
-### `poke` tuning (in lab)
-
-1. Align the pupil and mask by eye, and apply the lab DM flat command
-2. Build an interaction matrix using the following command:
-   ```bash
-   ./supervisor.py 1 --recompute --poke=0.01
-   ```
-3. Run the PCA script, and observe the displayed Figure:
-   ```
-   ./pca.py
-   ```
-4. If the first few images are not symmetric or do not look "smooth", then try
-   reducing the poke. If the images look "noisy", then try increasing the poke.
-   See images below for pokes that are too big, too small, and just right.
-
-<table>
-<tr><td>poke=0.005, too small</td><td>
-<img src="./poke_0.005.png"/></td>
-</tr>
-<tr><td>poke=0.05, just right</td><td>
-<img src="./poke_0.05.png"/></td>
-</tr>
-<tr><td>poke=0.2, too big</td><td>
-<img src="./poke_0.2.png"/></td>
-</tr>
-</table>
-
-Note that it is also possible to increase the number of frames used per measurement
-of the interaction matrix, which will have a similar effect as increasing `poke`, but
-without risk of pushing into the non-linear response zone - but the SNR of the measurements
-increases only with sqrt(navg), so it will take 100x as long to build an interaction
-matrix with 10x the SNR, and 10000x as long to build one with 100x the SNR. Increasing
-the number of frames used per interaction matrix measurement by doing (e.g.):
-
-```bash
-./supervisor.py 1 --recompute --poke=0.01 --navg=100
-```
-
-### `alpha` tuning (in lab)
-
-1. With the displayed output of the `poke` tuning, observe the value above each
-   subplot. For the "well-sensed" modes, this value will be large (around 1.0).
-   For the "poorly-sensed" modes (the modes that begin to look like noise), this
-   value will be significantly smaller, around 1e-4 in simulation.
-2. Determine which is the last "good-looking" mode from this chart. Choose a value
-   for `alpha` which is smaller than this value, but larger than most of the
-   "poorly-sensed" modes.
-3. Reinvert the interaction matrix with this value of `alpha`, e.g.,:
-   ```bash
-   ./supervisor.py 1 --reinvert --alpha=1e-4
-   ```
-
-
-### `gain` and `leak` (on-sky)
-1. Set the `gain` and `leak` to some safe values: e.g.:
-   ```bash
-   ./supervisor.py 1 --gain=0.3 --leak=0.9
-   ```
-2. Close the loop:
-   ```bash
-   ./supervisor.py 1 --close
-   ```
-3. Observe the stability of the RTC by inspecting the DM surface (e.g., in SHM).
-4. Gradually increase the gain, looking for instabilities in the DM. In simulation,
-   optimal performance appears to be at around:
-   ```bash
-   ./supervisor 1 --gain=0.6 --leak=0.9
-   ```
-   Note that a higher leak will improve convergence to steady-state errors, at 
-   the risk of building up bad modes. A higher gain will improve responsiveness
-   and temporal performance, at the cost of increased error propagation. Increasing
-   each value will reduce the viable range of the other value.
-
+Instructions for tuning the AO loop can be found in a report circulated through
+the team titled: `imat_pca_report_and_procedure.pdf`, which is available (at
+least for now) [here](https://www.mso.anu.edu.au/~jcranney/imat_pca_report_and_procedure.pdf).
 
 ## Todo:
 
