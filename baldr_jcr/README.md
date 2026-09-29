@@ -45,23 +45,68 @@ launching the RTC. In production mode, this should be:
 export BALDR_ROOT=/usr/local/bin
 ```
 
-The following are the main `supervisor.py` commands needed.
+If using a local simulator, you also need to explicitly set `BALDR_HOST` to `localhost`, otherwise it will use `mimir` by default.
+```bash
+export BALDR_HOST=localhost  # only if using a local simulator
+```
 
-| argument            | description                                             | example                                      |
-| ------------------- | ------------------------------------------------------- | -------------------------------------------- |
-| `--init`            | reset all matrices and control variables                | `./supervisor.py 1 --init`                   |
-| `--reset`           | reset control variables online                          | `./supervisor.py 1 --reset`                  |
-| `--recompute`       | Do poke test, meas imat, compute cmat                   | `./supervisor.py 1 --recompute`              |
-| `--poke`            | specify poke during poke test                           | `./supervisor.py 1 --recompute --poke 0.01`  |
-| `--nmodes`          | specify number of modes for controller to act on        | `./supervisor.py 1 --recompute --nmodes 50`  |
-| `--alpha`           | specify reconstructor regularisation param              | `./supervisor.py 1 --recompute --alpha 0.01` |
-| `--navg`            | specify number of frames to avg per poke during imat    | `./supervisor.py 1 --recompute --navg 10`    |
-| `--reinvert`        | compute cmat with different `--alpha` and/or `--nmodes` | `./supervisor.py 1 --reinvert --alpha 0.003` |
-| `--gain` & `--leak` | set leaky integrator gain and leak                      | `./supervisor.py 1 --gain 0.3 --leak 0.99`   |
-| `--open`            | open the loop immediately                               | `./supervisor.py 1 --open`                   |
-| `--close`           | close the loop (using previously set gain/leak)         | `./supervisor.py 1 --close`                  |
-| `--status`          | check the status of some variables (WIP)                | `./supervisor.py 1 --status`                 |
+Since 29 Sep 2026, the supervisor commands have been re-organised (for the 
+unattainable goal of simplicity). Run `./supervisor.py --help` for more info.
+An example `help` output is copied below:
+```bash
+$  ./supervisor.py --help
 
+Usage: supervisor.py [OPTIONS] BEAM COMMAND [ARGS]...
+
+  This tool is a high-layer abstraction over the Baldr RTC configuration
+  intended to be used from the command line while the baldr RTC is running.
+  It connects with the RTC instance via ZMQ over a pre-defined TCP socket.
+
+Options:
+  -v, --verbose  set the verbosity level
+  --help         Show this message and exit.
+
+Commands:
+  cmat     build a control matrix from the interaction matrix
+  ctrl     modify live RTC parameters online
+  disturb  inject or disable a disturbance on the DM
+  imat     construct an interaction matrix/perform a poke test
+  init     initialise offline RTC parameters.
+  ref      measure a reference image for the control pipeline
+  status   probe and print the RTC status
+```
+
+The CLI has a similar interface to git, with subcommands that reveal more options.
+For example, to modify control parameters like gain and leak, check the ctrl
+subcommand:
+```bash
+$  ./supervisor.py 1 ctrl --help
+
+Usage: supervisor.py BEAM ctrl [OPTIONS]
+
+  modify live RTC parameters online
+
+Options:
+  --gain FLOAT         set the gain (must also pass leak)
+  --leak FLOAT         set the leak (must also pass gain)
+  --interp FLOAT       set the interpolation parameter
+  --flux-thresh FLOAT  set the flux threshold
+  --reset              reset all live values in the RTC
+  --open               open the loop
+  --close              close the loop
+  --off                stop the loop
+  --help               Show this message and exit.
+```
+so to set BEAM=3 to have gain=0.4 and leak=0.9 (for example):
+```bash
+./supervisor.py 3 ctrl --gain 0.4 --leak 0.9
+```
+
+## Tuning the AO loop
+
+Instructions for tuning the AO loop can be found in a report circulated through
+the team titled: `imat_pca_report_and_procedure.pdf`, which is available (at
+least for now) [here](https://www.mso.anu.edu.au/~jcranney/imat_pca_report_and_procedure.pdf).
 
 ## Todo:
 
