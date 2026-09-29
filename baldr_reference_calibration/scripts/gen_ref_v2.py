@@ -16,14 +16,12 @@ from astropy.io import fits
 from scipy import ndimage
 import time
 from xaosim.shmlib import shm
+import zmq 
 from baldr_reference.model import generate_references, load_config
 from baldr_reference.pupil_fitting import estimate_pupil_center_subpixel
 
 
-# # take pupil only image
-# offset = 200.0
-# utils.mds_send(sock, f"moverel BMY{beam} {-offset}")
-# time.sleep(1)
+
 
 def get_frames(beam_id, n_frames, frame_sleep=0.001):
     shm_path = f"/dev/shm/baldr{beam_id}.im.shm"
@@ -80,6 +78,18 @@ def transform_image(image, angle, shift_x, shift_y, scale):
         cval=0.0,
         prefilter=False,
     )
+
+
+def mds_connect(host: str, port: int = 5555, timeout_ms: int = 5000):
+    ctx = zmq.Context()
+    sock = ctx.socket(zmq.REQ)
+    sock.setsockopt(zmq.RCVTIMEO, timeout_ms)
+    sock.connect(f"tcp://{host}:{port}")
+    return ctx, sock
+
+def mds_send(sock, msg: str) -> str:
+    sock.send_string(msg)
+    return sock.recv_string().strip()
 
 
 parser = argparse.ArgumentParser()
@@ -152,8 +162,17 @@ args = parser.parse_args()
 # Measure clear pupil
 # -------------------------------------------------------------------------
 
+host =  "mimir" #"127.0.0.1" # <- this host is for simulator, on paranal change host to "mimir"
+ctx, sock = mds_connect(host)
+#phasemask offset to apply in microns
+offset = 200.0
+
 #ove_mask("out")
-usr = input('mover mask out, the press enter')
+#usr = input('mover mask out, the press enter')
+print("moving phasemask out")
+mds_send(sock, f"moverel BMY{args.beam_id} {offset}")
+time.sleep(1)
+#send_mds(f"moverel BMY{args.beam_id} 200")
 
 clear_frames, _  = get_frames(args.beam_id, args.n_clear)
 clear = np.mean(clear_frames, axis=0)
@@ -291,7 +310,11 @@ prior = prior / np.sum(prior[support])
 # -------------------------------------------------------------------------
 
 #move_mask("in")
-usr = input('move mask in, then press enter')
+#usr = input('move mask in, then press enter')
+print("moving phasemask in")
+mds_send(sock, f"moverel BMY{args.beam_id} {-offset}")
+time.sleep(1)
+
 zwfs_frames, _ = get_frames(args.beam_id, args.n_lucky)
 
 
