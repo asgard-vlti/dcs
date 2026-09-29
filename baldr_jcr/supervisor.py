@@ -314,7 +314,7 @@ class Beam:
         array *= rr > STREHL_MASK_INNER_RADIUS
         self.writefits(name="strehl_mask", array=array)
 
-    def set_leaky_gain_leak(
+    def set_gain_leak(
         self,
         *,
         gain: float = 0.3,
@@ -329,38 +329,6 @@ class Beam:
         # save coeffs to fits files and push to rtc
         self.update_array(name="filter_coeff_in", array=filter_coeff_in)
         self.update_array(name="filter_coeff_out", array=filter_coeff_out)
-
-    def set_polc_gain(
-        self,
-        *,
-        ewma_gain: float = 0.3,
-        ewma_leak: float = 1.0,
-    ):
-        # compute filter coeffs from Exponentially weighted moving average gain
-        filter_coeff_in = np.zeros([FILTER_LEN, N_MODES])
-        filter_coeff_out = np.zeros([FILTER_LEN, N_MODES])
-        filter_coeff_in[0, :] = -ewma_gain
-        filter_coeff_out[0, :] = 1 - ewma_gain
-        filter_coeff_out *= ewma_leak
-
-        # save coeffs to fits files
-        self.update_array(name="filter_coeff_in", array=filter_coeff_in)
-        self.update_array(name="filter_coeff_out", array=filter_coeff_out)
-
-    def flatten_dm(self):
-        # compute filter coeffs. Zeros correspond to an "all stop" filter.
-        filter_coeff_in = np.zeros([FILTER_LEN, N_MODES])
-        filter_coeff_out = np.zeros([FILTER_LEN, N_MODES])
-        # save coeffs to fits files
-        self.update_array(name="filter_coeff_in", array=filter_coeff_in)
-        self.update_array(name="filter_coeff_out", array=filter_coeff_out)
-
-    def set_com_clip(self, *, clip_val: float):
-        # compute filter coeffs. Zeros correspond to an "all stop" filter.
-        com_max = clip_val * np.ones([N_ACTUATORS])
-        # save coeffs to fits files
-        self.update_array(name="com_max", array=com_max)
-        self.update_array(name="com_min", array=-com_max)
 
     def flatten_offsets(self):
         array = np.zeros((N_MODES,))
@@ -432,42 +400,12 @@ class Beam:
             if ref_im_type.value == "lab":
                 self.update_array(name=f"meas_offset_1", array=meas_offset)
 
-    @staticmethod
-    def build_meas_to_mode(
-        *,
-        mode_to_meas: NDArray,
-        alpha: float,
-        nmodes: Optional[int],
-    ) -> NDArray:
-        """Build the POL control matrix from the interaction matrix.
+    def create_modes(self):
+        """Define the modal basis to be used in the RTC.
 
-        NOTE: mode_to_meas and meas_to_mode should ALWAYS have the full N_MODES in
-        the modal dimension. The nmodes argument here specifies that the matrices
-        should only consume/produce up to the nmodes'th mode, and that the remainder
-        of the entries in those matrices should be zero.
-        """
-        if nmodes is None:
-            nmodes = N_MODES
-        meas_to_mode = np.zeros((N_MODES, N_PIXELS), dtype=DTYPE)
-        meas_to_mode[:nmodes, :] = np.linalg.solve(
-            mode_to_meas[:, :nmodes].T @ mode_to_meas[:, :nmodes]
-            + alpha * np.eye(nmodes),
-            mode_to_meas[:, :nmodes].T,
-        )
-        return meas_to_mode
-
-    def measure_imat(
-        self,
-        *,
-        navg: int = 5,
-        poke: float = POKE,
-        nmodes: Optional[int] = None,
-    ):
-        """Measure the interaction matrix.
-
-        NOTE: To avoid recompiling the RTC, the nmodes option only modifies the
-        "values" of the control matrices, not the dimensions. For this reason, the
-        code will sometimes refer to N_MODES (a constant) and nmodes (a variable).
+        This will create a "full" set of N_MODES modes, but not necessarily all
+        of them will be used at any given time, based on imat and cmat
+        computation parameters.
         """
         ### Build mode_to_com projection
         mode_to_com = MODAL_BASIS.modes_on_unit_disk(nsamplex=N_ACTX, nmodes=N_MODES)
@@ -488,14 +426,7 @@ class Beam:
         # set mode_to_com
         self.update_array(name="mode_to_com", array=mode_to_com)
 
-        # measure modal imat
-        mode_to_meas, meas_offset = self.measure_interaction_matrix(
-            navg=navg,
-            poke=poke,
-            nmodes=nmodes,
-        )
-
-    def reinvert_control_matrix(
+    def compute_control_matrix(
         self,
         *,
         alpha: float = ALPHA,
@@ -508,8 +439,13 @@ class Beam:
         assert type(mode_to_meas) is np.ndarray
 
         ### Invert mode_to_slope to build slope_to_mode reconstructor
-        meas_to_mode = self.build_meas_to_mode(
-            mode_to_meas=mode_to_meas, alpha=alpha, nmodes=nmodes
+        if nmodes is None:
+            nmodes = N_MODES
+        meas_to_mode = np.zeros((N_MODES, N_PIXELS), dtype=DTYPE)
+        meas_to_mode[:nmodes, :] = np.linalg.solve(
+            mode_to_meas[:, :nmodes].T @ mode_to_meas[:, :nmodes]
+            + alpha * np.eye(nmodes),
+            mode_to_meas[:, :nmodes].T,
         )
         self.update_array(name="meas_to_mode", array=meas_to_mode)
 
@@ -530,17 +466,6 @@ class Beam:
     def set_meas_offset_interp(self, *, meas_offset_interp: float):
         resp = self.request(f"meas_offset_interp {meas_offset_interp}")
         print(resp)
-
-    def apply_offsets(self, *, offsets: NDArray):
-        mode_vec = np.zeros(N_MODES)
-        mode_vec[: offsets.shape[0]] = np.r_[offsets]
-        print(mode_vec)
-        self.poke(mode_vec)
-
-
-def parse_offset(encoded_string: str) -> NDArray:
-    s = encoded_string.lstrip().rstrip()
-    return np.array([float(x) for x in s.replace(",", " ").split()])
 
 
 @click.group(help="""
@@ -677,7 +602,7 @@ def ctrl(
         raise click.BadParameter("leak must only be set if also passing gain")
     if gain is not None and leak is not None:
         for beam in beams:
-            beam.set_leaky_gain_leak(gain=gain, leak=leak)
+            beam.set_gain_leak(gain=gain, leak=leak)
         action_performed = True
 
     if servo_mode_str is not None:
@@ -716,7 +641,8 @@ This is probably unintentional. Check your command line arguments, or try with -
 def imat(ctx: Context, poke: float, nmodes: int, navg: int):
     beams: List[Beam] = ctx.obj["beams"]
     for beam in beams:
-        beam.measure_imat(nmodes=nmodes, poke=poke, navg=navg)
+        beam.create_modes()
+        beam.measure_interaction_matrix(nmodes=nmodes, poke=poke, navg=navg)
 
 
 @main.command(help="build a control matrix from the interaction matrix")
@@ -736,7 +662,7 @@ def imat(ctx: Context, poke: float, nmodes: int, navg: int):
 def cmat(ctx: Context, alpha: float, nmodes: int):
     beams: List[Beam] = ctx.obj["beams"]
     for beam in beams:
-        beam.reinvert_control_matrix(nmodes=nmodes, alpha=alpha)
+        beam.compute_control_matrix(nmodes=nmodes, alpha=alpha)
 
 
 @main.command(help="measure a reference image for the control pipeline")
