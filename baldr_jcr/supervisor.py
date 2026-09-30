@@ -270,6 +270,13 @@ class Beam:
         if push_rtc:
             self.request(name)
 
+    def read_array(self, *, name: str) -> NDArray:
+        """Read arrays by name from nominal data directory (BALDR_ROOT).
+
+        E.g., imat = beam.read_array(name="mode_to_meas")
+        """
+        return fits.getdata(self.file_prefix + name + ".fits")  # type: ignore
+
     ############################################################
     ### High level functions for executing supervisory tasks ###
     ############################################################
@@ -432,11 +439,8 @@ class Beam:
         alpha: float = ALPHA,
         nmodes: Optional[int] = None,
     ):
-        # measure modal imat
-        mode_to_meas = fits.open(self.file_prefix + "mode_to_meas.fits")[
-            0
-        ].data  # type: ignore
-        assert type(mode_to_meas) is np.ndarray
+        # measured modal imat
+        mode_to_meas = self.read_array(name="mode_to_meas")
 
         ### Invert mode_to_slope to build slope_to_mode reconstructor
         if nmodes is None:
@@ -446,6 +450,54 @@ class Beam:
             mode_to_meas[:, :nmodes].T @ mode_to_meas[:, :nmodes]
             + alpha * np.eye(nmodes),
             mode_to_meas[:, :nmodes].T,
+        )
+        self.update_array(name="meas_to_mode", array=meas_to_mode)
+
+    def compute_experimental_control_matrix(
+        self,
+        *,
+        thresh: float,
+        alpha: float = ALPHA,
+        nmodes: Optional[int] = None,
+    ):
+        # measured modal imat
+        mode_to_meas = self.read_array(name="mode_to_meas")
+        # ideal reference intensity
+        meas_offset_1 = self.read_array(name="meas_offset_1").flatten()
+        ref_intensity = -meas_offset_1
+        # we may want to start with a histogram of meas_offset_1
+        # to determine thresh
+
+        import matplotlib.pyplot as plt
+        plt.hist(ref_intensity.flatten(), bins=100)
+        plt.show()
+
+        # set all measurements that belong to dim pixels to zero:
+        mode_to_meas_filt = mode_to_meas.copy()
+        mode_to_meas_filt[ref_intensity < thresh, :] = 0.0
+        # import matplotlib.pyplot as plt
+        # plt.plot(ref_intensity)
+        # plt.show()
+        fig = pca.pca(
+            d=mode_to_meas,
+            dtd=mode_to_meas_filt.T @ mode_to_meas_filt
+            + 3e-3 * np.eye(mode_to_meas_filt.shape[1]),
+            plot_lim=12,
+        )
+        # fig = pca.pca(
+        #     d=mode_to_meas,
+        #     dtd=mode_to_meas.T @ mode_to_meas,
+        #     plot_lim=12,
+        # )
+        fig.savefig("test_pca.png")
+        ### Invert mode_to_slope to build slope_to_mode reconstructor
+        if nmodes is None:
+            nmodes = N_MODES
+        meas_to_mode = np.zeros((N_MODES, N_PIXELS), dtype=DTYPE)
+        meas_to_mode[:nmodes, :] = np.linalg.solve(
+            mode_to_meas_filt[:, :nmodes].T @ mode_to_meas_filt[:, :nmodes]
+            + alpha * np.eye(nmodes),
+            mode_to_meas_filt[:, :nmodes].T,
         )
         self.update_array(name="meas_to_mode", array=meas_to_mode)
 
@@ -689,6 +741,32 @@ def status(ctx: Context):
     beams: List[Beam] = ctx.obj["beams"]
     for beam in beams:
         beam.print_status()
+
+
+@main.command(help="experimental controller")
+@click.option(
+    "--alpha",
+    type=float,
+    default=ALPHA,
+    help="regularisation parameter for matrix inversion",
+)
+@click.option(
+    "--thresh",
+    type=float,
+    help="cutoff threshold for reference intensities to be used in cmat",
+    required=True,
+)
+@click.option(
+    "--nmodes",
+    type=int,
+    default=N_MODES,
+    help="number of modes to invert, should be at most nmodes used in imat",
+)
+@click.pass_context
+def cprime(ctx: Context, alpha: float, nmodes: int, thresh: float):
+    beams: List[Beam] = ctx.obj["beams"]
+    for beam in beams:
+        beam.compute_experimental_control_matrix(thresh=thresh, nmodes=nmodes, alpha=alpha)
 
 
 if __name__ == "__main__":

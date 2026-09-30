@@ -15,12 +15,10 @@ BEAM = int(os.environ.get("BEAM", 1))
 PLOT_LIM = int(os.environ.get("PLOT_LIM", 8))
 
 
-def main(beam: int, baldr_root: str, plot_lim: int) -> Figure:
-    imat: NDArray = fits.getdata(baldr_root + f"/B{beam}_mode_to_meas.fits")  # type: ignore
-    n_meas, n_mode = imat.shape
-    n_mode_sqrt: int = int(np.ceil(n_mode**0.5))
+def pca(*, d: NDArray, dtd: NDArray, plot_lim: int) -> Figure:
+    n_meas, _n_mode = d.shape
     n_meas_sqrt: int = int(np.ceil(n_meas**0.5))
-    eigval, eigvec = np.linalg.eigh(imat.T @ imat)
+    eigval, eigvec = np.linalg.eigh(dtd)
     eigval = eigval[::-1]
     eigvec = eigvec[:, ::-1]
     if plot_lim > 0:
@@ -31,11 +29,17 @@ def main(beam: int, baldr_root: str, plot_lim: int) -> Figure:
     axs = axs.flatten()
     for i in range(n_plot_sqrt**2):
         ax = axs[i]
-        ax.imshow((imat @ eigvec[:, i]).reshape([n_meas_sqrt, n_meas_sqrt]))
+        ax.imshow((d @ eigvec[:, i]).reshape([n_meas_sqrt, n_meas_sqrt]))
         ax.set_title(f"{eigval[i]:0.2e}")
         ax.set_xticks([])
         ax.set_yticks([])
     plt.tight_layout()
+    return fig
+
+
+def main(beam: int, baldr_root: str, plot_lim: int) -> Figure:
+    imat: NDArray = fits.getdata(baldr_root + f"/B{beam}_mode_to_meas.fits")  # type: ignore
+    fig = pca(d=imat, dtd=imat.T @ imat, plot_lim=plot_lim)
     return fig
 
 

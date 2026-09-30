@@ -131,8 +131,8 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     mb = FourierModified()
-    modes = mb.modes_on_unit_disk(nsamplex=12, nmodes=100)
-    fig, ax = plt.subplots(10, 10, figsize=[10, 10])
+    modes = mb.modes_on_unit_disk(nsamplex=12, nmodes=144)
+    fig, ax = plt.subplots(12, 12, figsize=[10, 10])
     for i, a in enumerate(ax.flatten()):
         a.imshow(modes[:, i].reshape([12, 12]))
         a.set_xticks([])
