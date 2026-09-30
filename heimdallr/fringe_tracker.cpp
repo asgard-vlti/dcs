@@ -1,4 +1,6 @@
 #include "heimdallr.h"
+#include "predictive_control.hpp"
+#include <random>
 //#define PRINT_TIMING
 //#define PRINT_TIMING_ALL
 //#define DEBUG
@@ -328,6 +330,10 @@ void fringe_tracker(){
     Eigen::Matrix<double, N_TEL, N_TEL> cov_pd_tel;
     Eigen::Vector4d pd_gain_scale = Eigen::Vector4d::Ones();
     unsigned long int last_gd_jump=0;
+    heimdallr_ddscp::DdscpServo ddscp;
+    std::mt19937_64 exploration_generator(std::random_device{}());
+    std::normal_distribution<double> standard_normal(0.0, 1.0);
+    int previous_servo_mode = SERVO_OFF;
 
     long x_px, y_px, stride;
     initialise_baselines();
@@ -335,21 +341,26 @@ void fringe_tracker(){
     set_dm_piston(Eigen::Vector4d::Zero()); 
     ft_cnt = K1ft->cnt;
     while(settings.s.servo_mode != SERVO_STOP){
+        bool ddscp_frame_gap = false;
         cnt_since_init++; //This should "never" wrap around, as a long int is big.
         // See if there was a semaphore signalled for the next frame to be ready in K1 and K2
         sem_wait(&K1ft->sem_new_frame);
         sem_wait(&K2ft->sem_new_frame);
-        if ((K1ft->bad_frame) || (K1ft->bad_frame)) {
+        if ((K1ft->bad_frame) || (K2ft->bad_frame)) {
+            ddscp.invalidate();
             ft_cnt++;
             continue;
         }
         // If we are here, then a new frame is available in both K1 and K2. 
         // Check that there has not been a counting error.
         if(K1ft->cnt == ft_cnt || K2ft->cnt == ft_cnt){
+            ddscp.invalidate();
             info("FT: Semaphore signalled but no new frame");
             nerrors++;
             continue;
         }
+        ddscp_frame_gap = (K1ft->cnt != ft_cnt + 1) ||
+                          (K2ft->cnt != ft_cnt + 1);
         // Check for missed frames
         if (K1ft->cnt > ft_cnt+2 || K2ft->cnt > ft_cnt+2){
             warn("Missed FT frames! K1: %lu K2: %lu FT: %lu",
@@ -362,6 +373,12 @@ void fringe_tracker(){
             nerrors++;
         }
         ft_cnt++;
+        const int servo_mode = settings.s.servo_mode;
+        if (servo_mode != previous_servo_mode) {
+            if (servo_mode == SERVO_DDSCP) ddscp.enter();
+            else ddscp.invalidate();
+            previous_servo_mode = servo_mode;
+        }
 #ifdef PRINT_TIMING
         timespec then;
         clock_gettime(CLOCK_REALTIME, &then);
@@ -417,7 +434,7 @@ void fringe_tracker(){
             // can reverse this. It is difficult with 4 telescopes!
             // The phase delay is in units of the K1 central wavelength. 
             // For now... also have this feature with the Lacour algorithm.
-            if ((settings.s.servo_mode == SERVO_FIGHT) || (settings.s.servo_mode == SERVO_SIMPLE)){
+            if ((servo_mode == SERVO_FIGHT) || (servo_mode == SERVO_SIMPLE)){
                 // In fight mode, we just use the instantaneous phase, not the filtered phase.
                 // This is useful for debugging, but not for real operation.
                 // The 1.5 is a John Monnier hack, due to fmod's treatment of negative numbers.
@@ -477,7 +494,7 @@ void fringe_tracker(){
 #ifdef PRINT_TIMING_ALL
     clock_gettime(CLOCK_REALTIME, &then_all);
 #endif
-        if (settings.s.servo_mode == SERVO_SIMPLE){
+        if (servo_mode == SERVO_SIMPLE){
             pd_filtered += gd_filtered * settings.s.gd_gain;
         } else pd_filtered = filter6(I6pd, baselines.pd, Wpd);
 #ifdef PRINT_TIMING_ALL
@@ -562,7 +579,44 @@ void fringe_tracker(){
             }
         }
 
-        if (settings.s.servo_mode == SERVO_SIMPLE){
+        const double wavelength_K1 = config["wave"]["K1"].value_or(2.05);
+        const bool finite_servo_input = control_a.pd.allFinite() &&
+                                        control_u.dm_piston.allFinite() &&
+                                        std::isfinite(wavelength_K1) &&
+                                        wavelength_K1 > 0.0;
+        bool use_ddscp = false;
+        if (servo_mode == SERVO_DDSCP) {
+            bool phase_connected = false;
+            if (Wpd.allFinite()) {
+                Eigen::SelfAdjointEigenSolver<Eigen::Matrix4d> phase_solver(
+                    M_lacour.transpose() * Wpd.asDiagonal() * M_lacour);
+                phase_connected = phase_solver.eigenvalues().allFinite() &&
+                                  phase_solver.eigenvalues()(1) > 1e-6;
+            }
+            use_ddscp = !ddscp_frame_gap && control_u.fringe_found &&
+                        control_u.beams_active.minCoeff() > 0.5 &&
+                        control_u.search.squaredNorm() == 0.0 &&
+                        control_u.test_n == 0 && phase_connected &&
+                        finite_servo_input &&
+                        (last_gd_jump == 0 || cnt_since_init > last_gd_jump + 3);
+            if (use_ddscp) {
+                heimdallr_ddscp::Modes draw =
+                    heimdallr_ddscp::Modes::Zero();
+                if (ddscp.exploration_frames() < 500) {
+                    for (int i = 0; i < 3; ++i) {
+                        draw(i) = standard_normal(exploration_generator);
+                    }
+                }
+                const Eigen::Vector4d command = ddscp.propose(
+                    control_a.pd, control_u.dm_piston, wavelength_K1,
+                    OPD_PER_DM_UNIT, MAX_DM_PISTON, draw);
+                if (command.allFinite()) control_u.dm_piston = command;
+                else use_ddscp = false;
+            }
+            if (!use_ddscp) ddscp.invalidate();
+        }
+
+        if (servo_mode == SERVO_SIMPLE){
            // Simple integrator, no fancy stuff. The group delay is added to the phase delay earlier.
             control_u.dm_piston += settings.s.kp * control_a.pd * config["wave"]["K1"].value_or(2.05)/OPD_PER_DM_UNIT;
             // Center the DM piston.
@@ -571,7 +625,7 @@ void fringe_tracker(){
             control_u.dm_piston = control_u.dm_piston.cwiseMin(MAX_DM_PISTON);
             control_u.dm_piston = control_u.dm_piston.cwiseMax(-MAX_DM_PISTON);
         }
-        if (settings.s.servo_mode==SERVO_FIGHT){
+        if (servo_mode==SERVO_FIGHT){
             // Compute the piezo control signal.
             control_u.dm_piston += (settings.s.kp * pd_gain_scale.asDiagonal() * control_a.pd +
                 settings.s.gd_gain * control_a.gd) * config["wave"]["K1"].value_or(2.05)/OPD_PER_DM_UNIT;
@@ -581,9 +635,13 @@ void fringe_tracker(){
             control_u.dm_piston = control_u.dm_piston.cwiseMin(MAX_DM_PISTON);
             control_u.dm_piston = control_u.dm_piston.cwiseMax(-MAX_DM_PISTON);
 
-        } else if (settings.s.servo_mode == SERVO_LACOUR){
+        } else if (servo_mode == SERVO_LACOUR ||
+                   (servo_mode == SERVO_DDSCP && !use_ddscp)){
             // Compute the piezo control signal from the phase delay.
-            if ((cnt_since_init == last_gd_jump+1) || (cnt_since_init > last_gd_jump + 3)){
+            if (servo_mode == SERVO_DDSCP && !finite_servo_input) {
+                control_u.dm_piston.setZero();
+            } else if ((cnt_since_init == last_gd_jump+1) ||
+                       (cnt_since_init > last_gd_jump + 3)){
 	        control_u.dm_piston += settings.s.kp * control_a.pd * config["wave"]["K1"].value_or(2.05)/OPD_PER_DM_UNIT;
             // Make sure that we only move the DM for for the active beams.
             control_u.dm_piston = control_u.beams_active.asDiagonal() * control_u.dm_piston;
@@ -605,6 +663,17 @@ void fringe_tracker(){
         }
         // Apply the signal to the DM! 
         set_dm_piston(control_u.dm_piston);
+        if (servo_mode == SERVO_DDSCP && use_ddscp) {
+            if (control_u.test_n == 0 &&
+                control_u.beams_active.minCoeff() > 0.5 &&
+                control_u.search.squaredNorm() == 0.0) {
+                // The active, search-free path wrote this clipped command unchanged.
+                ddscp.update(control_u.dm_piston, wavelength_K1,
+                             OPD_PER_DM_UNIT);
+            } else {
+                ddscp.invalidate();
+            }
+        }
 
 #ifdef PRINT_TIMING
         clock_gettime(CLOCK_REALTIME, &now);
@@ -730,10 +799,12 @@ void fringe_tracker(){
                 control_u.test_ix = (control_u.test_ix + 1) % 2;
             }
 
-            if ((settings.s.offload_mode == OFFLOAD_NESTED) && (settings.s.servo_mode!=SERVO_OFF)){
+            if ((settings.s.offload_mode == OFFLOAD_NESTED) && (servo_mode != SERVO_OFF)){
             	// Add to the delay line offload.
         	    control_u.dl_offload = 0.3*control_u.dm_piston * OPD_PER_DM_UNIT;
-            	if ((settings.s.servo_mode == SERVO_LACOUR) && (cnt_since_init - last_gd_jump > baselines.n_gd_boxcar)){
+                if (((servo_mode == SERVO_LACOUR) ||
+                     (servo_mode == SERVO_DDSCP)) &&
+                    (cnt_since_init - last_gd_jump > baselines.n_gd_boxcar)){
                     // Use the group delay to make full fringe jumps, only if there has been at least
                     // baselines.n_gd_boxcar frames since initialisation or the last jump.
             	    for (int i=0; i<N_TEL; i++){

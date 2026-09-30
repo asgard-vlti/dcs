@@ -36,6 +36,7 @@
 #define SERVO_STOP 2
 #define SERVO_SIMPLE 3
 #define SERVO_OFF 4
+#define SERVO_DDSCP 5
 
 // Slow (offload) servo type
 #define OFFLOAD_NESTED 0
@@ -370,4 +371,3 @@ void add_to_delay_lines(Eigen::Vector4d dl);
 void set_delay_line(int dl, double value);
 void dl_offload();
 void start_search(uint search_dl_in, double start, double stop, double rate, uint dt_ms, double threshold);
-
