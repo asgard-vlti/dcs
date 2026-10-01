@@ -45,11 +45,13 @@
 // NOTE ON FILTER LEN
 // In order to read the matrices in RowMajor (so that they have intuitive
 // parseing from numpy and fits) we need the matrices with filter_len for an
-// axis to have the filter_len as the first axis (number or rows), since
+// axis to have the filter_len as the first axis (number or rows), since 
 // otherwise we might set filter_len to 1 and then request a row-major matrix
 // with only 1 column which is a compile-time error in Eigen.
 #define N_ACTUATORS 144 // Including corners
 #define DIST_LEN 10      // Length of disturbance sequence (periodic)
+
+#define COM_BUFFER_LEN 4 // used for POLC computations, should be ceil(max_delay)+1
 
 //----- Structures and typedefs------
 
@@ -68,13 +70,17 @@ struct ControlVariables
     Eigen::Matrix<double, N_PIXELS, 1> meas_raw;
     Eigen::Matrix<double, N_PIXELS, 1> meas_norm;
     Eigen::Matrix<double, N_PIXELS, 1> meas_cl;
+    Eigen::Matrix<double, N_PIXELS, 1> meas_feedback;
+    Eigen::Matrix<double, N_PIXELS, 1> meas_pol;
     Eigen::Matrix<double, N_MODES, 1> mode_raw;
     Eigen::Matrix<double, N_MODES, 1> mode_filt;
     Eigen::Matrix<double, FILTER_LEN, N_MODES, Eigen::RowMajor> mode_raw_buffer;
     Eigen::Matrix<double, FILTER_LEN, N_MODES, Eigen::RowMajor> mode_filt_buffer;
     Eigen::Matrix<double, N_ACTUATORS, 1> com_raw;
     Eigen::Matrix<double, N_ACTUATORS, 1> com_clean;
+    Eigen::Matrix<double, N_ACTUATORS, 1> com_feedback;
     Eigen::Matrix<double, N_ACTUATORS, 1> com_write;
+    Eigen::Matrix<double, N_ACTUATORS, COM_BUFFER_LEN, Eigen::RowMajor> com_fb_buffer;
 
     // dynamically configurable variables
     Eigen::Matrix<double, N_PIXELS, 1> meas_offset_0;
@@ -93,6 +99,9 @@ struct ControlVariables
 #if DIST_LEN > 0
     Eigen::Matrix<double, N_ACTUATORS, DIST_LEN, Eigen::RowMajor> com_dist_buffer;
 #endif
+    Eigen::Matrix<double, N_ACTUATORS, 1> com_offset;
+    double delay;
+    Eigen::Matrix<double, N_PIXELS, N_ACTUATORS, Eigen::RowMajor> com_to_meas;
 };
 
 //-------Commander structs-------------
@@ -230,8 +239,10 @@ void reconstruct_modes();
 void filter_modes(int servo_mode);
 void project_com();
 void inject_disturb(int servo_mode);
+void inject_dm_signal();
 void clip_com();
 void write_shm();
+void remove_offset();
 
 #define DEF_READ_CTRL_PARAM(PARAM_NAME, DESCRIPTION, NROWS, NCOLS, DATATYPE) \
     Result read_##PARAM_NAME()                                               \

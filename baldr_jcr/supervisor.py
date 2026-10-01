@@ -52,7 +52,6 @@ DEFAULT_HOST = os.environ.get("BALDR_HOST", default="mimir")
 # Default values, will be overridden by CLI arguments
 POKE: float = 0.05
 ALPHA: float = 1e-3
-# MEAS_SCALE: float = 1 / 1000
 CNT_MIN: int = 3  # minimum number of measurements to wait after applying poke
 NAVG: int = 5  # number of frames to average for a poke
 
@@ -76,6 +75,9 @@ ARRAY_NAMES = [
     "mode_to_com",
     "com_max",
     "com_min",
+    "com_offset",
+    "com_to_meas",
+    "mode_to_meas",
 ]
 if DIST_LEN > 0:
     ARRAY_NAMES += ["com_dist_buffer"]
@@ -95,6 +97,9 @@ ARRAY_SHAPES = {
     "com_max": (N_ACTUATORS,),
     "com_min": (N_ACTUATORS,),
     "com_dist_buffer": (N_ACTUATORS, DIST_LEN),
+    "com_offset": (N_ACTUATORS,),
+    "com_to_meas": (N_PIXELS, N_ACTUATORS),
+    "mode_to_meas": (N_PIXELS, N_MODES),
 }
 
 MODAL_BASIS = modal_basis.FourierModified()
@@ -121,6 +126,9 @@ INIT_VAL = {
     "com_max": 0.5,
     "com_min": -0.5,
     "com_dist_buffer": 0.5,  # NOTE: this is to account for the 0.5 offset in cmds, remove for mimir
+    "com_offset": 0.0,
+    "com_to_meas": 0.0,
+    "mode_to_meas": 0.0,
 }
 # make sure that all named arrays have an entry in this dict:
 for array_name in ARRAY_NAMES:
@@ -337,6 +345,21 @@ class Beam:
         self.update_array(name="filter_coeff_in", array=filter_coeff_in)
         self.update_array(name="filter_coeff_out", array=filter_coeff_out)
 
+    def set_polc_gain(
+        self,
+        *,
+        ewma_gain: float = 0.3,
+    ):
+        # compute filter coeffs from Exponentially weighted moving average gain
+        filter_coeff_in = np.zeros([FILTER_LEN, N_MODES])
+        filter_coeff_out = np.zeros([FILTER_LEN, N_MODES])
+        filter_coeff_in[0, :] = -ewma_gain
+        filter_coeff_out[0, :] = 1 - ewma_gain
+
+        # save coeffs to fits files
+        self.update_array(name="filter_coeff_in", array=filter_coeff_in)
+        self.update_array(name="filter_coeff_out", array=filter_coeff_out)
+
     def flatten_offsets(self):
         array = np.zeros((N_MODES,))
         self.update_array(name="mode_offset", array=array)
@@ -385,12 +408,7 @@ class Beam:
             # inject it to matrix
             mode_to_meas[:, i] = meas
         self.flatten_offsets()
-        # This matrix is manually written, since the RTC doesn't need it so it
-        # doesn't enter the list of "controlled" arrays defined at the start
-        # of this script.
-        fits.writeto(
-            self.file_prefix + "mode_to_meas.fits", mode_to_meas, overwrite=True
-        )
+        self.update_array(name="mode_to_meas", array=mode_to_meas)
         fig = pca.main(self.beam_id, baldr_root=self.baldr_root, plot_lim=8)
         fig.savefig(self.file_prefix + "pca.png")
         return (mode_to_meas, -ref_meas)
@@ -438,6 +456,7 @@ class Beam:
         *,
         alpha: float = ALPHA,
         nmodes: Optional[int] = None,
+        scheme: str = "leaky",
     ):
         # measured modal imat
         mode_to_meas = self.read_array(name="mode_to_meas")
@@ -452,6 +471,16 @@ class Beam:
             mode_to_meas[:, :nmodes].T,
         )
         self.update_array(name="meas_to_mode", array=meas_to_mode)
+        
+        if scheme == "leaky":
+            # wipe com_to_meas
+            pass
+        elif scheme == "polc":
+            # save com_to_meas
+            pass
+        else:
+            # raise error
+            pass
 
     def compute_experimental_control_matrix(
         self,
@@ -717,12 +746,22 @@ def imat(ctx: Context, poke: float, nmodes: int, navg: int):
     default=N_MODES,
     help="number of modes to invert, should be at most nmodes used in imat",
 )
+@click.option(
+    "--scheme",
+    type=str,
+    default="leaky",
+    help="Which control scheme to use (leaky or polc)",
+)
 @click.pass_context
-def cmat(ctx: Context, alpha: float, nmodes: int):
+def cmat(ctx: Context, alpha: float, nmodes: int, scheme: str):
     beams: List[Beam] = ctx.obj["beams"]
-    for beam in beams:
-        beam.compute_control_matrix(nmodes=nmodes, alpha=alpha)
-
+    if scheme == "leaky":    
+        for beam in beams:
+            beam.compute_control_matrix(nmodes=nmodes, alpha=alpha, scheme="leaky")
+    elif scheme == "polc":
+        for beam in beams:
+            beam.compute_control_matrix(nmodes=nmodes, alpha=alpha, scheme="polc")
+        
 
 @main.command(help="measure a reference image for the control pipeline")
 @click.option("--sky", flag_value=True, help="measuring sky reference")

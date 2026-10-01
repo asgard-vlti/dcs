@@ -95,6 +95,8 @@ DEF_READ_CTRL_PARAM(mode_min, minimum mode values(used in antiwinup), N_MODES, 1
 DEF_READ_CTRL_PARAM(mode_to_com, modal projection matrix, N_ACTUATORS, N_MODES, DOUBLE)
 DEF_READ_CTRL_PARAM(com_max, maximum command values(used in clipping), N_ACTUATORS, 1, DOUBLE)
 DEF_READ_CTRL_PARAM(com_min, minimum command values(used in clipping), N_ACTUATORS, 1, DOUBLE)
+DEF_READ_CTRL_PARAM(com_offset, command offset vector for feedback loop, N_ACTUATORS, 1, DOUBLE)
+DEF_READ_CTRL_PARAM(com_to_meas, interaction matrix, N_PIXELS, N_ACTUATORS, DOUBLE)
 #if DIST_LEN > 0
 DEF_READ_CTRL_PARAM(com_dist_buffer, command disturbance buffer, N_ACTUATORS, DIST_LEN, DOUBLE)
 #endif
@@ -105,11 +107,15 @@ Result reset_ctrl()
   ctrl.meas_raw.setZero();
   ctrl.meas_norm.setZero();
   ctrl.meas_cl.setZero();
+  ctrl.meas_pol.setZero();
   ctrl.mode_raw.setZero();
   ctrl.mode_filt.setZero();
   ctrl.com_raw.setZero();
   ctrl.com_clean.setZero();
   ctrl.com_write.setZero();
+  ctrl.com_feedback.setZero();
+  ctrl.meas_feedback.setZero();
+  ctrl.com_fb_buffer.setZero();
   ctrl.mode_raw_buffer.setZero();
   ctrl.mode_filt_buffer.setZero();
   ctrl.strehl_est = 0.5; // reset to a safe value.
@@ -255,6 +261,8 @@ COMMANDER_REGISTER(m)
   m.def("mode_to_com", read_mode_to_com, "Read mode_to_com from file", "filename"_arg = "./baldr_jcr/mode_to_com.fits");
   m.def("com_max", read_com_max, "Read com_max from file", "filename"_arg = "./baldr_jcr/com_max.fits");
   m.def("com_min", read_com_min, "Read com_min from file", "filename"_arg = "./baldr_jcr/com_min.fits");
+  m.def("com_offset", read_com_offset, "Read com_offset from file", "filename"_arg = "./baldr_jcr/com_offset.fits");
+  m.def("com_to_meas", read_com_to_meas, "Read com_to_meas from file", "filename"_arg = "./baldr_jcr/com_to_meas.fits");
 #if DIST_LEN > 0
   m.def("com_dist_buffer", read_com_dist_buffer, "Read com_dist_buffer from file", "filename"_arg = "./baldr_jcr/com_dist_buffer.fits");
 #endif
@@ -319,9 +327,13 @@ int main(int argc, char *argv[])
   LOAD_FROM_FILE(mode_to_com)
   LOAD_FROM_FILE(com_max)
   LOAD_FROM_FILE(com_min)
+  LOAD_FROM_FILE(com_offset)
+  LOAD_FROM_FILE(com_to_meas)
 #if DIST_LEN > 0
   LOAD_FROM_FILE(com_dist_buffer)
 #endif
+
+  ctrl.delay = config["delay"].value_or(1.8);
 
   errno_t err;
   bool anyerrors = false;
