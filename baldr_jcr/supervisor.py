@@ -50,8 +50,8 @@ BEAM_TO_PORT = {
 DEFAULT_HOST = os.environ.get("BALDR_HOST", default="mimir")
 
 # Default values, will be overridden by CLI arguments
-POKE: float = 0.02
-ALPHA: float = 1.0
+POKE: float = 0.05
+ALPHA: float = 1e-3
 # MEAS_SCALE: float = 1 / 1000
 CNT_MIN: int = 3  # minimum number of measurements to wait after applying poke
 NAVG: int = 5  # number of frames to average for a poke
@@ -120,7 +120,7 @@ INIT_VAL = {
     "mode_to_com": 0.0,
     "com_max": 0.5,
     "com_min": -0.5,
-    "com_dist_buffer": 0.0,
+    "com_dist_buffer": 0.5,  # NOTE: this is to account for the 0.5 offset in cmds, remove for mimir
 }
 # make sure that all named arrays have an entry in this dict:
 for array_name in ARRAY_NAMES:
@@ -456,25 +456,32 @@ class Beam:
     def compute_experimental_control_matrix(
         self,
         *,
-        thresh: float,
+        flux_thresh: float,
+        resp_thresh: float,
+        interp: float,
         alpha: float = ALPHA,
         nmodes: Optional[int] = None,
     ):
         # measured modal imat
         mode_to_meas = self.read_array(name="mode_to_meas")
         # ideal reference intensity
+        meas_offset_0 = self.read_array(name="meas_offset_0").flatten()
         meas_offset_1 = self.read_array(name="meas_offset_1").flatten()
-        ref_intensity = -meas_offset_1
+        ref_intensity = -((1 - interp) * meas_offset_0 + interp * meas_offset_1)
         # we may want to start with a histogram of meas_offset_1
         # to determine thresh
 
-        import matplotlib.pyplot as plt
-        plt.hist(ref_intensity.flatten(), bins=100)
-        plt.show()
+        # import matplotlib.pyplot as plt
+
+        # plt.hist(ref_intensity.flatten(), bins=100)
+        # plt.show()
 
         # set all measurements that belong to dim pixels to zero:
         mode_to_meas_filt = mode_to_meas.copy()
-        mode_to_meas_filt[ref_intensity < thresh, :] = 0.0
+        mode_to_meas_filt[ref_intensity < flux_thresh, :] = 0.0
+
+        resp_rms = (mode_to_meas_filt**2).mean(axis=1) ** 0.5
+        mode_to_meas_filt[resp_rms < resp_rms.max() * resp_thresh, :] = 0.0
         # import matplotlib.pyplot as plt
         # plt.plot(ref_intensity)
         # plt.show()
@@ -751,9 +758,15 @@ def status(ctx: Context):
     help="regularisation parameter for matrix inversion",
 )
 @click.option(
-    "--thresh",
+    "--flux-thresh",
     type=float,
     help="cutoff threshold for reference intensities to be used in cmat",
+    required=True,
+)
+@click.option(
+    "--resp-thresh",
+    type=float,
+    help="relative response threshold for a given pixel required to be used in cmat (0->1)",
     required=True,
 )
 @click.option(
@@ -762,11 +775,30 @@ def status(ctx: Context):
     default=N_MODES,
     help="number of modes to invert, should be at most nmodes used in imat",
 )
+@click.option(
+    "--interp",
+    type=float,
+    help="interpolation value to build cmat around (used for flux lookup)",
+    required=True,
+)
 @click.pass_context
-def cprime(ctx: Context, alpha: float, nmodes: int, thresh: float):
+def cprime(
+    ctx: Context,
+    alpha: float,
+    nmodes: int,
+    flux_thresh: float,
+    resp_thresh: float,
+    interp: float,
+):
     beams: List[Beam] = ctx.obj["beams"]
     for beam in beams:
-        beam.compute_experimental_control_matrix(thresh=thresh, nmodes=nmodes, alpha=alpha)
+        beam.compute_experimental_control_matrix(
+            flux_thresh=flux_thresh,
+            resp_thresh=resp_thresh,
+            nmodes=nmodes,
+            alpha=alpha,
+            interp=interp,
+        )
 
 
 if __name__ == "__main__":
