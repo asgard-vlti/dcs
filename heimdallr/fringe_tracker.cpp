@@ -125,8 +125,36 @@ void end_modulation() {
 
 void set_dm_piston(Eigen::Vector4d dm_piston){
 #ifdef SIMULATE
-    return;
-#endif
+    static IMAGE piston_cmd = {};
+    static bool piston_cmd_open = false;
+    static bool piston_cmd_error_logged = false;
+    if (!piston_cmd_open) {
+        if (ImageStreamIO_openIm(&piston_cmd, "piston_cmd") != IMAGESTREAMIO_SUCCESS) {
+            if (!piston_cmd_error_logged) {
+                error("Failed to open simulator piston_cmd image stream.");
+                piston_cmd_error_logged = true;
+            }
+            return;
+        }
+        if (piston_cmd.md->naxis != 2 ||
+            piston_cmd.md->size[0] * piston_cmd.md->size[1] != N_TEL ||
+            piston_cmd.md->datatype != _DATATYPE_FLOAT) {
+            error("Simulator piston_cmd must be a 4-element float32 image stream.");
+            ImageStreamIO_closeIm(&piston_cmd);
+            return;
+        }
+        piston_cmd_open = true;
+    }
+
+    piston_cmd.md->write = 1;
+    for (int i = 0; i < N_TEL; i++) {
+        // The simulator input is OPD in metres; DM piston units are microns of OPD.
+        piston_cmd.array.F[i] = static_cast<float>(dm_piston(i) * OPD_PER_DM_UNIT * 1e-6);
+    }
+    piston_cmd.md->write = 0;
+    piston_cmd.md->cnt0++;
+    ImageStreamIO_sempost(&piston_cmd, -1);
+#else
     // Make sure that we only move the DM for for the active beams.
     control_u.dm_piston = control_u.beams_active.asDiagonal() * control_u.dm_piston;       	
     // This function sets the DM piston to the given value.
@@ -140,6 +168,7 @@ void set_dm_piston(Eigen::Vector4d dm_piston){
         }
         ImageStreamIO_sempost(&master_DMs[i], 1);
     }
+#endif
 }
 
 // Initialise variables assocated with baselines, including 

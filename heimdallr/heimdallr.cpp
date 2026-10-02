@@ -749,7 +749,12 @@ int main(int argc, char* argv[]) {
     }
 
     // Exit immediately if another instance of this server is running.
-    if (!acquire_single_instance_lock("/tmp/asg.heimdallr.lock")) 
+#ifdef SIMULATE
+    const char *lock_path = "/tmp/asg.heimdallr.sim.lock";
+#else
+    const char *lock_path = "/tmp/asg.heimdallr.lock";
+#endif
+    if (!acquire_single_instance_lock(lock_path))
         return 1;
     
 
