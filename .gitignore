@@ -54,6 +54,7 @@ result
 
 # build folder
 build/
+build-heimdallr/
 
 # mac garbage
 *.DS_Store
@@ -75,6 +76,7 @@ calibration_frames/products/
 #Binaries
 baldr/baldr
 heimdallr/heimdallr
+heimdallr/heimdallr_sim
 libImageStreamIO/imft
 baldr_tt/baldr_tt
 heimdallr/heimdallr.12apr

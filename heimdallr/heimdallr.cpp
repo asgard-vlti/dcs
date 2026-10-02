@@ -792,9 +792,15 @@ int main(int argc, char* argv[]) {
         quit(1);
     }
 #else
-    ImageStreamIO_openIm(&K1, "shei_k1");
-    ImageStreamIO_openIm(&K2, "shei_k2");
-     info("Simulation mode!");
+    if (ImageStreamIO_openIm(&K1, "hei_k1") != IMAGESTREAMIO_SUCCESS) {
+        error("Failed to open simulated K1 image stream");
+        quit(1);
+    }
+    if (ImageStreamIO_openIm(&K2, "hei_k2") != IMAGESTREAMIO_SUCCESS) {
+        error("Failed to open simulated K2 image stream");
+        quit(1);
+    }
+    info("Simulation mode!");
    
 #endif
     K1ft = new ForwardFt(&K1);
@@ -824,13 +830,17 @@ int main(int argc, char* argv[]) {
     std::thread offloading_thread(dl_offload);
 
     // Start camera status polling in a dedicated client thread.
+#ifndef SIMULATE
     start_camera_client();
+#endif
 
     // Initialize the commander server and run it
     commander::Server s(argc, argv);
     s.run();
 
+#ifndef SIMULATE
     stop_camera_client();
+#endif
     
     keep_offloading=false;
     sem_post(&sem_offload);
