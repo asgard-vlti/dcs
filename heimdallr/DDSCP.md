@@ -11,10 +11,10 @@ a test pattern selects the existing Lacour command path and resets the learned
 model. Exploration does not restart after a temporary loss of lock. The model
 resumes from the current DM command when four-beam tracking returns.
 
-Run numerical parity tests from `toy-interferometer`:
+Run numerical parity tests from the `dcs` directory:
 
 ```sh
-uv run --no-sync python -m unittest discover -s ../dcs/heimdallr/tests -p test_predictive_parity.py -q
+python -m unittest discover -s heimdallr/tests -p test_predictive_parity.py -q
 ```
 
 If the toy checkout is elsewhere, set `HEIMDALLR_TOY_DIR` to its directory
