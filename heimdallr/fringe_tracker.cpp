@@ -1,5 +1,6 @@
 #include "heimdallr.h"
 #include "predictive_control.hpp"
+#include <chrono>
 #include <random>
 //#define PRINT_TIMING
 //#define PRINT_TIMING_ALL
@@ -363,6 +364,26 @@ void fringe_tracker(){
     std::mt19937_64 exploration_generator(std::random_device{}());
     std::normal_distribution<double> standard_normal(0.0, 1.0);
     int previous_servo_mode = SERVO_OFF;
+#ifdef SIMULATE
+    bool camera_counter_offset_set = false;
+    long unsigned int k1_counter_origin = 0;
+    long unsigned int k2_counter_origin = 0;
+#endif
+    auto next_ddscp_wait_log = std::chrono::steady_clock::time_point{};
+    auto next_ddscp_active_log = std::chrono::steady_clock::time_point{};
+    auto report_ddscp_wait = [&](const char *reason) {
+        if (settings.s.servo_mode != SERVO_DDSCP) return;
+        const auto now = std::chrono::steady_clock::now();
+        if (now < next_ddscp_wait_log) return;
+        const int updates = ddscp.controller().iterations();
+        if (updates > 0) {
+            info("DDSCP paused: %s; resetting fit after %d valid updates",
+                 reason, updates);
+        } else {
+            info("DDSCP waiting: %s", reason);
+        }
+        next_ddscp_wait_log = now + std::chrono::seconds(1);
+    };
 
     long x_px, y_px, stride;
     initialise_baselines();
@@ -376,36 +397,59 @@ void fringe_tracker(){
         sem_wait(&K1ft->sem_new_frame);
         sem_wait(&K2ft->sem_new_frame);
         if ((K1ft->bad_frame) || (K2ft->bad_frame)) {
+            report_ddscp_wait("bad camera frame");
             ddscp.invalidate();
             ft_cnt++;
             continue;
         }
+        const auto k1_cnt = K1ft->cnt;
+        const auto k2_raw_cnt = K2ft->cnt;
+#ifdef SIMULATE
+        // Reused camera streams can retain different counter origins.
+        if (!camera_counter_offset_set) {
+            k1_counter_origin = k1_cnt;
+            k2_counter_origin = k2_raw_cnt;
+            camera_counter_offset_set = true;
+            info("Simulation camera counters aligned: K1=%lu K2=%lu",
+                 k1_counter_origin, k2_counter_origin);
+        }
+        const auto k2_cnt = k2_raw_cnt - k2_counter_origin + k1_counter_origin;
+#else
+        const auto k2_cnt = k2_raw_cnt;
+#endif
         // If we are here, then a new frame is available in both K1 and K2. 
         // Check that there has not been a counting error.
-        if(K1ft->cnt == ft_cnt || K2ft->cnt == ft_cnt){
+        if(k1_cnt == ft_cnt || k2_cnt == ft_cnt){
+            report_ddscp_wait("camera semaphore without a new frame");
             ddscp.invalidate();
             info("FT: Semaphore signalled but no new frame");
             nerrors++;
             continue;
         }
-        ddscp_frame_gap = (K1ft->cnt != ft_cnt + 1) ||
-                          (K2ft->cnt != ft_cnt + 1);
+        ddscp_frame_gap = (k1_cnt != ft_cnt + 1) ||
+                          (k2_cnt != ft_cnt + 1);
         // Check for missed frames
-        if (K1ft->cnt > ft_cnt+2 || K2ft->cnt > ft_cnt+2){
+        if (k1_cnt > ft_cnt+2 || k2_cnt > ft_cnt+2){
             warn("Missed FT frames! K1: %lu K2: %lu FT: %lu",
-                K1ft->cnt, K2ft->cnt, ft_cnt);
+                k1_cnt, k2_cnt, ft_cnt);
             // Catch up!
             while (sem_trywait(&K1ft->sem_new_frame)==0);
             while (sem_trywait(&K2ft->sem_new_frame)==0);
-            if (K1ft->cnt > K2ft->cnt) ft_cnt = K2ft->cnt - 1;
-            else ft_cnt = K1ft->cnt - 1;
+            if (k1_cnt > k2_cnt) ft_cnt = k2_cnt - 1;
+            else ft_cnt = k1_cnt - 1;
             nerrors++;
         }
         ft_cnt++;
         const int servo_mode = settings.s.servo_mode;
         if (servo_mode != previous_servo_mode) {
-            if (servo_mode == SERVO_DDSCP) ddscp.enter();
-            else ddscp.invalidate();
+            if (servo_mode == SERVO_DDSCP) {
+                ddscp.enter();
+                next_ddscp_wait_log = std::chrono::steady_clock::time_point{};
+                next_ddscp_active_log = std::chrono::steady_clock::time_point{};
+                info("DDSCP selected; waiting for valid four-beam tracking");
+            } else {
+                ddscp.invalidate();
+            }
             previous_servo_mode = servo_mode;
         }
 #ifdef PRINT_TIMING
@@ -614,6 +658,7 @@ void fringe_tracker(){
                                         std::isfinite(wavelength_K1) &&
                                         wavelength_K1 > 0.0;
         bool use_ddscp = false;
+        double ddscp_regularization_before = 0.0;
         if (servo_mode == SERVO_DDSCP) {
             bool phase_connected = false;
             if (Wpd.allFinite()) {
@@ -622,12 +667,20 @@ void fringe_tracker(){
                 phase_connected = phase_solver.eigenvalues().allFinite() &&
                                   phase_solver.eigenvalues()(1) > 1e-6;
             }
-            use_ddscp = !ddscp_frame_gap && control_u.fringe_found &&
-                        control_u.beams_active.minCoeff() > 0.5 &&
-                        control_u.search.squaredNorm() == 0.0 &&
-                        control_u.test_n == 0 && phase_connected &&
-                        finite_servo_input &&
-                        (last_gd_jump == 0 || cnt_since_init > last_gd_jump + 3);
+            const char *block_reason = nullptr;
+            if (ddscp_frame_gap) block_reason = "camera frame gap";
+            else if (!control_u.fringe_found) block_reason = "fringes not locked";
+            else if (!(control_u.beams_active.minCoeff() > 0.5))
+                block_reason = "inactive beam";
+            else if (!(control_u.search.squaredNorm() == 0.0))
+                block_reason = "fringe search active";
+            else if (control_u.test_n != 0) block_reason = "DM test pattern active";
+            else if (!phase_connected) block_reason = "phase baselines disconnected";
+            else if (!finite_servo_input) block_reason = "non-finite servo input";
+            else if (last_gd_jump != 0 &&
+                     cnt_since_init <= last_gd_jump + 3)
+                block_reason = "recent group-delay jump";
+            use_ddscp = block_reason == nullptr;
             if (use_ddscp) {
                 heimdallr_ddscp::Modes draw =
                     heimdallr_ddscp::Modes::Zero();
@@ -636,13 +689,20 @@ void fringe_tracker(){
                         draw(i) = standard_normal(exploration_generator);
                     }
                 }
+                ddscp_regularization_before = ddscp.controller().regularization();
                 const Eigen::Vector4d command = ddscp.propose(
                     control_a.pd, control_u.dm_piston, wavelength_K1,
                     OPD_PER_DM_UNIT, MAX_DM_PISTON, draw);
                 if (command.allFinite()) control_u.dm_piston = command;
-                else use_ddscp = false;
+                else {
+                    use_ddscp = false;
+                    block_reason = "non-finite proposed command";
+                }
             }
-            if (!use_ddscp) ddscp.invalidate();
+            if (!use_ddscp) {
+                report_ddscp_wait(block_reason);
+                ddscp.invalidate();
+            }
         }
 
         if (servo_mode == SERVO_SIMPLE){
@@ -699,7 +759,32 @@ void fringe_tracker(){
                 // The active, search-free path wrote this clipped command unchanged.
                 ddscp.update(control_u.dm_piston, wavelength_K1,
                              OPD_PER_DM_UNIT);
+                const int updates = ddscp.controller().iterations();
+                const int exploration = ddscp.exploration_frames();
+                const double regularization = ddscp.controller().regularization();
+                if (updates == 1) {
+                    const auto now = std::chrono::steady_clock::now();
+                    if (now >= next_ddscp_active_log) {
+                        if (exploration <= 500) {
+                            info("DDSCP active: exploration dither on (%d/500), regularization %g -> %g",
+                                 exploration, ddscp_regularization_before,
+                                 regularization);
+                        } else {
+                            info("DDSCP active: exploration complete, regularization %g -> %g",
+                                 ddscp_regularization_before, regularization);
+                        }
+                        next_ddscp_active_log = now + std::chrono::seconds(1);
+                    }
+                } else if (regularization != ddscp_regularization_before) {
+                    info("DDSCP regularization %g -> %g after %d valid updates; exploration %d/500",
+                         ddscp_regularization_before, regularization, updates,
+                         exploration);
+                }
+                if (exploration == 500) {
+                    info("DDSCP exploration complete after 500 valid frames");
+                }
             } else {
+                report_ddscp_wait("DM command path changed before update");
                 ddscp.invalidate();
             }
         }
