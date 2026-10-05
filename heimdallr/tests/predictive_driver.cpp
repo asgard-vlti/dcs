@@ -4,9 +4,9 @@
 #include <iostream>
 #include <string>
 
-using heimdallr_ddscp::Modes;
-using heimdallr_ddscp::PredictiveControl;
-using heimdallr_ddscp::Telescopes;
+using heimdallr_ddspc::Modes;
+using heimdallr_ddspc::PredictiveControl;
+using heimdallr_ddspc::Telescopes;
 
 template <int HistoryLength, int FutureLength>
 int run_controller(int count) {
@@ -62,10 +62,10 @@ int main() {
         std::cin >> wavelength;
         for (int i = 0; i < 4; ++i) std::cin >> phase(i);
         for (int i = 0; i < 4; ++i) std::cin >> dm(i);
-        const Modes error = heimdallr_ddscp::phase_error_modes(phase);
-        const Telescopes command = heimdallr_ddscp::dm_command(error, wavelength);
+        const Modes error = heimdallr_ddspc::phase_error_modes(phase);
+        const Telescopes command = heimdallr_ddspc::dm_command(error, wavelength);
         const Modes feedback =
-            heimdallr_ddscp::applied_command_waves(dm, wavelength);
+            heimdallr_ddspc::applied_command_waves(dm, wavelength);
         std::cout << error.transpose() << '\n';
         std::cout << command.transpose() << '\n';
         std::cout << feedback.transpose() << '\n';
@@ -76,7 +76,7 @@ int main() {
         Telescopes current_dm;
         std::cin >> wavelength >> opd_per_dm_unit >> dm_limit;
         for (int i = 0; i < 4; ++i) std::cin >> current_dm(i);
-        heimdallr_ddscp::DdscpServo servo;
+        heimdallr_ddspc::DdspcServo servo;
         servo.enter();
         const Telescopes phase = Telescopes::Zero();
         const Modes zero = Modes::Zero();
@@ -109,7 +109,7 @@ int main() {
         Telescopes current_dm;
         std::cin >> count >> wavelength >> opd_per_dm_unit >> dm_limit;
         for (int i = 0; i < 4; ++i) std::cin >> current_dm(i);
-        heimdallr_ddscp::DdscpServo servo;
+        heimdallr_ddspc::DdspcServo servo;
         servo.enter();
         for (int i = 0; i < count; ++i) {
             Telescopes phase;

@@ -360,7 +360,7 @@ void fringe_tracker(){
     Eigen::Matrix<double, N_TEL, N_TEL> cov_pd_tel;
     Eigen::Vector4d pd_gain_scale = Eigen::Vector4d::Ones();
     unsigned long int last_gd_jump=0;
-    heimdallr_ddscp::DdscpServo ddscp;
+    heimdallr_ddspc::DdspcServo ddspc;
     std::mt19937_64 exploration_generator(std::random_device{}());
     std::normal_distribution<double> standard_normal(0.0, 1.0);
     int previous_servo_mode = SERVO_OFF;
@@ -369,20 +369,20 @@ void fringe_tracker(){
     long unsigned int k1_counter_origin = 0;
     long unsigned int k2_counter_origin = 0;
 #endif
-    auto next_ddscp_wait_log = std::chrono::steady_clock::time_point{};
-    auto next_ddscp_active_log = std::chrono::steady_clock::time_point{};
-    auto report_ddscp_wait = [&](const char *reason) {
-        if (settings.s.servo_mode != SERVO_DDSCP) return;
+    auto next_ddspc_wait_log = std::chrono::steady_clock::time_point{};
+    auto next_ddspc_active_log = std::chrono::steady_clock::time_point{};
+    auto report_ddspc_wait = [&](const char *reason) {
+        if (settings.s.servo_mode != SERVO_DDSPC) return;
         const auto now = std::chrono::steady_clock::now();
-        if (now < next_ddscp_wait_log) return;
-        const int updates = ddscp.controller().iterations();
+        if (now < next_ddspc_wait_log) return;
+        const int updates = ddspc.controller().iterations();
         if (updates > 0) {
-            info("DDSCP paused: %s; resetting fit after %d valid updates",
+            info("DDSPC paused: %s; resetting fit after %d valid updates",
                  reason, updates);
         } else {
-            info("DDSCP waiting: %s", reason);
+            info("DDSPC waiting: %s", reason);
         }
-        next_ddscp_wait_log = now + std::chrono::seconds(1);
+        next_ddspc_wait_log = now + std::chrono::seconds(1);
     };
 
     long x_px, y_px, stride;
@@ -391,14 +391,14 @@ void fringe_tracker(){
     set_dm_piston(Eigen::Vector4d::Zero()); 
     ft_cnt = K1ft->cnt;
     while(settings.s.servo_mode != SERVO_STOP){
-        bool ddscp_frame_gap = false;
+        bool ddspc_frame_gap = false;
         cnt_since_init++; //This should "never" wrap around, as a long int is big.
         // See if there was a semaphore signalled for the next frame to be ready in K1 and K2
         sem_wait(&K1ft->sem_new_frame);
         sem_wait(&K2ft->sem_new_frame);
         if ((K1ft->bad_frame) || (K2ft->bad_frame)) {
-            report_ddscp_wait("bad camera frame");
-            ddscp.invalidate();
+            report_ddspc_wait("bad camera frame");
+            ddspc.invalidate();
             ft_cnt++;
             continue;
         }
@@ -420,13 +420,13 @@ void fringe_tracker(){
         // If we are here, then a new frame is available in both K1 and K2. 
         // Check that there has not been a counting error.
         if(k1_cnt == ft_cnt || k2_cnt == ft_cnt){
-            report_ddscp_wait("camera semaphore without a new frame");
-            ddscp.invalidate();
+            report_ddspc_wait("camera semaphore without a new frame");
+            ddspc.invalidate();
             info("FT: Semaphore signalled but no new frame");
             nerrors++;
             continue;
         }
-        ddscp_frame_gap = (k1_cnt != ft_cnt + 1) ||
+        ddspc_frame_gap = (k1_cnt != ft_cnt + 1) ||
                           (k2_cnt != ft_cnt + 1);
         // Check for missed frames
         if (k1_cnt > ft_cnt+2 || k2_cnt > ft_cnt+2){
@@ -442,13 +442,13 @@ void fringe_tracker(){
         ft_cnt++;
         const int servo_mode = settings.s.servo_mode;
         if (servo_mode != previous_servo_mode) {
-            if (servo_mode == SERVO_DDSCP) {
-                ddscp.enter();
-                next_ddscp_wait_log = std::chrono::steady_clock::time_point{};
-                next_ddscp_active_log = std::chrono::steady_clock::time_point{};
-                info("DDSCP selected; waiting for valid four-beam tracking");
+            if (servo_mode == SERVO_DDSPC) {
+                ddspc.enter();
+                next_ddspc_wait_log = std::chrono::steady_clock::time_point{};
+                next_ddspc_active_log = std::chrono::steady_clock::time_point{};
+                info("DDSPC selected; waiting for valid four-beam tracking");
             } else {
-                ddscp.invalidate();
+                ddspc.invalidate();
             }
             previous_servo_mode = servo_mode;
         }
@@ -657,9 +657,9 @@ void fringe_tracker(){
                                         control_u.dm_piston.allFinite() &&
                                         std::isfinite(wavelength_K1) &&
                                         wavelength_K1 > 0.0;
-        bool use_ddscp = false;
-        double ddscp_regularization_before = 0.0;
-        if (servo_mode == SERVO_DDSCP) {
+        bool use_ddspc = false;
+        double ddspc_regularization_before = 0.0;
+        if (servo_mode == SERVO_DDSPC) {
             bool phase_connected = false;
             if (Wpd.allFinite()) {
                 Eigen::SelfAdjointEigenSolver<Eigen::Matrix4d> phase_solver(
@@ -668,7 +668,7 @@ void fringe_tracker(){
                                   phase_solver.eigenvalues()(1) > 1e-6;
             }
             const char *block_reason = nullptr;
-            if (ddscp_frame_gap) block_reason = "camera frame gap";
+            if (ddspc_frame_gap) block_reason = "camera frame gap";
             else if (!control_u.fringe_found) block_reason = "fringes not locked";
             else if (!(control_u.beams_active.minCoeff() > 0.5))
                 block_reason = "inactive beam";
@@ -677,31 +677,31 @@ void fringe_tracker(){
             else if (control_u.test_n != 0) block_reason = "DM test pattern active";
             else if (!phase_connected) block_reason = "phase baselines disconnected";
             else if (!finite_servo_input) block_reason = "non-finite servo input";
-            else if (last_gd_jump != 0 &&
-                     cnt_since_init <= last_gd_jump + 3)
-                block_reason = "recent group-delay jump";
-            use_ddscp = block_reason == nullptr;
-            if (use_ddscp) {
-                heimdallr_ddscp::Modes draw =
-                    heimdallr_ddscp::Modes::Zero();
-                if (ddscp.exploration_frames() < 500) {
+            // else if (last_gd_jump != 0 &&
+            //          cnt_since_init <= last_gd_jump + 3)
+            //     block_reason = "recent group-delay jump";
+            use_ddspc = block_reason == nullptr;
+            if (use_ddspc) {
+                heimdallr_ddspc::Modes draw =
+                    heimdallr_ddspc::Modes::Zero();
+                if (ddspc.exploration_frames() < 500) {
                     for (int i = 0; i < 3; ++i) {
                         draw(i) = standard_normal(exploration_generator);
                     }
                 }
-                ddscp_regularization_before = ddscp.controller().regularization();
-                const Eigen::Vector4d command = ddscp.propose(
+                ddspc_regularization_before = ddspc.controller().regularization();
+                const Eigen::Vector4d command = ddspc.propose(
                     control_a.pd, control_u.dm_piston, wavelength_K1,
                     OPD_PER_DM_UNIT, MAX_DM_PISTON, draw);
                 if (command.allFinite()) control_u.dm_piston = command;
                 else {
-                    use_ddscp = false;
+                    use_ddspc = false;
                     block_reason = "non-finite proposed command";
                 }
             }
-            if (!use_ddscp) {
-                report_ddscp_wait(block_reason);
-                ddscp.invalidate();
+            if (!use_ddspc) {
+                report_ddspc_wait(block_reason);
+                ddspc.invalidate();
             }
         }
 
@@ -725,9 +725,9 @@ void fringe_tracker(){
             control_u.dm_piston = control_u.dm_piston.cwiseMax(-MAX_DM_PISTON);
 
         } else if (servo_mode == SERVO_LACOUR ||
-                   (servo_mode == SERVO_DDSCP && !use_ddscp)){
+                   (servo_mode == SERVO_DDSPC && !use_ddspc)){
             // Compute the piezo control signal from the phase delay.
-            if (servo_mode == SERVO_DDSCP && !finite_servo_input) {
+            if (servo_mode == SERVO_DDSPC && !finite_servo_input) {
                 control_u.dm_piston.setZero();
             } else if ((cnt_since_init == last_gd_jump+1) ||
                        (cnt_since_init > last_gd_jump + 3)){
@@ -752,40 +752,40 @@ void fringe_tracker(){
         }
         // Apply the signal to the DM! 
         set_dm_piston(control_u.dm_piston);
-        if (servo_mode == SERVO_DDSCP && use_ddscp) {
+        if (servo_mode == SERVO_DDSPC && use_ddspc) {
             if (control_u.test_n == 0 &&
                 control_u.beams_active.minCoeff() > 0.5 &&
                 control_u.search.squaredNorm() == 0.0) {
                 // The active, search-free path wrote this clipped command unchanged.
-                ddscp.update(control_u.dm_piston, wavelength_K1,
+                ddspc.update(control_u.dm_piston, wavelength_K1,
                              OPD_PER_DM_UNIT);
-                const int updates = ddscp.controller().iterations();
-                const int exploration = ddscp.exploration_frames();
-                const double regularization = ddscp.controller().regularization();
+                const int updates = ddspc.controller().iterations();
+                const int exploration = ddspc.exploration_frames();
+                const double regularization = ddspc.controller().regularization();
                 if (updates == 1) {
                     const auto now = std::chrono::steady_clock::now();
-                    if (now >= next_ddscp_active_log) {
+                    if (now >= next_ddspc_active_log) {
                         if (exploration <= 500) {
-                            info("DDSCP active: exploration dither on (%d/500), regularization %g -> %g",
-                                 exploration, ddscp_regularization_before,
+                            info("DDSPC active: exploration dither on (%d/500), regularization %g -> %g",
+                                 exploration, ddspc_regularization_before,
                                  regularization);
                         } else {
-                            info("DDSCP active: exploration complete, regularization %g -> %g",
-                                 ddscp_regularization_before, regularization);
+                            info("DDSPC active: exploration complete, regularization %g -> %g",
+                                 ddspc_regularization_before, regularization);
                         }
-                        next_ddscp_active_log = now + std::chrono::seconds(1);
+                        next_ddspc_active_log = now + std::chrono::seconds(1);
                     }
-                } else if (regularization != ddscp_regularization_before) {
-                    info("DDSCP regularization %g -> %g after %d valid updates; exploration %d/500",
-                         ddscp_regularization_before, regularization, updates,
+                } else if (regularization != ddspc_regularization_before) {
+                    info("DDSPC regularization %g -> %g after %d valid updates; exploration %d/500",
+                         ddspc_regularization_before, regularization, updates,
                          exploration);
                 }
                 if (exploration == 500) {
-                    info("DDSCP exploration complete after 500 valid frames");
+                    info("DDSPC exploration complete after 500 valid frames");
                 }
             } else {
-                report_ddscp_wait("DM command path changed before update");
-                ddscp.invalidate();
+                report_ddspc_wait("DM command path changed before update");
+                ddspc.invalidate();
             }
         }
 
@@ -917,7 +917,7 @@ void fringe_tracker(){
             	// Add to the delay line offload.
         	    control_u.dl_offload = 0.3*control_u.dm_piston * OPD_PER_DM_UNIT;
                 if (((servo_mode == SERVO_LACOUR) ||
-                     (servo_mode == SERVO_DDSCP)) &&
+                     (servo_mode == SERVO_DDSPC)) &&
                     (cnt_since_init - last_gd_jump > baselines.n_gd_boxcar)){
                     // Use the group delay to make full fringe jumps, only if there has been at least
                     // baselines.n_gd_boxcar frames since initialisation or the last jump.

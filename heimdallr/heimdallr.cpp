@@ -115,8 +115,8 @@ void set_servo_mode(std::string mode) {
         settings.s.servo_mode = SERVO_FIGHT;
     } else if (mode == "lacour") {
         settings.s.servo_mode = SERVO_LACOUR;
-    } else if (mode == "ddscp") {
-        settings.s.servo_mode = SERVO_DDSCP;
+    } else if (mode == "ddspc") {
+        settings.s.servo_mode = SERVO_DDSPC;
     } else if (mode == "on") {
         // "on" means lacour with nested offload
         settings.s.servo_mode = SERVO_LACOUR;
@@ -127,7 +127,7 @@ void set_servo_mode(std::string mode) {
         settings.mutex.unlock();
         return;
     }
-    const bool preserve_dm_piston = settings.s.servo_mode == SERVO_DDSCP;
+    const bool preserve_dm_piston = settings.s.servo_mode == SERVO_DDSPC;
     settings.mutex.unlock();
     // Reset the control_u parameters
     control_u.dl.setZero();
@@ -643,7 +643,7 @@ COMMANDER_REGISTER(m)
     m.def("get_search_offset", get_search_offset, "Get the search offset in microns");
     m.def("get_gd_toml_offsets", get_gd_toml_offsets, "Get the GD phasor offsets for all baselines in microns, to 3 decimal places");
     m.def("servo", set_servo_mode, "Set the servo mode",
-        commander::arg("mode", "One of 'off', 'simple', 'fight', 'lacour', 'ddscp', or 'on'.", "off"));
+        commander::arg("mode", "One of 'off', 'simple', 'fight', 'lacour', 'ddspc', or 'on'.", "off"));
     m.def("offload", set_offload_mode, "Set the offload (slow servo) mode",
         commander::arg("mode", "One of 'off', 'nested', 'gd', 'mod', or 'manual'.", "off"));
     // Settings routines...

@@ -1,11 +1,11 @@
-# DDSCP fringe servo
+# DDSPC fringe servo
 
-Select the new servo with `servo "ddscp"`. Mode value 5 leaves the existing mode
+Select the new servo with `servo "ddspc"`. Mode value 5 leaves the existing mode
 values unchanged. The controller uses filtered telescope phase delay in K1
 wavelengths, predicts three differential piston modes, and sends clipped DM
 commands. Its QRD RLS model uses 40 history frames and four future frames.
 
-Exploration lasts for 500 valid DDSCP frames after each mode entry. A missed
+Exploration lasts for 500 valid DDSPC frames after each mode entry. A missed
 frame, lost fringe lock, disconnected phase measurements, an inactive beam, or
 a test pattern selects the existing Lacour command path and resets the learned
 model. Exploration does not restart after a temporary loss of lock. The model

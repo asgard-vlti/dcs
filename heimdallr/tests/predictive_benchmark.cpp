@@ -10,9 +10,9 @@
 
 int main() {
     using Clock = std::chrono::steady_clock;
-    using heimdallr_ddscp::Modes;
-    using heimdallr_ddscp::PredictiveControl;
-    using heimdallr_ddscp::Telescopes;
+    using heimdallr_ddspc::Modes;
+    using heimdallr_ddspc::PredictiveControl;
+    using heimdallr_ddspc::Telescopes;
 
     constexpr int warmup = 1200;
     constexpr int samples = 120000;
@@ -32,17 +32,17 @@ int main() {
                 0.03 * std::sin(2.0 * M_PI * 24.0 * time + 0.5 * j);
         }
         const Telescopes residual = disturbance + lag[1];
-        const Modes error = heimdallr_ddscp::to_modes(residual);
+        const Modes error = heimdallr_ddspc::to_modes(residual);
         const Modes draw = Modes::Zero();
 
         const auto start = Clock::now();
         controller.advance_regularization(i);
         const Modes proposed = controller.propose(error, draw);
-        const Telescopes dm = heimdallr_ddscp::dm_command(proposed, wavelength)
+        const Telescopes dm = heimdallr_ddspc::dm_command(proposed, wavelength)
                                   .cwiseMax(-0.4)
                                   .cwiseMin(0.4);
         const Modes applied =
-            heimdallr_ddscp::applied_command_waves(dm, wavelength);
+            heimdallr_ddspc::applied_command_waves(dm, wavelength);
         controller.update(applied);
         const auto stop = Clock::now();
 

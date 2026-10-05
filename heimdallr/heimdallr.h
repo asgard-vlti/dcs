@@ -36,7 +36,7 @@
 #define SERVO_STOP 2
 #define SERVO_SIMPLE 3
 #define SERVO_OFF 4
-#define SERVO_DDSCP 5
+#define SERVO_DDSPC 5
 
 // Slow (offload) servo type
 #define OFFLOAD_NESTED 0

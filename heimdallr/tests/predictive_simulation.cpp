@@ -8,8 +8,8 @@
 #include <random>
 #include <vector>
 
-using heimdallr_ddscp::Modes;
-using heimdallr_ddscp::Telescopes;
+using heimdallr_ddspc::Modes;
+using heimdallr_ddspc::Telescopes;
 
 struct Result {
     double residual_rms;
@@ -21,7 +21,7 @@ Result simulate(const std::vector<Telescopes>& disturbance, bool predictive) {
     std::array<Telescopes, 2> lag{Telescopes::Zero(), Telescopes::Zero()};
     Telescopes current_dm = Telescopes::Zero();
     Modes integral_command = Modes::Zero();
-    heimdallr_ddscp::DdscpServo servo;
+    heimdallr_ddspc::DdspcServo servo;
     servo.enter();
     std::mt19937_64 generator(42);
     std::normal_distribution<double> standard_normal(0.0, 1.0);
@@ -46,8 +46,8 @@ Result simulate(const std::vector<Telescopes>& disturbance, bool predictive) {
                                        0.4, draw);
             servo.update(current_dm, wavelength, 6.0);
         } else {
-            integral_command -= 0.8 * heimdallr_ddscp::to_modes(residual);
-            current_dm = heimdallr_ddscp::dm_command(integral_command,
+            integral_command -= 0.8 * heimdallr_ddspc::to_modes(residual);
+            current_dm = heimdallr_ddspc::dm_command(integral_command,
                                                       wavelength)
                              .cwiseMax(-0.4)
                              .cwiseMin(0.4);

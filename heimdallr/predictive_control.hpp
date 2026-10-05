@@ -7,7 +7,7 @@
 #include <cmath>
 #include <stdexcept>
 
-namespace heimdallr_ddscp {
+namespace heimdallr_ddspc {
 
 using Modes = Eigen::Vector3d;
 using Telescopes = Eigen::Vector4d;
@@ -255,7 +255,7 @@ class PredictiveControl {
     }
 
     void advance_regularization(int valid_frame_index) {
-        if (valid_frame_index % 100 == 0 && regularization_ > 0.003) {
+        if (valid_frame_index % 100 == 0 && regularization_ > 0.2) {
             regularization_ /= 5.0;
         }
     }
@@ -286,7 +286,7 @@ class PredictiveControl {
 
 extern template class PredictiveControl<40, 4>;
 
-class DdscpServo {
+class DdspcServo {
    public:
     void enter() {
         controller_.reset();
@@ -337,4 +337,4 @@ class DdscpServo {
     bool active_ = false;
 };
 
-}  // namespace heimdallr_ddscp
+}  // namespace heimdallr_ddspc

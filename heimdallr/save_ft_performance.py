@@ -189,12 +189,20 @@ def main():
         help="Sample rate when group delay tracking in Hz",
     )
     parser.add_argument("--rate", type=int, default=1000, help="Sample rate in Hz")
+    parser.add_argument(
+        "--is-sim",
+        action="store_true",
+        help="Connect to the local simulator and save logs under sim-data",
+    )
     args = parser.parse_args()
     # time in UTC
     cur_datetime = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
     fname = f"ft_performance_{cur_datetime}.log"
     year_month_day = time.strftime("%Y%m%d", time.gmtime())
-    pth = f"/data/{year_month_day}"
+    data_dir = (
+        "/home/taras/Documents/0projects/asgard/sim-data" if args.is_sim else "/data"
+    )
+    pth = os.path.join(data_dir, year_month_day)
     # Make directories if they don't exist
     os.makedirs(pth, exist_ok=True)
     full_pth = os.path.join(pth, fname)
@@ -203,7 +211,8 @@ def main():
     settings_full_pth = os.path.join(pth, settings_fname)
 
     # single socket and lock
-    h_z = ZmqReq("tcp://192.168.100.2:6660")
+    endpoint = "tcp://127.0.0.1:6660" if args.is_sim else "tcp://192.168.100.2:6660"
+    h_z = ZmqReq(endpoint)
     lock = threading.Lock()
     shared_state = {"servo_mode": 4}
 
