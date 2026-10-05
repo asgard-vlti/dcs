@@ -11,12 +11,16 @@
 #include <thread>
 #include <Eigen/Dense>
 #include "predictive_control.hpp"
+#include "servo_transitions.hpp"
 #include <fmt/core.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <zmq.hpp>
 #include <chrono>
+#include <cstdint>
+#include <deque>
+#include <memory>
 #include <semaphore.h>
 #include <sstream>
 // This shouldn't be here, but I put the logging stuff in commander.
@@ -241,6 +245,9 @@ struct LocalSettings {
     heimdallr_ddspc::Parameters ddspc_configured;
     heimdallr_ddspc::Parameters ddspc_active;
     bool ddspc_active_valid = false;
+    std::deque<heimdallr_ddspc::ServoTransition> servo_transitions;
+    std::atomic<std::uint64_t> servo_transition_generation{0};
+    std::uint64_t next_servo_transition = 0;
 };
 
 // -------- Extern global definitions ------------
@@ -251,6 +258,8 @@ extern toml::table config;
 
 // Servo parameters. These are the parameters that will be adjusted by the commander
 extern LocalSettings settings;
+namespace heimdallr_ddspc { class SnapshotWriter; }
+extern std::unique_ptr<heimdallr_ddspc::SnapshotWriter> ddspc_snapshot_writer;
 extern ControlU control_u;
 extern ControlA control_a;
 extern Baselines baselines;

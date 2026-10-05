@@ -1,6 +1,7 @@
 #include "predictive_control.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <stdexcept>
 
@@ -159,6 +160,17 @@ template <int Features, int Outputs>
 auto QrdRls<Features, Outputs>::weights() const -> const WeightMatrix& { return weights_; }
 
 template <int Features, int Outputs>
+auto QrdRls<Features, Outputs>::factor() const
+    -> const std::array<double, Features * Features>& {
+    return r_;
+}
+
+template <int Features, int Outputs>
+double QrdRls<Features, Outputs>::initial_covariance() const {
+    return initial_covariance_;
+}
+
+template <int Features, int Outputs>
 double QrdRls<Features, Outputs>::gram(int i, int j) const {
     double value = 0.0;
     for (int k = 0; k < Features; ++k) {
@@ -191,6 +203,7 @@ void PredictiveControl<HistoryLength, FutureLength>::reset(
     errors_.reset();
     commands_.reset();
     predictive_.setZero();
+    inverse_.setZero();
     command_ = initial_command;
     previous_command_ = initial_command;
     regularization_ = params_.reg_start;
@@ -258,17 +271,17 @@ void PredictiveControl<HistoryLength, FutureLength>::update(
                  cross_.cwiseAbs().maxCoeff());
     correlation_.diagonal().array() += scale * regularization_;
     svd_.compute(correlation_, Eigen::ComputeFullU | Eigen::ComputeFullV);
-    CorrelationMatrix inverse = CorrelationMatrix::Zero();
+    inverse_.setZero();
     const auto& singular = svd_.singularValues();
     const double threshold = singular(0) * 1e-15;
     for (int i = 0; i < Outputs; ++i) {
         if (singular(i) > threshold) {
-            inverse.noalias() +=
+            inverse_.noalias() +=
                 (1.0 / singular(i)) * svd_.matrixV().col(i) *
                 svd_.matrixU().col(i).transpose();
         }
     }
-    control_.noalias() = -inverse * cross_;
+    control_.noalias() = -inverse_ * cross_;
     predictive_ = control_.template bottomRows<3>();
 }
 
@@ -311,6 +324,12 @@ auto PredictiveControl<HistoryLength, FutureLength>::predictive() const
 }
 
 template <int HistoryLength, int FutureLength>
+auto PredictiveControl<HistoryLength, FutureLength>::inverse() const
+    -> const CorrelationMatrix& {
+    return inverse_;
+}
+
+template <int HistoryLength, int FutureLength>
 auto PredictiveControl<HistoryLength, FutureLength>::rls() const
     -> const QrdRls<Features, Outputs>& {
     return rls_;
@@ -318,13 +337,56 @@ auto PredictiveControl<HistoryLength, FutureLength>::rls() const
 
 void DdspcServo::enter(const Parameters& params) {
     controller_.configure(params);
+    if (!last_trained_) last_trained_ = std::make_unique<ModelSnapshot>();
+    last_trained_valid_ = false;
+    last_update_ns_ = 0;
     active_ = false;
     exploration_frames_ = 0;
 }
 
 void DdspcServo::invalidate() {
-    if (active_) controller_.reset();
+    if (active_) {
+        if (!last_trained_) last_trained_ = std::make_unique<ModelSnapshot>();
+        if (controller_.iterations() > PredictiveControl<>::TrainingDelay) {
+            capture(*last_trained_);
+            last_trained_valid_ = true;
+        }
+        controller_.reset();
+    }
     active_ = false;
+}
+
+void DdspcServo::capture(ModelSnapshot& snapshot) const {
+    const auto& rls = controller_.rls();
+    snapshot.parameters = controller_.parameters();
+    snapshot.iterations = controller_.iterations();
+    snapshot.exploration_frames = exploration_frames_;
+    snapshot.regularization = controller_.regularization();
+    snapshot.initial_covariance = rls.initial_covariance();
+    snapshot.model_time_ns = last_update_ns_;
+    snapshot.trained = snapshot.iterations > PredictiveControl<>::TrainingDelay;
+    snapshot.factor = rls.factor();
+    snapshot.weights = rls.weights();
+    snapshot.inverse = controller_.inverse();
+    snapshot.predictive = controller_.predictive();
+}
+
+std::unique_ptr<ModelSnapshot> DdspcServo::snapshot_for_off() {
+    if (!last_trained_) last_trained_ = std::make_unique<ModelSnapshot>();
+    if (active_ &&
+        controller_.iterations() > PredictiveControl<>::TrainingDelay) {
+        capture(*last_trained_);
+        last_trained_->source = "active";
+    } else if (last_trained_valid_) {
+        last_trained_->source = "retained";
+    } else {
+        capture(*last_trained_);
+        last_trained_->source = "untrained";
+    }
+    last_trained_valid_ = false;
+    active_ = false;
+    controller_.reset();
+    return std::move(last_trained_);
 }
 
 Telescopes DdspcServo::propose(
@@ -335,6 +397,7 @@ Telescopes DdspcServo::propose(
         controller_.reset(
             applied_command_waves(current_dm, wavelength, opd_per_dm_unit));
         common_mode_ = current_dm.mean();
+        last_update_ns_ = 0;
         active_ = true;
     }
     controller_.advance_regularization(controller_.iterations());
@@ -352,6 +415,9 @@ void DdspcServo::update(const Telescopes& applied_dm, double wavelength,
                         double opd_per_dm_unit) {
     controller_.update(
         applied_command_waves(applied_dm, wavelength, opd_per_dm_unit));
+    last_update_ns_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
     ++exploration_frames_;
 }
 

@@ -1,4 +1,6 @@
 #include "heimdallr.h"
+#include "ddspc_snapshot.hpp"
+#include "fringe_frame_wait.hpp"
 #include "predictive_control.hpp"
 #include <chrono>
 #include <random>
@@ -364,7 +366,7 @@ void fringe_tracker(){
     heimdallr_ddspc::Parameters ddspc_params;
     std::mt19937_64 exploration_generator(std::random_device{}());
     std::normal_distribution<double> standard_normal(0.0, 1.0);
-    int previous_servo_mode = SERVO_OFF;
+    std::uint64_t seen_servo_transition = 0;
 #ifdef SIMULATE
     bool camera_counter_offset_set = false;
     long unsigned int k1_counter_origin = 0;
@@ -373,7 +375,10 @@ void fringe_tracker(){
     auto next_ddspc_wait_log = std::chrono::steady_clock::time_point{};
     auto next_ddspc_active_log = std::chrono::steady_clock::time_point{};
     auto report_ddspc_wait = [&](const char *reason) {
-        if (settings.s.servo_mode != SERVO_DDSPC) return;
+        {
+            std::lock_guard<std::mutex> lock(settings.mutex);
+            if (settings.s.servo_mode != SERVO_DDSPC) return;
+        }
         const auto now = std::chrono::steady_clock::now();
         if (now < next_ddspc_wait_log) return;
         const int updates = ddspc.controller().iterations();
@@ -385,18 +390,89 @@ void fringe_tracker(){
         }
         next_ddspc_wait_log = now + std::chrono::seconds(1);
     };
+    auto process_servo_transitions = [&] {
+        if (seen_servo_transition ==
+            settings.servo_transition_generation.load(std::memory_order_acquire))
+            return;
+        std::deque<heimdallr_ddspc::ServoTransition> transitions;
+        {
+            std::lock_guard<std::mutex> lock(settings.mutex);
+            transitions.swap(settings.servo_transitions);
+            seen_servo_transition = settings.servo_transition_generation.load(
+                std::memory_order_relaxed);
+        }
+        for (const auto& transition : transitions) {
+            if (transition.from == SERVO_DDSPC) {
+                if (transition.to == SERVO_OFF) {
+                    try {
+                        heimdallr_ddspc::SnapshotJob job;
+                        job.model = ddspc.snapshot_for_off();
+                        job.transition_time_ns = transition.time_ns;
+                        job.sequence = transition.sequence;
+                        job.trigger = transition.trigger;
+                        if (!ddspc_snapshot_writer->enqueue(std::move(job))) {
+                            error("DDSPC snapshot queue is stopped");
+                        }
+                    } catch (const std::exception& e) {
+                        error("DDSPC snapshot capture failed: %s", e.what());
+                        ddspc.invalidate();
+                    }
+                } else {
+                    ddspc.invalidate();
+                }
+                std::lock_guard<std::mutex> lock(settings.mutex);
+                settings.ddspc_active_valid = false;
+            }
+            if (transition.to == SERVO_DDSPC) {
+                ddspc_params = transition.ddspc_params;
+                ddspc.enter(ddspc_params);
+                {
+                    std::lock_guard<std::mutex> lock(settings.mutex);
+                    settings.ddspc_active = ddspc_params;
+                    settings.ddspc_active_valid = true;
+                }
+                next_ddspc_wait_log = std::chrono::steady_clock::time_point{};
+                next_ddspc_active_log = std::chrono::steady_clock::time_point{};
+                info("DDSPC selected; waiting for valid four-beam tracking");
+            }
+        }
+    };
 
     long x_px, y_px, stride;
     initialise_baselines();
     reset_search();
     set_dm_piston(Eigen::Vector4d::Zero()); 
     ft_cnt = K1ft->cnt;
-    while(settings.s.servo_mode != SERVO_STOP){
+    bool k1_ready = false;
+    bool k2_ready = false;
+    while (true) {
+        process_servo_transitions();
+        {
+            std::lock_guard<std::mutex> lock(settings.mutex);
+            if (settings.s.servo_mode == SERVO_STOP) break;
+        }
+        auto wait_for_frame = [&](sem_t* semaphore, bool& ready) {
+            try {
+                heimdallr_ddspc::wait_for_frame(semaphore, ready);
+            } catch (const std::system_error& e) {
+                warn("%s", e.what());
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        };
+        wait_for_frame(&K1ft->sem_new_frame, k1_ready);
+        process_servo_transitions();
+        if (!k1_ready) continue;
+        wait_for_frame(&K2ft->sem_new_frame, k2_ready);
+        process_servo_transitions();
+        if (!k2_ready) continue;
+        k1_ready = false;
+        k2_ready = false;
+        {
+            std::lock_guard<std::mutex> lock(settings.mutex);
+            if (settings.s.servo_mode == SERVO_STOP) break;
+        }
         bool ddspc_frame_gap = false;
         cnt_since_init++; //This should "never" wrap around, as a long int is big.
-        // See if there was a semaphore signalled for the next frame to be ready in K1 and K2
-        sem_wait(&K1ft->sem_new_frame);
-        sem_wait(&K2ft->sem_new_frame);
         if ((K1ft->bad_frame) || (K2ft->bad_frame)) {
             report_ddspc_wait("bad camera frame");
             ddspc.invalidate();
@@ -441,25 +517,10 @@ void fringe_tracker(){
             nerrors++;
         }
         ft_cnt++;
-        const int servo_mode = settings.s.servo_mode;
-        if (servo_mode != previous_servo_mode) {
-            if (servo_mode == SERVO_DDSPC) {
-                {
-                    std::lock_guard<std::mutex> lock(settings.mutex);
-                    ddspc_params = settings.ddspc_configured;
-                    settings.ddspc_active = ddspc_params;
-                    settings.ddspc_active_valid = true;
-                }
-                ddspc.enter(ddspc_params);
-                next_ddspc_wait_log = std::chrono::steady_clock::time_point{};
-                next_ddspc_active_log = std::chrono::steady_clock::time_point{};
-                info("DDSPC selected; waiting for valid four-beam tracking");
-            } else {
-                ddspc.invalidate();
-                std::lock_guard<std::mutex> lock(settings.mutex);
-                settings.ddspc_active_valid = false;
-            }
-            previous_servo_mode = servo_mode;
+        int servo_mode;
+        {
+            std::lock_guard<std::mutex> lock(settings.mutex);
+            servo_mode = settings.s.servo_mode;
         }
 #ifdef PRINT_TIMING
         timespec then;

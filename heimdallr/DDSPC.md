@@ -23,6 +23,35 @@ Regularization is divided every `reg_interval` valid DDSPC frames, starting at
 frame index zero, and stops at the hard floor `reg_cutoff`. `gamma` is the QRD RLS
 forgetting factor. Exploration sigma is in differential piston waves.
 
+## Model snapshots
+
+Every direct transition from DDSPC to servo off queues one model snapshot. This
+includes `servo "off"`, `offload "gd"`, and `offload "mod"`. The command returns
+before the background writer finishes; the server logs the saved path or a
+write error. Other mode changes do not save a snapshot.
+
+Operational files go to `/data/YYYYMMDD/ddspc_THH:MM:SS.mmm_<pid>_<seq>.json`
+using UTC, following the CRED1 date directory and time stamp format. A
+simulation build writes under
+`~/Documents/0projects/asgard/sim-data/YYYYMMDD/` instead. Files are published
+atomically and an existing filename is never overwritten.
+
+Each version 1 JSON file contains the RLS upper triangular factor `R` as a full
+249×249 row-major array, its 249×12 weights, the last 12×12 regularized SVD
+inverse, and the applied 3×237 predictive matrix. It also records the DDSPC
+parameters, iteration counts, UTC transition and model times, and whether the
+model came from the active or a retained segment. After lost lock or a bad
+frame, the last trained segment is retained for the eventual off transition.
+An untrained run is still saved, with `inverse` and `predictive` set to JSON
+`null`. Non-finite numbers are encoded as `"NaN"`, `"Infinity"`, or
+`"-Infinity"` and flagged by `nonfinite_values`.
+
+Run the snapshot checks from the `dcs` directory:
+
+```sh
+make -C heimdallr predictive_snapshot
+```
+
 Run numerical parity tests from the `dcs` directory:
 
 ```sh

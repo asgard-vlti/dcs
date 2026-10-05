@@ -3,6 +3,8 @@
 #include <Eigen/Dense>
 
 #include <array>
+#include <cstdint>
+#include <memory>
 
 namespace heimdallr_ddspc {
 
@@ -64,6 +66,10 @@ class QrdRls {
 
     const WeightMatrix& weights() const;
 
+    const std::array<double, Features * Features>& factor() const;
+
+    double initial_covariance() const;
+
     double gram(int i, int j) const;
 
    private:
@@ -83,6 +89,7 @@ class PredictiveControl {
     static constexpr int Features = (FutureLength - 1 + 2 * HistoryLength) * 3;
     static constexpr int Outputs = FutureLength * 3;
     static constexpr int ControlFeatures = (2 * HistoryLength - 1) * 3;
+    static constexpr int TrainingDelay = HistoryLength + FutureLength;
 
     using FeatureVector = Eigen::Matrix<double, Features, 1>;
     using OutputVector = Eigen::Matrix<double, Outputs, 1>;
@@ -109,6 +116,7 @@ class PredictiveControl {
     const Parameters& parameters() const;
     const Modes& command() const;
     const ControlMatrix& predictive() const;
+    const CorrelationMatrix& inverse() const;
     const QrdRls<Features, Outputs>& rls() const;
 
    private:
@@ -124,6 +132,7 @@ class PredictiveControl {
     FeatureVector feature_;
     OutputVector target_;
     ControlMatrix predictive_;
+    CorrelationMatrix inverse_;
     CorrelationMatrix correlation_;
     CrossMatrix cross_;
     CrossMatrix control_;
@@ -132,6 +141,23 @@ class PredictiveControl {
 
 extern template class PredictiveControl<4, 2>;
 extern template class PredictiveControl<40, 4>;
+
+struct ModelSnapshot {
+    using Controller = PredictiveControl<>;
+
+    Parameters parameters;
+    int iterations = 0;
+    int exploration_frames = 0;
+    double regularization = 0.0;
+    double initial_covariance = 0.0;
+    std::int64_t model_time_ns = 0;
+    bool trained = false;
+    const char* source = "untrained";
+    std::array<double, Controller::Features * Controller::Features> factor{};
+    QrdRls<Controller::Features, Controller::Outputs>::WeightMatrix weights;
+    Controller::CorrelationMatrix inverse;
+    Controller::ControlMatrix predictive;
+};
 
 class DdspcServo {
    public:
@@ -149,9 +175,15 @@ class DdspcServo {
 
     int exploration_frames() const;
     const PredictiveControl<>& controller() const;
+    std::unique_ptr<ModelSnapshot> snapshot_for_off();
 
    private:
+    void capture(ModelSnapshot& snapshot) const;
+
     PredictiveControl<> controller_;
+    std::unique_ptr<ModelSnapshot> last_trained_;
+    bool last_trained_valid_ = false;
+    std::int64_t last_update_ns_ = 0;
     double common_mode_ = 0.0;
     int exploration_frames_ = 0;
     bool active_ = false;

@@ -1,6 +1,7 @@
 #define TOML_IMPLEMENTATION
 #define SCHED_PRIORITY 70
 #include "heimdallr.h"
+#include "ddspc_snapshot.hpp"
 #include "ddspc_tuning.hpp"
 #include <math.h>
 #include <unistd.h>
@@ -22,6 +23,7 @@ toml::table config;
 
 // Servo parameters. These are the parameters that will be adjusted by the commander
 LocalSettings settings;
+std::unique_ptr<heimdallr_ddspc::SnapshotWriter> ddspc_snapshot_writer;
 ControlU control_u;
 ControlA control_a;
 Baselines baselines;
@@ -94,6 +96,16 @@ std::string encode(const char* input, unsigned int size)
 }
 
 //----------commander functions from here---------------
+static void record_servo_transition_locked(int mode, const char* trigger) {
+    const auto time_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count();
+    heimdallr_ddspc::record_servo_transition(
+        settings.s.servo_mode, mode, trigger, settings.ddspc_configured,
+        time_ns, settings.servo_transitions, settings.next_servo_transition,
+        settings.servo_transition_generation);
+}
+
 void linear_search(uint beam, double start, double stop, double rate, uint search_dt_ms, double search_snr_threashold) {
     if ((beam > N_TEL) || (beam == 0)) {
         info("Beam number (arg 0) out of range (1 to %d)", N_TEL - 1);
@@ -117,29 +129,33 @@ void linear_search(uint beam, double start, double stop, double rate, uint searc
 
 // Set the servo mode
 void set_servo_mode(std::string mode) {
-    settings.mutex.lock();
+    int next_mode;
     if (mode == "off") {
-        settings.s.servo_mode = SERVO_OFF;
+        next_mode = SERVO_OFF;
     } else if (mode == "simple") {
-        settings.s.servo_mode = SERVO_SIMPLE;
+        next_mode = SERVO_SIMPLE;
     } else if (mode == "fight") {
-        settings.s.servo_mode = SERVO_FIGHT;
+        next_mode = SERVO_FIGHT;
     } else if (mode == "lacour") {
-        settings.s.servo_mode = SERVO_LACOUR;
+        next_mode = SERVO_LACOUR;
     } else if (mode == "ddspc") {
-        settings.s.servo_mode = SERVO_DDSPC;
+        next_mode = SERVO_DDSPC;
     } else if (mode == "on") {
         // "on" means lacour with nested offload
-        settings.s.servo_mode = SERVO_LACOUR;
-        control_u.dl_offload.setZero();
-        settings.s.offload_mode = OFFLOAD_NESTED;
+        next_mode = SERVO_LACOUR;
     } else {
         info("Servo mode not recognised");
-        settings.mutex.unlock();
         return;
     }
-    const bool preserve_dm_piston = settings.s.servo_mode == SERVO_DDSPC;
-    settings.mutex.unlock();
+    {
+        std::lock_guard<std::mutex> lock(settings.mutex);
+        if (mode == "on" || mode=="ddspc") {
+            control_u.dl_offload.setZero();
+            settings.s.offload_mode = OFFLOAD_NESTED;
+        }
+        record_servo_transition_locked(next_mode, "servo");
+    }
+    const bool preserve_dm_piston = next_mode == SERVO_DDSPC;
     // Reset the control_u parameters
     control_u.dl.setZero();
     control_u.piezo.setZero();
@@ -147,7 +163,7 @@ void set_servo_mode(std::string mode) {
         control_u.dm_piston.setZero();
     }
     control_u.search_Nsteps=0;
-    info("Servo mode updated to %d", settings.s.servo_mode);
+    info("Servo mode updated to %d", next_mode);
     return;
 }
 
@@ -188,9 +204,9 @@ std::string set_offload_mode(std::string mode) {
         control_u.dl_offload.setZero();
     } else if (mode == "gd") {
         settings.s.offload_mode = OFFLOAD_GD;
-        settings.s.servo_mode = SERVO_OFF;
+        record_servo_transition_locked(SERVO_OFF, "offload gd");
     } else if (mode == "mod") {
-        settings.s.servo_mode = SERVO_OFF;
+        record_servo_transition_locked(SERVO_OFF, "offload mod");
         start_modulation();
         settings.s.offload_mode = OFFLOAD_MOD;
     } else if ((mode == "man") || (mode =="manual")) {
@@ -774,6 +790,18 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    try {
+        ddspc_snapshot_writer = std::make_unique<heimdallr_ddspc::SnapshotWriter>(
+            heimdallr_ddspc::default_snapshot_root(),
+            [](bool success, const std::string& message) {
+                if (success) info("DDSPC snapshot saved: %s", message.c_str());
+                else error("DDSPC snapshot failed: %s", message.c_str());
+            });
+    } catch (const std::exception& e) {
+        error("Could not start DDSPC snapshot writer: %s", e.what());
+        return 1;
+    }
+
     // Exit immediately if another instance of this server is running.
 #ifdef SIMULATE
     const char *lock_path = "/tmp/asg.heimdallr.sim.lock";
@@ -878,8 +906,13 @@ int main(int argc, char* argv[]) {
     offloading_thread.join();
 
     // Join the fringe-tracking thread
-    settings.s.servo_mode = SERVO_STOP;
+    {
+        std::lock_guard<std::mutex> lock(settings.mutex);
+        settings.s.servo_mode = SERVO_STOP;
+    }
     fringe_thread.join();
+    ddspc_snapshot_writer->stop();
+    ddspc_snapshot_writer.reset();
 
     // Join the FFTW threads. 
     K1ft->stop();
