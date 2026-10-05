@@ -108,7 +108,7 @@ nlohmann::json snapshot_json(const SnapshotJob& job) {
          {{"source", model.source},
           {"time_utc",
            model.model_time_ns == 0
-               ? nullptr
+               ? nlohmann::json(nullptr)
                : nlohmann::json(utc_stamp(
                      model.model_time_ns,
                      "%04d-%02d-%02dT%02d:%02d:%02d.%03lldZ"))},
