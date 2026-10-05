@@ -46,7 +46,7 @@ MIXED_LABELS = ['defocus','astigmatism_0','astigmatism_45'] + [
     for frequency in (1,2) for axis in ('x','y') for quadrature in ('sin','cos')]
 
 # Standard controls stay on the CLI; edit these installation/fit settings here.
-SIMULATION = True #False  # --simulator selects the local MDS; default is on-sky.
+SIMULATION = False  # --simulator selects the local MDS; default is on-sky.
 MDS_HOST_ONSKY = 'mimir'
 MDS_HOST_SIMULATOR = '127.0.0.1'
 ACQUISITION_DEFAULTS = dict(
