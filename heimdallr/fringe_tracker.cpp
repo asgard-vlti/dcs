@@ -361,6 +361,7 @@ void fringe_tracker(){
     Eigen::Vector4d pd_gain_scale = Eigen::Vector4d::Ones();
     unsigned long int last_gd_jump=0;
     heimdallr_ddspc::DdspcServo ddspc;
+    heimdallr_ddspc::Parameters ddspc_params;
     std::mt19937_64 exploration_generator(std::random_device{}());
     std::normal_distribution<double> standard_normal(0.0, 1.0);
     int previous_servo_mode = SERVO_OFF;
@@ -443,12 +444,20 @@ void fringe_tracker(){
         const int servo_mode = settings.s.servo_mode;
         if (servo_mode != previous_servo_mode) {
             if (servo_mode == SERVO_DDSPC) {
-                ddspc.enter();
+                {
+                    std::lock_guard<std::mutex> lock(settings.mutex);
+                    ddspc_params = settings.ddspc_configured;
+                    settings.ddspc_active = ddspc_params;
+                    settings.ddspc_active_valid = true;
+                }
+                ddspc.enter(ddspc_params);
                 next_ddspc_wait_log = std::chrono::steady_clock::time_point{};
                 next_ddspc_active_log = std::chrono::steady_clock::time_point{};
                 info("DDSPC selected; waiting for valid four-beam tracking");
             } else {
                 ddspc.invalidate();
+                std::lock_guard<std::mutex> lock(settings.mutex);
+                settings.ddspc_active_valid = false;
             }
             previous_servo_mode = servo_mode;
         }
@@ -684,7 +693,7 @@ void fringe_tracker(){
             if (use_ddspc) {
                 heimdallr_ddspc::Modes draw =
                     heimdallr_ddspc::Modes::Zero();
-                if (ddspc.exploration_frames() < 500) {
+                if (ddspc.exploration_frames() < ddspc_params.n_exploration) {
                     for (int i = 0; i < 3; ++i) {
                         draw(i) = standard_normal(exploration_generator);
                     }
@@ -765,9 +774,11 @@ void fringe_tracker(){
                 if (updates == 1) {
                     const auto now = std::chrono::steady_clock::now();
                     if (now >= next_ddspc_active_log) {
-                        if (exploration <= 500) {
-                            info("DDSPC active: exploration dither on (%d/500), regularization %g -> %g",
-                                 exploration, ddspc_regularization_before,
+                        if (exploration <= ddspc_params.n_exploration &&
+                            ddspc_params.n_exploration > 0) {
+                            info("DDSPC active: exploration dither on (%d/%d), regularization %g -> %g",
+                                 exploration, ddspc_params.n_exploration,
+                                 ddspc_regularization_before,
                                  regularization);
                         } else {
                             info("DDSPC active: exploration complete, regularization %g -> %g",
@@ -776,12 +787,14 @@ void fringe_tracker(){
                         next_ddspc_active_log = now + std::chrono::seconds(1);
                     }
                 } else if (regularization != ddspc_regularization_before) {
-                    info("DDSPC regularization %g -> %g after %d valid updates; exploration %d/500",
+                    info("DDSPC regularization %g -> %g after %d valid updates; exploration %d/%d",
                          ddspc_regularization_before, regularization, updates,
-                         exploration);
+                         exploration, ddspc_params.n_exploration);
                 }
-                if (exploration == 500) {
-                    info("DDSPC exploration complete after 500 valid frames");
+                if (ddspc_params.n_exploration > 0 &&
+                    exploration == ddspc_params.n_exploration) {
+                    info("DDSPC exploration complete after %d valid frames",
+                         ddspc_params.n_exploration);
                 }
             } else {
                 report_ddspc_wait("DM command path changed before update");

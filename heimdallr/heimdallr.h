@@ -10,6 +10,7 @@
 #include <mutex>
 #include <thread>
 #include <Eigen/Dense>
+#include "predictive_control.hpp"
 #include <fmt/core.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -237,6 +238,9 @@ struct Settings
 struct LocalSettings {
     Settings s;
     std::mutex mutex;
+    heimdallr_ddspc::Parameters ddspc_configured;
+    heimdallr_ddspc::Parameters ddspc_active;
+    bool ddspc_active_valid = false;
 };
 
 // -------- Extern global definitions ------------

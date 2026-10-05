@@ -8,6 +8,8 @@ all: $(OBJ)
 %.o: %.cpp
 	$(CC) -c -o $@ $< $(CFLAGS)
 
+server/interactive.o server/socket.o: ../include/commander/server/inline_arguments.h
+
 install:
 	cp ../../lib/libcommander.a /usr/local/lib
 	cp -r ../include/commander /usr/local/include

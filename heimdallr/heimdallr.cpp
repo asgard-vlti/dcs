@@ -1,6 +1,7 @@
 #define TOML_IMPLEMENTATION
 #define SCHED_PRIORITY 70
 #include "heimdallr.h"
+#include "ddspc_tuning.hpp"
 #include <math.h>
 #include <unistd.h>
 #include <cerrno>
@@ -38,6 +39,16 @@ ForwardFt *K1ft, *K2ft;
 // Offload globals
 bool keep_offloading = true;
 Eigen::Vector4d search_offset = Eigen::Vector4d::Zero();
+
+nlohmann::json ddspc_command(std::string action, nlohmann::json value) {
+    std::lock_guard<std::mutex> lock(settings.mutex);
+    const auto* active = settings.ddspc_active_valid &&
+                                 settings.s.servo_mode == SERVO_DDSPC
+                             ? &settings.ddspc_active
+                             : nullptr;
+    return heimdallr_ddspc::execute_command(settings.ddspc_configured, active,
+                                            action, value);
+}
 
 IMAGE DMs[N_TEL];
 IMAGE master_DMs[N_TEL];
@@ -644,6 +655,9 @@ COMMANDER_REGISTER(m)
     m.def("get_gd_toml_offsets", get_gd_toml_offsets, "Get the GD phasor offsets for all baselines in microns, to 3 decimal places");
     m.def("servo", set_servo_mode, "Set the servo mode",
         commander::arg("mode", "One of 'off', 'simple', 'fight', 'lacour', 'ddspc', or 'on'.", "off"));
+    m.def("ddspc", ddspc_command, "Get or stage DDSPC tuning for the next mode entry",
+        commander::arg("action", "'get' or a set-* DDSPC parameter action."),
+        commander::arg("value", "Numeric value for a set action.", nlohmann::json(nullptr)));
     m.def("offload", set_offload_mode, "Set the offload (slow servo) mode",
         commander::arg("mode", "One of 'off', 'nested', 'gd', 'mod', or 'manual'.", "off"));
     // Settings routines...
@@ -751,6 +765,13 @@ int main(int argc, char* argv[]) {
         settings.s.loglevel = config["loglevel"].value_or(3);
         set_log_level(settings.s.loglevel);
         info("Log level set to %d", settings.s.loglevel);
+    }
+
+    try {
+        settings.ddspc_configured = heimdallr_ddspc::read_config(config);
+    } catch (const std::exception& e) {
+        error("Invalid DDSPC configuration: %s", e.what());
+        return 1;
     }
 
     // Exit immediately if another instance of this server is running.

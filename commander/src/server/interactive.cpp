@@ -1,4 +1,5 @@
 #include <commander/server/interactive.h>
+#include <commander/server/inline_arguments.h>
 
 #include <fmt/core.h>
 #include <fmt/ranges.h>
@@ -34,8 +35,7 @@ namespace commander::server
                 else
                 {
                     name = command.substr(0, pos);
-                    command = fmt::format("[{}]", command.substr(pos + 1));
-                    args = json::parse(command);
+                    args = parse_inline_arguments(command.substr(pos + 1));
                 }
 
                 auto json = module_.execute(name, args);
