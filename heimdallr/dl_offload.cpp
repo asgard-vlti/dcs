@@ -1,6 +1,7 @@
 #include "heimdallr.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
+#include <ctime>
 // usleep for the controllino - this is actually a wait because we are 
 // waiting for an external device.
 #define CONTROLLINO_USLEEP 1000
@@ -33,16 +34,19 @@ zmq::context_t mds_zmq_context(1);
 int timeout_ms = 1000;
 zmq::socket_t mds_zmq_socket(mds_zmq_context, zmq::socket_type::req);
 const std::string mds_host_str = "tcp://192.168.100.2:5555";
+#ifdef SIMULATE
+const std::string sim_delay_endpoint = "tcp://127.0.0.1:6680";
+#endif
+#ifndef SIMULATE
 zmq::context_t wag_rmn_context(1);
 zmq::socket_t wag_rmn_socket(wag_rmn_context, zmq::socket_type::req);
-#ifndef SIMULATE
 const std::string wag_rmn_host_str = "tcp://wag:7050";
-#else
-const std::string wag_rmn_host_str = "tcp://localhost:6667";
+bool wag_rmn_initialized = false;
 #endif
-bool mds_zmq_initialized = false, controllino_initialized = false, wag_rmn_initialized = false;
+bool mds_zmq_initialized = false, controllino_initialized = false;
 
 // Initialize the connection to wag for the RMN relay
+#ifndef SIMULATE
 void init_wag_rmn() {
     if (!wag_rmn_initialized) {
         wag_rmn_socket.setsockopt(ZMQ_CONNECT_TIMEOUT, &timeout_ms, sizeof(timeout_ms));
@@ -58,6 +62,7 @@ void init_wag_rmn() {
         }
     }
 }
+#endif
 
 // Initialize the MDS ZMQ connection, for the HFO connection.
 void init_mds_zmq() {
@@ -130,11 +135,13 @@ bool initialize_delay_line(std::string type){
             info("HFO%d offset: %g", i + 1, hfo_offsets[i]);
         }
     } else if (type == "rmn") {
+#ifndef SIMULATE
         init_wag_rmn();
         if (!wag_rmn_initialized) {
             error("Failed to initialize ZMQ for WAG RMN delay lines.");
             return false;
         }
+#endif
     } else if (type != "off") {
         error("Delay line type not recognised: %s", type.c_str());
         return false;
@@ -189,13 +196,16 @@ void add_to_delay_lines(Eigen::Vector4d dl) {
         if (total_offload < HFO_DEADBAND) return;
     }
     next_offload = center_dls(dl + next_offload);
+#ifdef SIMULATE
+    sem_post(&sem_offload);
+#endif
 }
 
 // Set one delay line value. 
 void set_delay_line(int dl, double value) {
     // This function sets the delay line value for a specific telescope.
-    // The value is in K1 wavelengths.
-    if (dl == 0 || dl >= N_TEL) {
+    // The value is in microns of OPD.
+    if (dl <= 0 || dl > N_TEL) {
         info("Delay line number out of range");
         return;
     }
@@ -206,7 +216,7 @@ void start_search(uint search_dl_in, double start, double stop, double rate, uin
     // This function sets the search parameters for the delay line.
     search_ix = 0;
     search_length = (int)((stop - start) / rate);
-    search_dl = search_dl_in;
+    search_dl = search_dl_in - 1;
     search_delta = rate;
     search_start = start;
     search_dt_ms = dt_ms;
@@ -288,13 +298,15 @@ bool no_fringes = false;
 std::chrono::high_resolution_clock::time_point last_fringe_time = std::chrono::high_resolution_clock::now();
 void move_main_dl()
 {
+#ifdef SIMULATE
+    last_offload = next_offload + search_offset + mod_offload;
+#else
     // Only execute if wag_rmn is initialized. It can be 
     // re-initializedby re-selecting the delay line type, which 
     // calls initialize_delay_line.
     if (!wag_rmn_initialized) return;
 
     // Build the JSON message
-#ifndef SIMULATE
     nlohmann::json j;
     j["command"]["name"] = "writermn";
     // Use current time as ISO string
@@ -338,9 +350,6 @@ void move_main_dl()
 
     std::string msg = j.dump(); // No newlines
     //fmt::print("Sent to wag: {} \n", j.dump());
-#else
-    std::string msg = fmt::format("simrmn [{:.2f}, {:.2f}, {:.2f}, {:.2f}]", -next_offload(0)-search_offset(0)-mod_offload(0), -next_offload(1)-search_offset(1)-mod_offload(1), -next_offload(2)-search_offset(2)-mod_offload(2), -next_offload(3)-search_offset(3)-mod_offload(3));
-#endif
 
     wag_rmn_socket.send(zmq::buffer(msg), zmq::send_flags::none);
     zmq::message_t reply;
@@ -353,6 +362,7 @@ void move_main_dl()
         info("Timeout or error receiving reply from WAG RMN.");
     }
     last_offload = next_offload + search_offset + mod_offload;
+#endif
 }
 
 // The main thread function
@@ -360,13 +370,38 @@ int last_offload_mode=-1;
 void dl_offload(){
     // Initialize semaphore for offload timing
     sem_init(&sem_offload, 0, 0);
+#ifdef SIMULATE
+    zmq::context_t sim_context(1);
+    zmq::socket_t sim_publisher(sim_context, zmq::socket_type::pub);
+    sim_publisher.set(zmq::sockopt::sndhwm, 1);
+    sim_publisher.set(zmq::sockopt::linger, 0);
+    bool sim_publisher_ready = false;
+    try {
+        sim_publisher.bind(sim_delay_endpoint);
+        sim_publisher_ready = true;
+    } catch (const zmq::error_t& e) {
+        error("Failed to bind simulated delay-line publisher: %s", e.what());
+    }
+#endif
     // Zero the delay lines.
     auto last_search_time = std::chrono::high_resolution_clock::now();
 
     while (keep_offloading) {
         // Wait for the next offload - nominally 200Hz max, but controlled
         // by the fringe tracker thread.
+#ifdef SIMULATE
+        timespec deadline;
+        clock_gettime(CLOCK_REALTIME, &deadline);
+        deadline.tv_nsec += 10000000;
+        if (deadline.tv_nsec >= 1000000000) {
+            deadline.tv_sec++;
+            deadline.tv_nsec -= 1000000000;
+        }
+        sem_timedwait(&sem_offload, &deadline);
+        if (!keep_offloading) break;
+#else
         sem_wait(&sem_offload);
+#endif
 
         // Check if we need to zero the dl_offload
         if (zero_offload) {
@@ -447,11 +482,23 @@ void dl_offload(){
             log_file << fmt::format("{:.3f} {} {:.6f} {:.6f} {:.6f} {:.6f}\n",
                 timestamp,
                 settings.s.delay_line_type,
-                next_offload(0), next_offload(1), next_offload(2), next_offload(3));       
+                next_offload(0), next_offload(1), next_offload(2), next_offload(3));
         }
+#ifdef SIMULATE
+        if (sim_publisher_ready) {
+            // Match the effective RMN offset, including search and modulation.
+            Eigen::Vector4d target = next_offload + search_offset + mod_offload;
+            nlohmann::json values = {target(0), target(1), target(2), target(3)};
+            std::string message = values.dump();
+            try {
+                sim_publisher.send(zmq::buffer(message), zmq::send_flags::dontwait);
+            } catch (const zmq::error_t& e) {
+                error("Failed to publish simulated delay-line target: %s", e.what());
+            }
+        }
+#endif
     }
     if (controllinoSocket != -1) {
         close(controllinoSocket);
     }
 }
-

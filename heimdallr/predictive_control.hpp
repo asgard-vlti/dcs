@@ -141,6 +141,7 @@ class PredictiveControl {
 
 extern template class PredictiveControl<4, 2>;
 extern template class PredictiveControl<40, 4>;
+extern template class PredictiveControl<60, 5>;
 
 struct ModelSnapshot {
     using Controller = PredictiveControl<>;

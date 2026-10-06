@@ -428,7 +428,9 @@ auto DdspcServo::controller() const -> const PredictiveControl<>& { return contr
 template class QrdRls<1, 1>;
 template class QrdRls<27, 6>;
 template class QrdRls<249, 12>;
+template class QrdRls<372, 15>;
 template class PredictiveControl<4, 2>;
 template class PredictiveControl<40, 4>;
+template class PredictiveControl<60, 5>;
 
 }  // namespace heimdallr_ddspc

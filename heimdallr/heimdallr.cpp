@@ -108,7 +108,7 @@ static void record_servo_transition_locked(int mode, const char* trigger) {
 
 void linear_search(uint beam, double start, double stop, double rate, uint search_dt_ms, double search_snr_threashold) {
     if ((beam > N_TEL) || (beam == 0)) {
-        info("Beam number (arg 0) out of range (1 to %d)", N_TEL - 1);
+        info("Beam number (arg 0) out of range (1 to %d)", N_TEL);
         return;
     }
     // Set the delay line to the start position
