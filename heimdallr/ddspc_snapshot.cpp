@@ -1,6 +1,5 @@
 #include "ddspc_snapshot.hpp"
 
-#include <algorithm>
 #include <cerrno>
 #include <cmath>
 #include <cstdio>
@@ -114,10 +113,21 @@ nlohmann::json snapshot_json(const SnapshotJob& job) {
                      "%04d-%02d-%02dT%02d:%02d:%02d.%03lldZ"))},
           {"trained", model.trained},
           {"iterations", model.iterations},
-          {"rls_updates",
-           std::max(0, model.iterations - ModelSnapshot::Controller::TrainingDelay)},
+          {"rls_updates", model.rls_updates},
           {"exploration_frames", model.exploration_frames},
-          {"regularization", number_json(model.regularization, nonfinite)}}},
+          {"regularization", number_json(model.regularization, nonfinite)},
+          {"frozen", model.frozen},
+          {"freeze_reason", model.freeze_reason
+                                ? nlohmann::json(model.freeze_reason)
+                                : nlohmann::json(nullptr)},
+          {"freeze_frame", model.frozen
+                               ? nlohmann::json(model.freeze_frame)
+                               : nlohmann::json(nullptr)},
+          {"freeze_time_utc", model.frozen
+                                  ? nlohmann::json(utc_stamp(
+                                        model.freeze_time_ns,
+                                        "%04d-%02d-%02dT%02d:%02d:%02d.%03lldZ"))
+                                  : nlohmann::json(nullptr)}}},
         {"dimensions",
          {{"history", 40},
           {"future", 4},
@@ -131,7 +141,8 @@ nlohmann::json snapshot_json(const SnapshotJob& job) {
           {"reg_interval", p.reg_interval},
           {"n_exploration", p.n_exploration},
           {"exploration_sigma", number_json(p.exploration_sigma, nonfinite)},
-          {"gamma", number_json(p.gamma, nonfinite)}}},
+          {"gamma", number_json(p.gamma, nonfinite)},
+          {"continue_learning", p.continue_learning}}},
         {"rls",
          {{"initial_covariance", number_json(model.initial_covariance, nonfinite)},
           {"forgetting_factor", number_json(p.gamma, nonfinite)},

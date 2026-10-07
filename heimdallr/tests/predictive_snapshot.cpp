@@ -59,6 +59,23 @@ int main() {
               std::string(transitions[3].trigger) == "offload gd" &&
               std::string(transitions[5].trigger) == "offload mod",
           "Rapid off transitions were lost or duplicated");
+    int queued_mode = 4;
+    std::uint64_t queued_sequence = 0;
+    std::atomic<std::uint64_t> queued_generation{0};
+    std::deque<heimdallr_ddspc::ServoTransition> queued_events;
+    heimdallr_ddspc::record_servo_transition(
+        queued_mode, 5, "servo", params, 1, queued_events,
+        queued_sequence, queued_generation);
+    heimdallr_ddspc::record_freeze_request(
+        queued_mode, 5, params, 2, queued_events, queued_sequence,
+        queued_generation);
+    heimdallr_ddspc::record_servo_transition(
+        queued_mode, 4, "servo", params, 3, queued_events,
+        queued_sequence, queued_generation);
+    check(queued_events.size() == 3 && !queued_events[0].freeze &&
+              queued_events[1].freeze && !queued_events[2].freeze &&
+              queued_events[1].time_ns < queued_events[2].time_ns,
+          "Freeze request was not ordered before mode exit");
 
     sem_t k1, k2;
     check(sem_init(&k1, 0, 0) == 0 && sem_init(&k2, 0, 0) == 0,
@@ -90,6 +107,8 @@ int main() {
     check(active->trained && std::string(active->source) == "active",
           "Active trained model was not selected");
     check(active->iterations == 60, "Wrong model update count");
+    check(active->rls_updates == 16 && !active->frozen,
+          "Active model learning count is wrong");
     check(active->factor == expected_factor, "RLS factor changed in snapshot");
     check(active->weights == expected_weights, "RLS weights changed in snapshot");
     check(active->inverse == expected_inverse, "SVD inverse changed in snapshot");
@@ -119,6 +138,91 @@ int main() {
     check(empty_json["inverse"].is_null() &&
               empty_json["predictive"].is_null(),
           "Untrained run has a control matrix");
+
+    heimdallr_ddspc::Parameters freeze_params;
+    freeze_params.continue_learning = false;
+    freeze_params.n_exploration = 50;
+    freeze_params.reg_interval = 5;
+    freeze_params.reg_divisor = 1.1;
+    DdspcServo automatic;
+    Telescopes automatic_dm = Telescopes::Zero();
+    automatic.enter(freeze_params);
+    advance(automatic, automatic_dm, 50);
+    check(automatic.frozen() && automatic.exploration_frames() == 50 &&
+              automatic.controller().rls_updates() == 6,
+          "Automatic freeze missed the exploration boundary");
+    const auto frozen_factor = automatic.controller().rls().factor();
+    const auto frozen_weights = automatic.controller().rls().weights().eval();
+    const auto frozen_predictive = automatic.controller().predictive().eval();
+    const double frozen_regularization = automatic.controller().regularization();
+    advance(automatic, automatic_dm, 20);
+    check(automatic.controller().rls().factor() == frozen_factor &&
+              automatic.controller().rls().weights() == frozen_weights &&
+              automatic.controller().predictive() == frozen_predictive &&
+              automatic.controller().regularization() == frozen_regularization &&
+              automatic.controller().rls_updates() == 6 &&
+              automatic.controller().iterations() == 70,
+          "Frozen control law changed after exploration");
+    automatic.invalidate();
+    advance(automatic, automatic_dm, 3);
+    check(automatic.controller().rls().factor() == frozen_factor &&
+              automatic.controller().predictive() == frozen_predictive &&
+              automatic.controller().rls_updates() == 6,
+          "Frozen model was lost after tracking interruption");
+    auto automatic_model = automatic.snapshot_for_off();
+    SnapshotJob automatic_job{std::move(automatic_model), 1791200000000000000,
+                              2, "servo"};
+    const auto automatic_json = heimdallr_ddspc::snapshot_json(automatic_job);
+    check(automatic_json["model"]["frozen"] == true &&
+              automatic_json["model"]["freeze_reason"] == "after_exploration" &&
+              automatic_json["model"]["freeze_frame"] == 50 &&
+              automatic_json["model"]["freeze_time_utc"].is_string() &&
+              automatic_json["model"]["rls_updates"] == 6 &&
+              automatic_json["parameters"]["continue_learning"] == false,
+          "Automatic freeze was not recorded in snapshot JSON");
+
+    heimdallr_ddspc::Parameters continuing_params;
+    continuing_params.n_exploration = 2;
+    DdspcServo continuing;
+    Telescopes continuing_dm = Telescopes::Zero();
+    continuing.enter(continuing_params);
+    advance(continuing, continuing_dm, 50);
+    check(!continuing.frozen() && continuing.controller().rls_updates() == 6,
+          "Default controller stopped learning after exploration");
+    continuing.freeze_manual();
+    const auto manual_factor = continuing.controller().rls().factor();
+    advance(continuing, continuing_dm, 10);
+    check(continuing.controller().rls().factor() == manual_factor &&
+              continuing.controller().rls_updates() == 6,
+          "Manual freeze after exploration did not stop learning");
+
+    DdspcServo manual;
+    manual.enter();
+    manual.freeze_manual();
+    manual.freeze_manual();
+    const Telescopes no_dither = manual.propose(
+        Telescopes::Zero(), Telescopes::Zero(), 2.1, 6.0, 1.0,
+        Modes::Constant(10.0));
+    check(no_dither.isZero() && manual.frozen(),
+          "Manual freeze did not stop exploration dither");
+    manual.update(no_dither, 2.1, 6.0);
+    auto manual_model = manual.snapshot_for_off();
+    SnapshotJob manual_job{std::move(manual_model), 1791200000000000000,
+                           3, "servo"};
+    const auto manual_json = heimdallr_ddspc::snapshot_json(manual_job);
+    check(manual_json["model"]["frozen"] == true &&
+              manual_json["model"]["freeze_reason"] == "manual" &&
+              manual_json["model"]["freeze_frame"] == 0 &&
+              manual_json["model"]["trained"] == false &&
+              manual_json["model"]["rls_updates"] == 0 &&
+              manual_json["predictive"].is_null(),
+          "Early manual freeze was not recorded as untrained");
+
+    freeze_params.n_exploration = 0;
+    DdspcServo immediate;
+    immediate.enter(freeze_params);
+    check(immediate.frozen() && immediate.controller().rls_updates() == 0,
+          "Zero exploration did not freeze immediately");
 
     active->weights(0, 0) = std::numeric_limits<double>::quiet_NaN();
     SnapshotJob first{std::move(active), 1791200000000000000, 7,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "predictive_control.hpp"
+#include "servo_transitions.hpp"
 
 #include <nlohmann/json.hpp>
 #include <toml.hpp>
@@ -19,13 +20,24 @@ inline nlohmann::json profile_json(const Parameters& p) {
             {"reg_interval", p.reg_interval},
             {"n_exploration", p.n_exploration},
             {"exploration_sigma", p.exploration_sigma},
-            {"gamma", p.gamma}};
+            {"gamma", p.gamma},
+            {"continue_learning", p.continue_learning}};
 }
 
 inline nlohmann::json status_json(const Parameters& configured,
-                                  const Parameters* active) {
+                                  const Parameters* active,
+                                  const FreezeStatus* freeze_status = nullptr) {
+    nlohmann::json runtime = nullptr;
+    if (active && freeze_status) {
+        runtime = {{"freeze_pending", freeze_status->pending},
+                   {"frozen", freeze_status->frozen},
+                   {"freeze_reason", freeze_status->reason
+                                         ? nlohmann::json(freeze_status->reason)
+                                         : nlohmann::json(nullptr)}};
+    }
     return {{"configured", profile_json(configured)},
-            {"active", active ? profile_json(*active) : nlohmann::json(nullptr)}};
+            {"active", active ? profile_json(*active) : nlohmann::json(nullptr)},
+            {"runtime", std::move(runtime)}};
 }
 
 inline Parameters read_config(const toml::table& table) {
@@ -58,6 +70,16 @@ inline Parameters read_config(const toml::table& table) {
         }
         field = static_cast<int>(*parsed);
     };
+    auto read_bool = [&](const char* key, bool& field) {
+        const auto node = (*section)[key];
+        if (!node) return;
+        const auto* parsed = node.as_boolean();
+        if (!parsed) {
+            throw std::invalid_argument(std::string("ddspc.") + key +
+                                        " must be a boolean");
+        }
+        field = parsed->get();
+    };
     read_double("reg_start", p.reg_start);
     read_double("reg_cutoff", p.reg_cutoff);
     read_double("reg_divisor", p.reg_divisor);
@@ -65,12 +87,20 @@ inline Parameters read_config(const toml::table& table) {
     read_int("n_exploration", p.n_exploration);
     read_double("exploration_sigma", p.exploration_sigma);
     read_double("gamma", p.gamma);
+    read_bool("continue_learning", p.continue_learning);
     validate(p);
     return p;
 }
 
 inline void stage_parameter(Parameters& configured, const std::string& action,
                             const nlohmann::json& value) {
+    if (action == "set-continue-learning") {
+        if (!value.is_boolean()) {
+            throw std::invalid_argument("ddspc continue_learning must be a boolean");
+        }
+        configured.continue_learning = value.get<bool>();
+        return;
+    }
     if (!value.is_number()) {
         throw std::invalid_argument("ddspc setter requires a numeric value");
     }
@@ -113,7 +143,8 @@ inline void stage_parameter(Parameters& configured, const std::string& action,
 inline nlohmann::json execute_command(Parameters& configured,
                                       const Parameters* active,
                                       const std::string& action,
-                                      const nlohmann::json& value) {
+                                      const nlohmann::json& value,
+                                      const FreezeStatus* freeze_status = nullptr) {
     if (action == "get") {
         if (!value.is_null()) {
             throw std::invalid_argument("ddspc get takes no value");
@@ -121,7 +152,24 @@ inline nlohmann::json execute_command(Parameters& configured,
     } else {
         stage_parameter(configured, action, value);
     }
-    return status_json(configured, active);
+    return status_json(configured, active, freeze_status);
+}
+
+inline void queue_freeze_request(
+    int current_mode, int ddspc_mode, const Parameters* active,
+    const nlohmann::json& value, FreezeStatus& status, std::int64_t time_ns,
+    std::deque<ServoTransition>& transitions, std::uint64_t& next_sequence,
+    std::atomic<std::uint64_t>& generation) {
+    if (!value.is_null()) {
+        throw std::invalid_argument("ddspc freeze takes no value");
+    }
+    if (!active || current_mode != ddspc_mode) {
+        throw std::invalid_argument("DDSPC mode is not active");
+    }
+    if (status.pending || status.frozen) return;
+    record_freeze_request(current_mode, ddspc_mode, *active, time_ns,
+                          transitions, next_sequence, generation);
+    status.pending = true;
 }
 
 }  // namespace heimdallr_ddspc

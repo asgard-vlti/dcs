@@ -245,6 +245,7 @@ struct LocalSettings {
     heimdallr_ddspc::Parameters ddspc_configured;
     heimdallr_ddspc::Parameters ddspc_active;
     bool ddspc_active_valid = false;
+    heimdallr_ddspc::FreezeStatus ddspc_freeze_status;
     std::deque<heimdallr_ddspc::ServoTransition> servo_transitions;
     std::atomic<std::uint64_t> servo_transition_generation{0};
     std::uint64_t next_servo_transition = 0;

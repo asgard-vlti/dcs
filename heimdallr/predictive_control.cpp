@@ -200,14 +200,21 @@ template <int HistoryLength, int FutureLength>
 void PredictiveControl<HistoryLength, FutureLength>::reset(
     const Modes& initial_command) {
     rls_.reset();
-    errors_.reset();
-    commands_.reset();
     predictive_.setZero();
     inverse_.setZero();
-    command_ = initial_command;
-    previous_command_ = initial_command;
     regularization_ = params_.reg_start;
     iterations_ = 0;
+    rls_updates_ = 0;
+    reset_tracking(initial_command);
+}
+
+template <int HistoryLength, int FutureLength>
+void PredictiveControl<HistoryLength, FutureLength>::reset_tracking(
+    const Modes& initial_command) {
+    errors_.reset();
+    commands_.reset();
+    command_ = initial_command;
+    previous_command_ = initial_command;
 }
 
 template <int HistoryLength, int FutureLength>
@@ -236,10 +243,10 @@ Modes PredictiveControl<HistoryLength, FutureLength>::propose(
 
 template <int HistoryLength, int FutureLength>
 void PredictiveControl<HistoryLength, FutureLength>::update(
-    const Modes& applied_command) {
+    const Modes& applied_command, bool learn) {
     ++iterations_;
     commands_.add(applied_command - previous_command_);
-    if (iterations_ <= HistoryLength + FutureLength) return;
+    if (!learn || iterations_ <= HistoryLength + FutureLength) return;
 
     int offset = 0;
     for (int i = 1; i < FutureLength; ++i) {
@@ -258,6 +265,7 @@ void PredictiveControl<HistoryLength, FutureLength>::update(
         target_.template segment<3>(3 * i) = errors_.get(-i);
     }
     rls_.update(feature_, target_);
+    ++rls_updates_;
 
     const auto& weight = rls_.weights();
     correlation_.noalias() =
@@ -298,6 +306,11 @@ void PredictiveControl<HistoryLength, FutureLength>::advance_regularization(
 template <int HistoryLength, int FutureLength>
 int PredictiveControl<HistoryLength, FutureLength>::iterations() const {
     return iterations_;
+}
+
+template <int HistoryLength, int FutureLength>
+int PredictiveControl<HistoryLength, FutureLength>::rls_updates() const {
+    return rls_updates_;
 }
 
 template <int HistoryLength, int FutureLength>
@@ -342,12 +355,19 @@ void DdspcServo::enter(const Parameters& params) {
     last_update_ns_ = 0;
     active_ = false;
     exploration_frames_ = 0;
+    frozen_ = false;
+    freeze_reason_ = nullptr;
+    freeze_frame_ = 0;
+    freeze_time_ns_ = 0;
+    if (!params.continue_learning && params.n_exploration == 0) {
+        freeze("after_exploration");
+    }
 }
 
 void DdspcServo::invalidate() {
-    if (active_) {
+    if (active_ && !frozen_) {
         if (!last_trained_) last_trained_ = std::make_unique<ModelSnapshot>();
-        if (controller_.iterations() > PredictiveControl<>::TrainingDelay) {
+        if (controller_.rls_updates() > 0) {
             capture(*last_trained_);
             last_trained_valid_ = true;
         }
@@ -361,10 +381,15 @@ void DdspcServo::capture(ModelSnapshot& snapshot) const {
     snapshot.parameters = controller_.parameters();
     snapshot.iterations = controller_.iterations();
     snapshot.exploration_frames = exploration_frames_;
+    snapshot.rls_updates = controller_.rls_updates();
+    snapshot.frozen = frozen_;
+    snapshot.freeze_reason = freeze_reason_;
+    snapshot.freeze_frame = freeze_frame_;
+    snapshot.freeze_time_ns = freeze_time_ns_;
     snapshot.regularization = controller_.regularization();
     snapshot.initial_covariance = rls.initial_covariance();
     snapshot.model_time_ns = last_update_ns_;
-    snapshot.trained = snapshot.iterations > PredictiveControl<>::TrainingDelay;
+    snapshot.trained = snapshot.rls_updates > 0;
     snapshot.factor = rls.factor();
     snapshot.weights = rls.weights();
     snapshot.inverse = controller_.inverse();
@@ -373,8 +398,12 @@ void DdspcServo::capture(ModelSnapshot& snapshot) const {
 
 std::unique_ptr<ModelSnapshot> DdspcServo::snapshot_for_off() {
     if (!last_trained_) last_trained_ = std::make_unique<ModelSnapshot>();
-    if (active_ &&
-        controller_.iterations() > PredictiveControl<>::TrainingDelay) {
+    if (frozen_) {
+        capture(*last_trained_);
+        last_trained_->source = !last_trained_->trained
+                                    ? "untrained"
+                                    : (active_ ? "active" : "retained");
+    } else if (active_ && controller_.rls_updates() > 0) {
         capture(*last_trained_);
         last_trained_->source = "active";
     } else if (last_trained_valid_) {
@@ -394,16 +423,19 @@ Telescopes DdspcServo::propose(
     double wavelength, double opd_per_dm_unit, double dm_limit,
     const Modes& normal_draw) {
     if (!active_) {
-        controller_.reset(
-            applied_command_waves(current_dm, wavelength, opd_per_dm_unit));
+        const Modes current_command =
+            applied_command_waves(current_dm, wavelength, opd_per_dm_unit);
+        if (frozen_) controller_.reset_tracking(current_command);
+        else controller_.reset(current_command);
         common_mode_ = current_dm.mean();
-        last_update_ns_ = 0;
+        if (!frozen_) last_update_ns_ = 0;
         active_ = true;
     }
-    controller_.advance_regularization(controller_.iterations());
+    if (!frozen_) controller_.advance_regularization(controller_.iterations());
     const Modes command = controller_.propose(
         phase_error_modes(phase_delay_waves), normal_draw,
-        exploration_frames_ < controller_.parameters().n_exploration);
+        !frozen_ &&
+            exploration_frames_ < controller_.parameters().n_exploration);
     return (dm_command(command, wavelength, opd_per_dm_unit).array() +
             common_mode_)
         .matrix()
@@ -413,13 +445,37 @@ Telescopes DdspcServo::propose(
 
 void DdspcServo::update(const Telescopes& applied_dm, double wavelength,
                         double opd_per_dm_unit) {
+    const int previous_rls_updates = controller_.rls_updates();
     controller_.update(
-        applied_command_waves(applied_dm, wavelength, opd_per_dm_unit));
-    last_update_ns_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        applied_command_waves(applied_dm, wavelength, opd_per_dm_unit),
+        !frozen_);
+    if (controller_.rls_updates() != previous_rls_updates) {
+        last_update_ns_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                              std::chrono::system_clock::now().time_since_epoch())
+                              .count();
+    }
+    ++exploration_frames_;
+    if (!controller_.parameters().continue_learning && !frozen_ &&
+        exploration_frames_ >= controller_.parameters().n_exploration) {
+        freeze("after_exploration");
+    }
+}
+
+void DdspcServo::freeze(const char* reason) {
+    if (frozen_) return;
+    frozen_ = true;
+    freeze_reason_ = reason;
+    freeze_frame_ = exploration_frames_;
+    freeze_time_ns_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
                           std::chrono::system_clock::now().time_since_epoch())
                           .count();
-    ++exploration_frames_;
 }
+
+void DdspcServo::freeze_manual() { freeze("manual"); }
+
+bool DdspcServo::frozen() const { return frozen_; }
+
+const char* DdspcServo::freeze_reason() const { return freeze_reason_; }
 
 int DdspcServo::exploration_frames() const { return exploration_frames_; }
 

@@ -48,8 +48,21 @@ nlohmann::json ddspc_command(std::string action, nlohmann::json value) {
                                  settings.s.servo_mode == SERVO_DDSPC
                              ? &settings.ddspc_active
                              : nullptr;
+    if (action == "freeze") {
+        const auto time_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                 std::chrono::system_clock::now().time_since_epoch())
+                                 .count();
+        heimdallr_ddspc::queue_freeze_request(
+            settings.s.servo_mode, SERVO_DDSPC, active, value,
+            settings.ddspc_freeze_status, time_ns, settings.servo_transitions,
+            settings.next_servo_transition,
+            settings.servo_transition_generation);
+        return heimdallr_ddspc::status_json(
+            settings.ddspc_configured, active, &settings.ddspc_freeze_status);
+    }
     return heimdallr_ddspc::execute_command(settings.ddspc_configured, active,
-                                            action, value);
+                                            action, value,
+                                            &settings.ddspc_freeze_status);
 }
 
 IMAGE DMs[N_TEL];
@@ -671,9 +684,9 @@ COMMANDER_REGISTER(m)
     m.def("get_gd_toml_offsets", get_gd_toml_offsets, "Get the GD phasor offsets for all baselines in microns, to 3 decimal places");
     m.def("servo", set_servo_mode, "Set the servo mode",
         commander::arg("mode", "One of 'off', 'simple', 'fight', 'lacour', 'ddspc', or 'on'.", "off"));
-    m.def("ddspc", ddspc_command, "Get or stage DDSPC tuning for the next mode entry",
-        commander::arg("action", "'get' or a set-* DDSPC parameter action."),
-        commander::arg("value", "Numeric value for a set action.", nlohmann::json(nullptr)));
+    m.def("ddspc", ddspc_command, "Get or stage DDSPC tuning, or freeze the active run",
+        commander::arg("action", "'get', 'freeze', or a set-* DDSPC parameter action."),
+        commander::arg("value", "Value for a set action.", nlohmann::json(nullptr)));
     m.def("offload", set_offload_mode, "Set the offload (slow servo) mode",
         commander::arg("mode", "One of 'off', 'nested', 'gd', 'mod', or 'manual'.", "off"));
     // Settings routines...

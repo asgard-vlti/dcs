@@ -19,6 +19,13 @@ struct Parameters {
     int n_exploration = 500;
     double exploration_sigma = 0.01;
     double gamma = 1.0;
+    bool continue_learning = true;
+};
+
+struct FreezeStatus {
+    bool pending = false;
+    bool frozen = false;
+    const char* reason = nullptr;
 };
 
 void validate(const Parameters& params);
@@ -107,11 +114,14 @@ class PredictiveControl {
     Modes propose(const Modes& error, const Modes& normal_draw,
                   bool exploration_enabled = true);
 
-    void update(const Modes& applied_command);
+    void update(const Modes& applied_command, bool learn = true);
+
+    void reset_tracking(const Modes& initial_command);
 
     void advance_regularization(int valid_frame_index);
 
     int iterations() const;
+    int rls_updates() const;
     double regularization() const;
     const Parameters& parameters() const;
     const Modes& command() const;
@@ -128,6 +138,7 @@ class PredictiveControl {
     Modes previous_command_ = Modes::Zero();
     double regularization_ = 1e5;
     int iterations_ = 0;
+    int rls_updates_ = 0;
     ControlVector past_;
     FeatureVector feature_;
     OutputVector target_;
@@ -149,6 +160,11 @@ struct ModelSnapshot {
     Parameters parameters;
     int iterations = 0;
     int exploration_frames = 0;
+    int rls_updates = 0;
+    bool frozen = false;
+    const char* freeze_reason = nullptr;
+    int freeze_frame = 0;
+    std::int64_t freeze_time_ns = 0;
     double regularization = 0.0;
     double initial_covariance = 0.0;
     std::int64_t model_time_ns = 0;
@@ -174,6 +190,10 @@ class DdspcServo {
     void update(const Telescopes& applied_dm, double wavelength,
                 double opd_per_dm_unit);
 
+    void freeze_manual();
+    bool frozen() const;
+    const char* freeze_reason() const;
+
     int exploration_frames() const;
     const PredictiveControl<>& controller() const;
     std::unique_ptr<ModelSnapshot> snapshot_for_off();
@@ -188,6 +208,12 @@ class DdspcServo {
     double common_mode_ = 0.0;
     int exploration_frames_ = 0;
     bool active_ = false;
+    bool frozen_ = false;
+    const char* freeze_reason_ = nullptr;
+    int freeze_frame_ = 0;
+    std::int64_t freeze_time_ns_ = 0;
+
+    void freeze(const char* reason);
 };
 
 }  // namespace heimdallr_ddspc

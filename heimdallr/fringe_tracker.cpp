@@ -402,6 +402,18 @@ void fringe_tracker(){
                 std::memory_order_relaxed);
         }
         for (const auto& transition : transitions) {
+            if (transition.freeze) {
+                ddspc.freeze_manual();
+                {
+                    std::lock_guard<std::mutex> lock(settings.mutex);
+                    settings.ddspc_freeze_status.pending = false;
+                    settings.ddspc_freeze_status.frozen = ddspc.frozen();
+                    settings.ddspc_freeze_status.reason = ddspc.freeze_reason();
+                }
+                info("DDSPC learning frozen by command after %d valid frames",
+                     ddspc.exploration_frames());
+                continue;
+            }
             if (transition.from == SERVO_DDSPC) {
                 if (transition.to == SERVO_OFF) {
                     try {
@@ -422,6 +434,7 @@ void fringe_tracker(){
                 }
                 std::lock_guard<std::mutex> lock(settings.mutex);
                 settings.ddspc_active_valid = false;
+                settings.ddspc_freeze_status = {};
             }
             if (transition.to == SERVO_DDSPC) {
                 ddspc_params = transition.ddspc_params;
@@ -430,6 +443,8 @@ void fringe_tracker(){
                     std::lock_guard<std::mutex> lock(settings.mutex);
                     settings.ddspc_active = ddspc_params;
                     settings.ddspc_active_valid = true;
+                    settings.ddspc_freeze_status =
+                        {false, ddspc.frozen(), ddspc.freeze_reason()};
                 }
                 next_ddspc_wait_log = std::chrono::steady_clock::time_point{};
                 next_ddspc_active_log = std::chrono::steady_clock::time_point{};
@@ -754,7 +769,8 @@ void fringe_tracker(){
             if (use_ddspc) {
                 heimdallr_ddspc::Modes draw =
                     heimdallr_ddspc::Modes::Zero();
-                if (ddspc.exploration_frames() < ddspc_params.n_exploration) {
+                if (!ddspc.frozen() &&
+                    ddspc.exploration_frames() < ddspc_params.n_exploration) {
                     for (int i = 0; i < 3; ++i) {
                         draw(i) = standard_normal(exploration_generator);
                     }
@@ -827,8 +843,14 @@ void fringe_tracker(){
                 control_u.beams_active.minCoeff() > 0.5 &&
                 control_u.search.squaredNorm() == 0.0) {
                 // The active, search-free path wrote this clipped command unchanged.
+                const bool was_frozen = ddspc.frozen();
                 ddspc.update(control_u.dm_piston, wavelength_K1,
                              OPD_PER_DM_UNIT);
+                if (!was_frozen && ddspc.frozen()) {
+                    std::lock_guard<std::mutex> lock(settings.mutex);
+                    settings.ddspc_freeze_status =
+                        {false, true, ddspc.freeze_reason()};
+                }
                 const int updates = ddspc.controller().iterations();
                 const int exploration = ddspc.exploration_frames();
                 const double regularization = ddspc.controller().regularization();

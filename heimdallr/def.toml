@@ -30,3 +30,4 @@ reg_interval = 200
 n_exploration = 5000
 exploration_sigma = 0.01
 gamma = 1.0
+continue_learning = true
