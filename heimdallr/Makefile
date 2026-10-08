@@ -88,3 +88,6 @@ install:
 	install -D $(EXEC) $(PREFIX)/bin/
 	setcap 'cap_sys_nice=eip' $(PREFIX)/bin/$(EXEC)
 	cp def.toml $(PREFIX)/etc
+
+priority:
+	setcap 'cap_sys_nice=eip' $(EXEC)
