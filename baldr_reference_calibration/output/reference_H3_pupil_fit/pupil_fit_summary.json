@@ -1,0 +1,189 @@
+{
+  "parameter_names": [
+    "rotation_deg",
+    "shift_x_pupil_pixels",
+    "shift_y_pupil_pixels",
+    "diameter_scale"
+  ],
+  "initial_parameters": [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+  ],
+  "fitted_parameters": [
+    0.0,
+    2.336795774292165,
+    -0.7254975750710484,
+    1.0490870821209406
+  ],
+  "bounds": [
+    [
+      -15.0,
+      15.0
+    ],
+    [
+      -4.0,
+      4.0
+    ],
+    [
+      -4.0,
+      4.0
+    ],
+    [
+      0.95,
+      1.05
+    ]
+  ],
+  "fit_success": false,
+  "fit_message": "The maximum number of function evaluations is exceeded.",
+  "nfev": 30,
+  "geometric_mean_squared_residual": 0.10062182067289209,
+  "final_mean_squared_residual": 0.0938398031055456,
+  "flux_scale": 0.018839625042352,
+  "background": 1004.4667347370748,
+  "crop_origin_yx": [
+    15.94990553211666,
+    15.50318134251405
+  ],
+  "rotation_observable": false,
+  "full_frame_registration": false,
+  "measured_pupil": {
+    "background": 1000.29,
+    "noise_sigma": 1.8206328000000127,
+    "threshold": 9.103164000000064,
+    "center_x": 16.0,
+    "center_y": 16.0,
+    "width_pixels": 19,
+    "height_pixels": 21,
+    "diameter_pixels": 21.0
+  },
+  "measured_pupil_center_subpixel": {
+    "center_x": 16.122577803902406,
+    "center_y": 15.6758536130509,
+    "radius_pixels": 8.141548584883234,
+    "center_sigma_x_pixels": 0.1418592236926616,
+    "center_sigma_y_pixels": 0.1321610509765826,
+    "radial_residual_rms_pixels": 0.6897643533736796,
+    "angular_coverage_fraction": 0.9166666666666666,
+    "edge_sample_count": 82,
+    "method": "robust outer-edge profile with planar illumination",
+    "fit_success": true,
+    "fit_message": "`ftol` termination condition is satisfied."
+  },
+  "model_pupil_center_subpixel": {
+    "center_x": 31.625759146416456,
+    "center_y": 31.62575914516756,
+    "radius_pixels": 7.797745603845182,
+    "center_sigma_x_pixels": 0.02963943041053797,
+    "center_sigma_y_pixels": 0.029639422488627325,
+    "radial_residual_rms_pixels": 0.5850944331525625,
+    "angular_coverage_fraction": 1.0,
+    "edge_sample_count": 88,
+    "method": "robust outer-edge profile with planar illumination",
+    "fit_success": true,
+    "fit_message": "`ftol` termination condition is satisfied."
+  },
+  "amplitude_grid_coefficients": [
+    [
+      -0.04642509532962029,
+      -0.05436609382523665,
+      0.04781713397985747,
+      0.06397918550049918
+    ],
+    [
+      -0.0723788245375487,
+      -0.20037029745339496,
+      0.12350413988813255,
+      0.07384757952512581
+    ],
+    [
+      -0.010724240835158244,
+      0.0032941800649929076,
+      -0.02665322683531325,
+      0.03023285419688882
+    ],
+    [
+      0.011942407887152534,
+      0.015306204710111543,
+      0.012220123484575879,
+      0.028773969578935417
+    ]
+  ],
+  "config": {
+    "source": {
+      "profile": "onsky",
+      "profiles": {
+        "internal": {
+          "spectral_type": null,
+          "temperature_K": 3000,
+          "photons_per_second_per_pixel_per_nm": 1000
+        },
+        "onsky": {
+          "spectral_type": "K5V",
+          "temperature_K": null,
+          "photons_per_second_per_pixel_per_nm": 500
+        }
+      }
+    },
+    "spectrum": {
+      "mode": "blackbody",
+      "weighting": "photon",
+      "wavelength_min_m": 1.5e-06,
+      "wavelength_max_m": 1.8e-06,
+      "samples": 7
+    },
+    "pupil": {
+      "geometry": "solarstein",
+      "rotation_deg": 0.0,
+      "array_size": 512,
+      "pixels_across_pupil": 128,
+      "physical_diameter_m": 1.8
+    },
+    "flat_dm": {
+      "model": "BMC-multi-3.5",
+      "flat_command": 0.5,
+      "opd_per_command_m": 3e-06,
+      "actuator_coupling_factor": 0.75
+    },
+    "optics": {
+      "f_number": 21.2,
+      "strehl": 1.0
+    },
+    "phase_mask": {
+      "name": "H3",
+      "phase_model": "physical_depth",
+      "depth_um": 0.654,
+      "material": "N_1405",
+      "diameter_model": "physical",
+      "diameter_um": 44
+    },
+    "relay": {
+      "entrance_diameter_m": 0.012,
+      "oap_focal_length_m": 0.254,
+      "collimator_focal_length_m": 0.04,
+      "distance_to_mirror_m": 0.5,
+      "mirror_diameter_m": 0.0254,
+      "edge_offset_m": -0.01,
+      "edge_angle_rad": 0,
+      "imaging_focal_length_m": 0.184,
+      "cold_stop_diameter_m": 0.002145,
+      "cold_stop_x_offset_m": 0,
+      "cold_stop_y_offset_m": 0,
+      "detector_pupil_diameter_m": 0.000288,
+      "pupil_misconjugation_m": 0
+    },
+    "detector": {
+      "binning": 8,
+      "crop": null,
+      "exposure_s": 0.001,
+      "quantum_efficiency": 0.7
+    },
+    "pupil_fit_result": {
+      "shift_x_pupil_pixels": 2.336795774292165,
+      "shift_y_pupil_pixels": -0.7254975750710484,
+      "diameter_scale": 1.0490870821209406,
+      "amplitude_file": "pupil_fit_products.fits[PUPIL_AMPLITUDE]"
+    }
+  }
+}
