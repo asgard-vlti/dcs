@@ -1,5 +1,6 @@
 #include "heimdallr.h"
 #include "ddspc_snapshot.hpp"
+#include "ddspc_piston_hold.hpp"
 #include "fringe_frame_wait.hpp"
 #include "predictive_control.hpp"
 #include <chrono>
@@ -128,8 +129,9 @@ void end_modulation() {
     sem_post(&sem_offload);
 }
 
-void set_dm_piston(Eigen::Vector4d dm_piston){
+void set_dm_piston(Eigen::Vector4d dm_piston, bool force_write = false){
 #ifdef SIMULATE
+    (void)force_write;
     static IMAGE piston_cmd = {};
     static bool piston_cmd_open = false;
     static bool piston_cmd_error_logged = false;
@@ -164,7 +166,7 @@ void set_dm_piston(Eigen::Vector4d dm_piston){
     control_u.dm_piston = control_u.beams_active.asDiagonal() * control_u.dm_piston;       	
     // This function sets the DM piston to the given value.
     for(int i = 0; i < N_TEL; i++) {
-        if (control_u.search(i) != 0.0) {
+        if (control_u.search(i) != 0.0 && !force_write) {
             control_u.dm_piston(i) = 0.0; // Reset DM piston if in search mode
             continue; // Do not set if in search mode
         }
@@ -363,6 +365,7 @@ void fringe_tracker(){
     Eigen::Vector4d pd_gain_scale = Eigen::Vector4d::Ones();
     unsigned long int last_gd_jump=0;
     heimdallr_ddspc::DdspcServo ddspc;
+    heimdallr_ddspc::PistonResetHold piston_reset_hold;
     heimdallr_ddspc::Parameters ddspc_params;
     std::mt19937_64 exploration_generator(std::random_device{}());
     std::normal_distribution<double> standard_normal(0.0, 1.0);
@@ -381,14 +384,32 @@ void fringe_tracker(){
         }
         const auto now = std::chrono::steady_clock::now();
         if (now < next_ddspc_wait_log) return;
+        info("DDSPC waiting: %s", reason);
+        next_ddspc_wait_log = now + std::chrono::seconds(1);
+    };
+    auto reset_ddspc_fit = [&](const char *reason, bool restart_exploration,
+                               bool early_exit) {
+        bool selected;
+        {
+            std::lock_guard<std::mutex> lock(settings.mutex);
+            selected = settings.s.servo_mode == SERVO_DDSPC;
+        }
         const int updates = ddspc.controller().iterations();
-        if (updates > 0) {
+        const bool reset_fit = selected && !ddspc.frozen() && updates > 0;
+        if (restart_exploration) ddspc.restart_learning();
+        else ddspc.invalidate();
+        if (reset_fit) {
             info("DDSPC paused: %s; resetting fit after %d valid updates",
                  reason, updates);
+            piston_reset_hold.arm();
         } else {
-            info("DDSPC waiting: %s", reason);
+            report_ddspc_wait(reason);
         }
-        next_ddspc_wait_log = now + std::chrono::seconds(1);
+        if (reset_fit || (early_exit && selected && piston_reset_hold.active())) {
+            control_u.dm_piston = piston_reset_hold.command(
+                control_u.dm_piston, true);
+            set_dm_piston(control_u.dm_piston, true);
+        }
     };
     auto process_servo_transitions = [&] {
         if (seen_servo_transition ==
@@ -415,6 +436,7 @@ void fringe_tracker(){
                 continue;
             }
             if (transition.from == SERVO_DDSPC) {
+                piston_reset_hold.clear();
                 if (transition.to == SERVO_OFF) {
                     try {
                         heimdallr_ddspc::SnapshotJob job;
@@ -437,6 +459,7 @@ void fringe_tracker(){
                 settings.ddspc_freeze_status = {};
             }
             if (transition.to == SERVO_DDSPC) {
+                piston_reset_hold.clear();
                 ddspc_params = transition.ddspc_params;
                 ddspc.enter(ddspc_params);
                 {
@@ -489,8 +512,7 @@ void fringe_tracker(){
         bool ddspc_frame_gap = false;
         cnt_since_init++; //This should "never" wrap around, as a long int is big.
         if ((K1ft->bad_frame) || (K2ft->bad_frame)) {
-            report_ddspc_wait("bad camera frame");
-            ddspc.invalidate();
+            reset_ddspc_fit("bad camera frame", false, true);
             ft_cnt++;
             continue;
         }
@@ -512,8 +534,8 @@ void fringe_tracker(){
         // If we are here, then a new frame is available in both K1 and K2. 
         // Check that there has not been a counting error.
         if(k1_cnt == ft_cnt || k2_cnt == ft_cnt){
-            report_ddspc_wait("camera semaphore without a new frame");
-            ddspc.invalidate();
+            reset_ddspc_fit("camera semaphore without a new frame", false,
+                            true);
             info("FT: Semaphore signalled but no new frame");
             nerrors++;
             continue;
@@ -537,6 +559,9 @@ void fringe_tracker(){
             std::lock_guard<std::mutex> lock(settings.mutex);
             servo_mode = settings.s.servo_mode;
         }
+        bool ddspc_hold_this_frame =
+            servo_mode == SERVO_DDSPC &&
+            piston_reset_hold.on_paired_frame(!ddspc_frame_gap);
 #ifdef PRINT_TIMING
         timespec then;
         clock_gettime(CLOCK_REALTIME, &then);
@@ -753,7 +778,9 @@ void fringe_tracker(){
                                   phase_solver.eigenvalues()(1) > 1e-6;
             }
             const char *block_reason = nullptr;
-            if (ddspc_frame_gap && !ddspc.frozen())
+            if (ddspc_hold_this_frame)
+                block_reason = "piston settling after fit reset";
+            else if (ddspc_frame_gap && !ddspc.frozen())
                 block_reason = "camera frame gap";
             else if (!control_u.fringe_found) block_reason = "fringes not locked";
             else if (!(control_u.beams_active.minCoeff() > 0.5))
@@ -787,10 +814,10 @@ void fringe_tracker(){
                 }
             }
             if (!use_ddspc) {
-                report_ddspc_wait(block_reason);
-                if (ddspc_frame_gap && !ddspc.frozen())
-                    ddspc.restart_learning();
-                else ddspc.invalidate();
+                reset_ddspc_fit(block_reason,
+                                ddspc_frame_gap && !ddspc.frozen(), false);
+                ddspc_hold_this_frame =
+                    ddspc_hold_this_frame || piston_reset_hold.active();
             }
         }
 
@@ -814,7 +841,8 @@ void fringe_tracker(){
             control_u.dm_piston = control_u.dm_piston.cwiseMax(-MAX_DM_PISTON);
 
         } else if (servo_mode == SERVO_LACOUR ||
-                   (servo_mode == SERVO_DDSPC && !use_ddspc)){
+                   (servo_mode == SERVO_DDSPC && !use_ddspc &&
+                    !ddspc_hold_this_frame)){
             // Compute the piezo control signal from the phase delay.
             if (servo_mode == SERVO_DDSPC && !finite_servo_input) {
                 control_u.dm_piston.setZero();
@@ -831,7 +859,7 @@ void fringe_tracker(){
             }
         }
         // Make the test pattern.
-        if (control_u.test_n > 0){
+        if (control_u.test_n > 0 && !ddspc_hold_this_frame){
             if (control_u.test_ix < control_u.test_n){
                 control_u.dm_piston(control_u.test_beam) = control_u.test_value;
             } else  {
@@ -840,7 +868,9 @@ void fringe_tracker(){
             control_u.test_ix = (control_u.test_ix + 1) % (2*control_u.test_n);
         }
         // Apply the signal to the DM! 
-        set_dm_piston(control_u.dm_piston);
+        control_u.dm_piston = piston_reset_hold.command(
+            control_u.dm_piston, ddspc_hold_this_frame);
+        set_dm_piston(control_u.dm_piston, ddspc_hold_this_frame);
         if (servo_mode == SERVO_DDSPC && use_ddspc) {
             if (control_u.test_n == 0 &&
                 control_u.beams_active.minCoeff() > 0.5 &&
@@ -883,8 +913,8 @@ void fringe_tracker(){
                          ddspc_params.n_exploration);
                 }
             } else {
-                report_ddspc_wait("DM command path changed before update");
-                ddspc.invalidate();
+                reset_ddspc_fit("DM command path changed before update", false,
+                                false);
             }
         }
 

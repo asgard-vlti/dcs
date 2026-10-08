@@ -43,6 +43,7 @@ $(OBJECTS) $(SIM_OBJECTS): predictive_control.hpp
 heimdallr.o heimdallr.sim.o fringe_tracker.o fringe_tracker.sim.o: ddspc_snapshot.hpp
 heimdallr.o heimdallr.sim.o fringe_tracker.o fringe_tracker.sim.o: servo_transitions.hpp
 fringe_tracker.o fringe_tracker.sim.o: fringe_frame_wait.hpp
+fringe_tracker.o fringe_tracker.sim.o: ddspc_piston_hold.hpp
 heimdallr.o heimdallr.sim.o: ddspc_tuning.hpp
 
 .PHONY: predictive_benchmark

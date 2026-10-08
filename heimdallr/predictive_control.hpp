@@ -89,7 +89,7 @@ class QrdRls {
     WeightMatrix weights_;
 };
 
-template <int HistoryLength = 40, int FutureLength = 4>
+template <int HistoryLength = 30, int FutureLength = 3>
 class PredictiveControl {
    public:
     static_assert(HistoryLength >= 2 && FutureLength >= 2);
@@ -151,6 +151,7 @@ class PredictiveControl {
 };
 
 extern template class PredictiveControl<4, 2>;
+extern template class PredictiveControl<30, 3>;
 extern template class PredictiveControl<40, 4>;
 extern template class PredictiveControl<60, 5>;
 
