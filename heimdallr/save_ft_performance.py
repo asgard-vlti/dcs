@@ -32,6 +32,7 @@ keys_of_interest = [
 
 # Settings keys and their order
 settings_keys = [
+    "servo_mode",
     "n_gd_boxcar",
     "gd_threshold",
     "pd_threshold",
