@@ -5,14 +5,14 @@ values unchanged. The controller uses filtered telescope phase delay in K1
 wavelengths, predicts three differential piston modes, and sends clipped DM
 commands. Its QRD RLS model uses 30 history frames and three future frames.
 
-The packaged configuration explores for 5000 valid DDSPC frames after each mode entry. A camera
-frame gap restarts the fit and exploration count while learning is active. A frozen
-model ignores camera frame gaps and keeps controlling. Lost fringe lock,
-disconnected phase measurements, an inactive beam, or a test pattern selects the
-existing Lacour command path and resets a model that is still learning. These
-other interruptions do not restart exploration. After an active learning fit
-resets, the fringe tracker immediately zeros all four DM piston commands and
-holds them at zero for the next five valid paired K1/K2 frames. Bad, missing,
+The packaged configuration explores for 5000 valid DDSPC frames after each mode
+entry. A camera frame gap, lost fringe lock, disconnected phase measurements, an
+inactive beam, or a test pattern selects the existing Lacour command path and
+resets a model that is still learning. These interruptions do not restart
+exploration. A frozen model retains its fit across a camera gap, but falls back
+to Lacour for that frame. After an active learning fit resets, the fringe tracker
+immediately zeros all four DM piston commands and holds them at zero for the
+next five valid paired K1/K2 frames. Bad, missing,
 or gapped pairs do not shorten this hold. Delay-line search and offload keep
 running. The model resumes from the current DM command when the hold ends and
 four-beam tracking returns. A frozen model does not reset or start a piston hold.

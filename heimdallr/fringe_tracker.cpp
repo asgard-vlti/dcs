@@ -387,8 +387,7 @@ void fringe_tracker(){
         info("DDSPC waiting: %s", reason);
         next_ddspc_wait_log = now + std::chrono::seconds(1);
     };
-    auto reset_ddspc_fit = [&](const char *reason, bool restart_exploration,
-                               bool early_exit) {
+    auto reset_ddspc_fit = [&](const char *reason, bool early_exit) {
         bool selected;
         {
             std::lock_guard<std::mutex> lock(settings.mutex);
@@ -396,8 +395,7 @@ void fringe_tracker(){
         }
         const int updates = ddspc.controller().iterations();
         const bool reset_fit = selected && !ddspc.frozen() && updates > 0;
-        if (restart_exploration) ddspc.restart_learning();
-        else ddspc.invalidate();
+        ddspc.invalidate();
         if (reset_fit) {
             info("DDSPC paused: %s; resetting fit after %d valid updates",
                  reason, updates);
@@ -512,7 +510,7 @@ void fringe_tracker(){
         bool ddspc_frame_gap = false;
         cnt_since_init++; //This should "never" wrap around, as a long int is big.
         if ((K1ft->bad_frame) || (K2ft->bad_frame)) {
-            reset_ddspc_fit("bad camera frame", false, true);
+            reset_ddspc_fit("bad camera frame", true);
             ft_cnt++;
             continue;
         }
@@ -534,8 +532,7 @@ void fringe_tracker(){
         // If we are here, then a new frame is available in both K1 and K2. 
         // Check that there has not been a counting error.
         if(k1_cnt == ft_cnt || k2_cnt == ft_cnt){
-            reset_ddspc_fit("camera semaphore without a new frame", false,
-                            true);
+            reset_ddspc_fit("camera semaphore without a new frame", true);
             info("FT: Semaphore signalled but no new frame");
             nerrors++;
             continue;
@@ -780,7 +777,7 @@ void fringe_tracker(){
             const char *block_reason = nullptr;
             if (ddspc_hold_this_frame)
                 block_reason = "piston settling after fit reset";
-            else if (ddspc_frame_gap && !ddspc.frozen())
+            else if (ddspc_frame_gap)
                 block_reason = "camera frame gap";
             else if (!control_u.fringe_found) block_reason = "fringes not locked";
             else if (!(control_u.beams_active.minCoeff() > 0.5))
@@ -814,8 +811,7 @@ void fringe_tracker(){
                 }
             }
             if (!use_ddspc) {
-                reset_ddspc_fit(block_reason,
-                                ddspc_frame_gap && !ddspc.frozen(), false);
+                reset_ddspc_fit(block_reason, false);
                 ddspc_hold_this_frame =
                     ddspc_hold_this_frame || piston_reset_hold.active();
             }
@@ -913,8 +909,7 @@ void fringe_tracker(){
                          ddspc_params.n_exploration);
                 }
             } else {
-                reset_ddspc_fit("DM command path changed before update", false,
-                                false);
+                reset_ddspc_fit("DM command path changed before update", false);
             }
         }
 
