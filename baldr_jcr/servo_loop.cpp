@@ -222,7 +222,7 @@ void calibrate_frame()
     // lookup table. Until then, we have a static measurement offset computed
     // during interaction matrix computation; and we just print the strehl
     // estimate out.
-    // info("| %lu | flux = %5.2e | sre = %5.2e |", ctrl.cnt, ctrl.flux_est, ctrl.strehl_est);
+
     // the closed-loop calibrated measurement is the normalised measurement plus
     // the measurement offset (typically the negative of the reference
     // measurement, but may also be a function of NCPAs).
@@ -346,9 +346,32 @@ void write_shm()
         // for the high performance server, only the master DM semaphore matters.
         DM_high.array.D[i] = ctrl.com_write[i];
     }
-    ctrl.mutex.unlock();
 
-    // Where is the semaphore index defined?
     // Poke the master DM to trigger an update.
     ImageStreamIO_sempost(&master_DM, 1);
+
+    rt_status.mutex.lock();
+    rt_status.status.strehl_flux = ctrl.strehl_est;
+    rt_status.status.meas_cl_rms = sqrt(ctrl.meas_cl.squaredNorm()) * powf(N_PIXELS, -0.5);
+    rt_status.status.mode_raw_rms = sqrt(ctrl.mode_raw.squaredNorm()) * powf(N_MODES, -0.5);
+    rt_status.status.mode_filt_rms = sqrt(ctrl.mode_filt.squaredNorm()) * powf(N_MODES, -0.5);
+    rt_status.status.com_raw_rms = sqrt(ctrl.com_raw.squaredNorm()) * powf(N_ACTUATORS, -0.5);
+    rt_status.status.com_clean_rms = sqrt(ctrl.com_clean.squaredNorm()) * powf(N_ACTUATORS, -0.5);
+    /*
+    info(
+        "|%lu|flux=%0.2e|strehl_flux=%0.2e|meas_cl_rms=%0.2e"
+        "|mode_raw_rms=%0.2e|mode_filt_rms=%0.2e"
+        "|com_raw_rms=%0.2e|com_clean_rms=%0.2e|",
+        ctrl.cnt,
+        ctrl.flux_est,
+        rt_status.status.strehl_flux,
+        rt_status.status.meas_cl_rms,
+        rt_status.status.mode_raw_rms,
+        rt_status.status.mode_filt_rms,
+        rt_status.status.com_raw_rms,
+        rt_status.status.com_clean_rms
+    );
+    */
+    rt_status.mutex.unlock();
+    ctrl.mutex.unlock();
 }

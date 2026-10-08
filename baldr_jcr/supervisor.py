@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
-import argparse
+import click
 import base64
 import numpy as np
 from astropy.io import fits  # type: ignore
 import time
-from typing import Tuple, Optional
+from typing import Dict, List, Sequence, Tuple, Optional
 
 from numpy.typing import NDArray
 from dcs.ZMQutils import ZmqReq  # type: ignore
@@ -13,6 +13,8 @@ from os import path
 from dataclasses import dataclass, field
 import modal_basis  # type: ignore
 from enum import Enum
+import pca  # type: ignore
+from click import Context
 
 
 # for python < 3.11 compatibility, define StrEnum here instead of importing
@@ -24,7 +26,7 @@ import os
 
 # TODO: NOT REALLY SAFE: These parameters are defined both in baldr.h and here,
 # I should find a way to merge these into a single source of truth.
-N_MODES = 100  # TODO: change to 144, also in baldr.cpp
+N_MODES = 144  # TODO: change to 144, also in baldr.cpp
 WIDTH = 17
 N_PIXELS = WIDTH * WIDTH
 SUBARRAY_WIDTH = 32
@@ -32,7 +34,7 @@ N_SUBARRAY_PIXELS = SUBARRAY_WIDTH * SUBARRAY_WIDTH
 FILTER_LEN = 1
 N_ACTX = 12
 N_ACTUATORS = N_ACTX * N_ACTX
-DIST_LEN = 0
+DIST_LEN = 10
 
 # local constants:
 BALDR_ROOT_DEFAULT = path.abspath(path.dirname(__file__))
@@ -44,14 +46,14 @@ BEAM_TO_PORT = {
     3: 6664,
     4: 6665,
 }
-DEFAULT_HOST = "mimir"
-# DEFAULT_HOST = "localhost"
+
+DEFAULT_HOST = os.environ.get("BALDR_HOST", default="mimir")
 
 # Default values, will be overridden by CLI arguments
-POKE: float = 0.02
-ALPHA: float = 1.0
+POKE: float = 0.05
+ALPHA: float = 1e-3
 # MEAS_SCALE: float = 1 / 1000
-CNT_MIN: int = 5  # minimum number of measurements to wait after applying poke
+CNT_MIN: int = 3  # minimum number of measurements to wait after applying poke
 NAVG: int = 5  # number of frames to average for a poke
 
 XC_OFFSET: float = 0.0
@@ -116,9 +118,9 @@ INIT_VAL = {
     "mode_max": 1e6,
     "mode_min": -1e6,
     "mode_to_com": 0.0,
-    "com_max": 1e6,
-    "com_min": -1e6,
-    "com_dist_buffer": 0.0,
+    "com_max": 0.5,
+    "com_min": -0.5,
+    "com_dist_buffer": 0.5,  # NOTE: this is to account for the 0.5 offset in cmds, remove for mimir
 }
 # make sure that all named arrays have an entry in this dict:
 for array_name in ARRAY_NAMES:
@@ -131,13 +133,27 @@ class ServoMode(StrEnum):
     SERVO_CLOSED = "closed"
 
 
+class RefImType(StrEnum):
+    SKY = "sky"
+    LAB = "lab"
+
+
 class ZmqNoResponse(RuntimeError):
     """local error type for handling an offline RTC"""
 
     pass
 
 
-verbose: int = 0  # non-verbose by default
+class bcolors:
+    HEADER = "\033[95m"
+    OKBLUE = "\033[94m"
+    OKCYAN = "\033[96m"
+    OKGREEN = "\033[92m"
+    WARNING = "\033[93m"
+    FAIL = "\033[91m"
+    ENDC = "\033[0m"
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
 
 
 @dataclass
@@ -148,12 +164,14 @@ class Beam:
     beam_id: int
     host: str = DEFAULT_HOST
     baldr_root: str = BALDR_ROOT_DEFAULT
+    verbose: int = 0
 
     def __post_init__(self):
         try:
             self.socket = self.get_zmq_socket()
         except:
             self.socket = None
+        print(f"{bcolors.OKBLUE}BALDR_HOST={self.host}{bcolors.ENDC}")
 
     def get_zmq_socket(self) -> ZmqReq:
         if self.beam_id not in BEAM_TO_PORT:
@@ -162,18 +180,20 @@ class Beam:
             )
         port = BEAM_TO_PORT[self.beam_id]
         endpoint = f"tcp://{self.host}:{port}"
-        if verbose:
+        if self.verbose:
             print(f"Connecting to beam {self.beam_id} on {endpoint}")
         return ZmqReq(endpoint)
 
     def request(self, message: str):
-        if verbose > 1:
+        if self.verbose > 1:
             print(f"request: {message}")
         resp = self.socket.send_payload(message, is_str=True, decode_ascii=False)  # type: ignore
-        if verbose > 1:
+        if self.verbose > 1:
             print(f"response: {resp}")
+        if resp is None:
+            raise ZmqNoResponse(f"No reply from RTC for command '{message}'")
         if not isinstance(resp, dict):
-            raise ZmqNoResponse(f"No valid response for command '{message}': {resp}")
+            raise ZmqNoResponse(f"Invalid response for command '{message}': {resp}")
         if "status_code" not in resp.keys():
             raise RuntimeError(
                 f"invalid response from request.\nMessage: `{message}`\nResponse: `{resp}`"
@@ -250,6 +270,13 @@ class Beam:
         if push_rtc:
             self.request(name)
 
+    def read_array(self, *, name: str) -> NDArray:
+        """Read arrays by name from nominal data directory (BALDR_ROOT).
+
+        E.g., imat = beam.read_array(name="mode_to_meas")
+        """
+        return fits.getdata(self.file_prefix + name + ".fits")  # type: ignore
+
     ############################################################
     ### High level functions for executing supervisory tasks ###
     ############################################################
@@ -294,7 +321,7 @@ class Beam:
         array *= rr > STREHL_MASK_INNER_RADIUS
         self.writefits(name="strehl_mask", array=array)
 
-    def set_leaky_gain_leak(
+    def set_gain_leak(
         self,
         *,
         gain: float = 0.3,
@@ -309,38 +336,6 @@ class Beam:
         # save coeffs to fits files and push to rtc
         self.update_array(name="filter_coeff_in", array=filter_coeff_in)
         self.update_array(name="filter_coeff_out", array=filter_coeff_out)
-
-    def set_polc_gain(
-        self,
-        *,
-        ewma_gain: float = 0.3,
-        ewma_leak: float = 1.0,
-    ):
-        # compute filter coeffs from Exponentially weighted moving average gain
-        filter_coeff_in = np.zeros([FILTER_LEN, N_MODES])
-        filter_coeff_out = np.zeros([FILTER_LEN, N_MODES])
-        filter_coeff_in[0, :] = -ewma_gain
-        filter_coeff_out[0, :] = 1 - ewma_gain
-        filter_coeff_out *= ewma_leak
-
-        # save coeffs to fits files
-        self.update_array(name="filter_coeff_in", array=filter_coeff_in)
-        self.update_array(name="filter_coeff_out", array=filter_coeff_out)
-
-    def flatten_dm(self):
-        # compute filter coeffs. Zeros correspond to an "all stop" filter.
-        filter_coeff_in = np.zeros([FILTER_LEN, N_MODES])
-        filter_coeff_out = np.zeros([FILTER_LEN, N_MODES])
-        # save coeffs to fits files
-        self.update_array(name="filter_coeff_in", array=filter_coeff_in)
-        self.update_array(name="filter_coeff_out", array=filter_coeff_out)
-
-    def set_com_clip(self, *, clip_val: float):
-        # compute filter coeffs. Zeros correspond to an "all stop" filter.
-        com_max = clip_val * np.ones([N_ACTUATORS])
-        # save coeffs to fits files
-        self.update_array(name="com_max", array=com_max)
-        self.update_array(name="com_min", array=-com_max)
 
     def flatten_offsets(self):
         array = np.zeros((N_MODES,))
@@ -396,53 +391,28 @@ class Beam:
         fits.writeto(
             self.file_prefix + "mode_to_meas.fits", mode_to_meas, overwrite=True
         )
+        fig = pca.main(self.beam_id, baldr_root=self.baldr_root, plot_lim=8)
+        fig.savefig(self.file_prefix + "pca.png")
         return (mode_to_meas, -ref_meas)
 
-    def take_flat(self, flat_idx: int, *, navg: int = 5):
+    def take_ref_im(self, *, ref_im_types: List[RefImType], navg: int = 5):
+        if len(ref_im_types) == 0:
+            raise ValueError("Must specify at least one type of reference image")
         # record reference measurement
         ref_meas = self.avg_meas(navg=navg, after_frame=CNT_MIN)
         meas_offset = -ref_meas
-        self.update_array(name=f"meas_offset_{flat_idx}", array=meas_offset)
+        for ref_im_type in ref_im_types:
+            if ref_im_type.value == "sky":
+                self.update_array(name=f"meas_offset_0", array=meas_offset)
+            if ref_im_type.value == "lab":
+                self.update_array(name=f"meas_offset_1", array=meas_offset)
 
-    @staticmethod
-    def build_meas_to_mode(
-        *,
-        mode_to_meas: NDArray,
-        alpha: float,
-        nmodes: Optional[int],
-    ) -> NDArray:
-        """Build the POL control matrix from the interaction matrix.
+    def create_modes(self):
+        """Define the modal basis to be used in the RTC.
 
-        NOTE: mode_to_meas and meas_to_mode should ALWAYS have the full N_MODES in
-        the modal dimension. The nmodes argument here specifies that the matrices
-        should only consume/produce up to the nmodes'th mode, and that the remainder
-        of the entries in those matrices should be zero.
-        """
-        if nmodes is None:
-            nmodes = N_MODES
-        meas_to_mode = np.zeros((N_MODES, N_PIXELS), dtype=DTYPE)
-        meas_to_mode[:nmodes, :] = np.linalg.solve(
-            mode_to_meas[:, :nmodes].T @ mode_to_meas[:, :nmodes]
-            + alpha * np.eye(nmodes),
-            mode_to_meas[:, :nmodes].T,
-        )
-        return meas_to_mode
-
-    def create_leaky_matrices(
-        self,
-        *,
-        navg: int = 5,
-        alpha: float = ALPHA,
-        poke: float = POKE,
-        nmodes: Optional[int] = None,
-    ):
-        """Measure the interaction matrix, fit the system parameters based on that
-        measurement, and then compute and upload all control matrices derived from
-        the system parameters.
-
-        NOTE: To avoid recompiling the RTC, the nmodes option only modifies the
-        "values" of the control matrices, not the dimensions. For this reason, the
-        code will sometimes refer to N_MODES (a constant) and nmodes (a variable).
+        This will create a "full" set of N_MODES modes, but not necessarily all
+        of them will be used at any given time, based on imat and cmat
+        computation parameters.
         """
         ### Build mode_to_com projection
         mode_to_com = MODAL_BASIS.modes_on_unit_disk(nsamplex=N_ACTX, nmodes=N_MODES)
@@ -454,48 +424,92 @@ class Beam:
 
         ### Measure mode_to_slope interaction
         # flatten DM
-        self.flatten_dm()
+        # self.flatten_dm() # <- this sets the gain/leak to zeros, and is now not needed
+        #    because we "open the loop", disabling the output of the
+        #    IIR filter.
         self.flatten_offsets()
         self.reset()
 
         # set mode_to_com
         self.update_array(name="mode_to_com", array=mode_to_com)
 
-        # measure modal imat
-        mode_to_meas, meas_offset = self.measure_interaction_matrix(
-            navg=navg,
-            poke=poke,
-            nmodes=nmodes,
-        )
-
-        ### Invert mode_to_slope to build slope_to_mode reconstructor
-        meas_to_mode = self.build_meas_to_mode(
-            mode_to_meas=mode_to_meas, alpha=alpha, nmodes=nmodes
-        )
-        self.update_array(name="meas_to_mode", array=meas_to_mode)
-        self.update_array(name="meas_offset_0", array=meas_offset)  # this will get overwritten on-sky
-        self.update_array(name="meas_offset_1", array=meas_offset)
-
-    def reinvert_control_matrix(
+    def compute_control_matrix(
         self,
         *,
         alpha: float = ALPHA,
         nmodes: Optional[int] = None,
     ):
-        # measure modal imat
-        mode_to_meas = fits.open(self.file_prefix + "mode_to_meas.fits")[
-            0
-        ].data  # type: ignore
-        assert type(mode_to_meas) is np.ndarray
+        # measured modal imat
+        mode_to_meas = self.read_array(name="mode_to_meas")
 
         ### Invert mode_to_slope to build slope_to_mode reconstructor
-        meas_to_mode = self.build_meas_to_mode(
-            mode_to_meas=mode_to_meas, alpha=alpha, nmodes=nmodes
+        if nmodes is None:
+            nmodes = N_MODES
+        meas_to_mode = np.zeros((N_MODES, N_PIXELS), dtype=DTYPE)
+        meas_to_mode[:nmodes, :] = np.linalg.solve(
+            mode_to_meas[:, :nmodes].T @ mode_to_meas[:, :nmodes]
+            + alpha * np.eye(nmodes),
+            mode_to_meas[:, :nmodes].T,
+        )
+        self.update_array(name="meas_to_mode", array=meas_to_mode)
+
+    def compute_experimental_control_matrix(
+        self,
+        *,
+        flux_thresh: float,
+        resp_thresh: float,
+        interp: float,
+        alpha: float = ALPHA,
+        nmodes: Optional[int] = None,
+    ):
+        # measured modal imat
+        mode_to_meas = self.read_array(name="mode_to_meas")
+        # ideal reference intensity
+        meas_offset_0 = self.read_array(name="meas_offset_0").flatten()
+        meas_offset_1 = self.read_array(name="meas_offset_1").flatten()
+        ref_intensity = -((1 - interp) * meas_offset_0 + interp * meas_offset_1)
+        # we may want to start with a histogram of meas_offset_1
+        # to determine thresh
+
+        # import matplotlib.pyplot as plt
+
+        # plt.hist(ref_intensity.flatten(), bins=100)
+        # plt.show()
+
+        # set all measurements that belong to dim pixels to zero:
+        mode_to_meas_filt = mode_to_meas.copy()
+        mode_to_meas_filt[ref_intensity < flux_thresh, :] = 0.0
+
+        resp_rms = (mode_to_meas_filt**2).mean(axis=1) ** 0.5
+        mode_to_meas_filt[resp_rms < resp_rms.max() * resp_thresh, :] = 0.0
+        # import matplotlib.pyplot as plt
+        # plt.plot(ref_intensity)
+        # plt.show()
+        fig = pca.pca(
+            d=mode_to_meas,
+            dtd=mode_to_meas_filt.T @ mode_to_meas_filt
+            + 3e-3 * np.eye(mode_to_meas_filt.shape[1]),
+            plot_lim=12,
+        )
+        # fig = pca.pca(
+        #     d=mode_to_meas,
+        #     dtd=mode_to_meas.T @ mode_to_meas,
+        #     plot_lim=12,
+        # )
+        fig.savefig("test_pca.png")
+        ### Invert mode_to_slope to build slope_to_mode reconstructor
+        if nmodes is None:
+            nmodes = N_MODES
+        meas_to_mode = np.zeros((N_MODES, N_PIXELS), dtype=DTYPE)
+        meas_to_mode[:nmodes, :] = np.linalg.solve(
+            mode_to_meas_filt[:, :nmodes].T @ mode_to_meas_filt[:, :nmodes]
+            + alpha * np.eye(nmodes),
+            mode_to_meas_filt[:, :nmodes].T,
         )
         self.update_array(name="meas_to_mode", array=meas_to_mode)
 
     def set_servo_mode(self, *, mode: ServoMode):
-        resp = self.request(f'servo "{mode}"')
+        resp = self.request(f'servo "{mode.value}"')
         print(resp)
 
     def print_status(self):
@@ -513,179 +527,80 @@ class Beam:
         print(resp)
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser("Baldr Supervisor")
-    parser.add_argument(
-        "beam", type=int, help="index of beam [1-4]", choices=[-1, 1, 2, 3, 4]
-    )
-    parser.add_argument(
-        "--init",
-        "-i",
-        help="initialise all arrays with zeros and save them to disk",
-        action="count",
-    )
-    parser.add_argument(
-        "--reset",
-        help="send a reset command to the RTC",
-        action="count",
-    )
-    if DIST_LEN > 0:
-        parser.add_argument(
-            "--disturboff",
-            help="resets the disturbance to zero",
-            action="count",
-        )
-        parser.add_argument(
-            "--disturb",
-            help="inject a test signal onto the dms",
-            action="count",
-        )
-
-    parser.add_argument(
-        "--gain", help="gain, requires leak to be specified too", type=float
-    )
-    parser.add_argument(
-        "--leak", help="leak, requires gain to be specified too", type=float
-    )
-    parser.add_argument(
-        "--recompute",
-        help="remeasure the interaction matrix and update control matrices",
-        action="count",
-    )
-    parser.add_argument(
-        "--flat0",
-        help="take a new measurement reference (meas_offset_0), defining the 'flat' to be targetted",
-        action="count",
-    )
-    parser.add_argument(
-        "--flat1",
-        help="take a new measurement reference (meas_offset_1), defining the 'flat' to be targetted",
-        action="count",
-    )
-    parser.add_argument(
-        "--interp",
-        help="interpolate between meas_offset_0 (interp=0) and meas_offset_1 (interp=1)",
-        type=float,
-    )
-    parser.add_argument(
-        "--reinvert",
-        action="count",
-        help="rebuild the reconstructor from the imat on disk (e.g., to tweak reg params)",
-    )
-
-    parser.add_argument("--clipcom", help="value to clip commands to", type=float)
-
-    parser.add_argument(
-        "--poke", help="value to poke each mode, try 0.01", type=float, default=POKE
-    )
-
-    parser.add_argument("--nmodes", help="maximum mode index to control", type=int)
-    parser.add_argument(
-        "--alpha",
-        help=f"reconstructor regularisation factor, default: {ALPHA}",
-        type=float,
-        default=ALPHA,
-    )
-    parser.add_argument(
-        "--navg",
-        help=f"number of frames to average for each poke in iMat, default: {NAVG}",
-        default=NAVG,
-        type=int,
-    )
-
-    parser.add_argument(
-        "--open", help="open the loop without stopping the RTC process", action="count"
-    )
-    parser.add_argument(
-        "--close", help="close the loop, with existing leak/gain params", action="count"
-    )
-    parser.add_argument(
-        "--verbose", "-v", help="use verbose mode", action="count", default=0
-    )
-    parser.add_argument("--status", help="check status of RTC", action="count")
-    parser.add_argument("--fluxthresh", help="set flux threshold", type=float)
-
-    args = parser.parse_args()
-
+@click.group(help="""
+This tool is a high-layer abstraction over the Baldr RTC configuration
+intended to be used from the command line while the baldr RTC is running.
+It connects with the RTC instance via ZMQ over a pre-defined TCP socket.
+""")
+@click.argument("beam", type=int, nargs=1)
+@click.option("-v", "--verbose", count=True, help="set the verbosity level")
+@click.pass_context
+def main(ctx: Context, beam: int, verbose: int):
+    if beam not in [-1, 1, 2, 3, 4]:
+        raise click.BadParameter("beam must be 1, 2, 3, or 4, or -1 for all beams")
     baldr_root = os.environ.get("BALDR_ROOT")
     if baldr_root is None:
         print(
-            "WARNING: Environment variable BALDR_ROOT not set,\n"
+            bcolors.WARNING + "WARNING: Environment variable BALDR_ROOT not set,\n"
             f"defaulting to {BALDR_ROOT_DEFAULT}.\n"
             "Consider setting BALDR_ROOT explicitly, for example:\n"
-            "    export BALDR_ROOT=/usr/local/etc"
+            "    export BALDR_ROOT=/usr/local/etc" + bcolors.ENDC
         )
         baldr_root = BALDR_ROOT_DEFAULT
 
-    verbose = args.verbose
-    if verbose:
+    if verbose > 0:
         print("VERBOSE MODE ON")
 
-    if args.gain is None and args.leak is not None:
-        raise ValueError("gain must only be set if also passing leak")
-    if args.leak is None and args.gain is not None:
-        raise ValueError("leak must only be set if also passing gain")
-
-    action_performed = False
-
-    if args.beam == -1:
-        beams = [
-            Beam(beam_id=1, baldr_root=baldr_root),
-            Beam(beam_id=2, baldr_root=baldr_root),
-            Beam(beam_id=3, baldr_root=baldr_root),
-            Beam(beam_id=4, baldr_root=baldr_root),
+    ctx.obj = {}
+    if beam == -1:
+        ctx.obj["beams"] = [
+            Beam(beam_id=1, baldr_root=baldr_root, verbose=verbose),
+            Beam(beam_id=2, baldr_root=baldr_root, verbose=verbose),
+            Beam(beam_id=3, baldr_root=baldr_root, verbose=verbose),
+            Beam(beam_id=4, baldr_root=baldr_root, verbose=verbose),
         ]
     else:
-        beams = [
-            Beam(beam_id=args.beam, baldr_root=baldr_root)
-        ]
+        ctx.obj["beams"] = [Beam(beam_id=beam, baldr_root=baldr_root)]
 
-    if args.reset is not None:
-        print("resetting!")
-        [beam.reset() for beam in beams]
-        action_performed = True
 
-    if args.init is not None:
-        print("initing!")
-        try:
-            [beam.reset(init=True) for beam in beams]
-        except ZmqNoResponse:
-            print("""
+@main.command(help="initialise offline RTC parameters.")
+@click.pass_context
+def init(ctx: Context):
+    beams: List[Beam] = ctx.obj["beams"]
+    print("initing!")
+    try:
+        [beam.reset(init=True) for beam in beams]
+    except ZmqNoResponse:
+        print("""
 Succesfullly initialised arrays and wrote them to disk, but didn't
 update them on the live RTC.
 
 This is correct behaviour if the RTC is not yet running.
 """)
-        action_performed = True
 
-    if args.open is not None:
-        print("opening the loop!")
-        [beam.set_servo_mode(mode=ServoMode.SERVO_OPEN) for beam in beams]
-        action_performed = True
 
-    if args.close is not None:
-        print("closing the loop!")
-        [beam.set_servo_mode(mode=ServoMode.SERVO_CLOSED) for beam in beams]
-        action_performed = True
+if DIST_LEN > 0:
 
-    if args.fluxthresh is not None:
-        [beam.set_flux_thresh(thresh=args.fluxthresh) for beam in beams]
-        action_performed = True
-
-    if args.clipcom is not None:
-        [beam.set_com_clip(clip_val=args.clipcom) for beam in beams]
-        action_performed = True
-
-    if args.interp is not None:
-        [beam.set_meas_offset_interp(meas_offset_interp=args.interp) for beam in beams]
-        action_performed = True
-
-    if DIST_LEN > 0:
-        if args.disturb is not None:
-            if args.disturboff is not None:
-                raise ValueError(
-                    "cannot simultaneously be disturbing and not disturbing"
-                )
+    @main.command(help="inject or disable a disturbance on the DM")
+    @click.option(
+        "--scale",
+        type=float,
+        default=1.0,
+    )
+    @click.option(
+        "--off",
+        flag_value=True,
+    )
+    @click.pass_context
+    def disturb(ctx: Context, scale: float, off: bool):
+        beams: List[Beam] = ctx.obj["beams"]
+        if off:
+            disturbance = np.zeros([N_ACTUATORS, DIST_LEN]) + 0.5
+            [
+                beam.update_array(name="com_dist_buffer", array=disturbance)
+                for beam in beams
+            ]
+        else:
             # The default disturbance is a sine wave that sweeps accross the dm
             # over 20 frames.
             _, xx = np.meshgrid(
@@ -694,42 +609,78 @@ This is correct behaviour if the RTC is not yet running.
                 indexing="ij",
             )
             xx_flat = xx.flatten()
+            xx_flat -= xx_flat.mean()
             disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
             for i, t in enumerate(np.linspace(0, 2 * np.pi, DIST_LEN + 1)[:-1]):
-                disturbance[:, i] = 0.1 * np.sin(xx_flat + t)
-            [beam.update_array(name="com_dist_buffer", array=disturbance) for beam in beams]
-            action_performed = True
+                disturbance[:, i] = 0.02 * xx_flat * scale + 0.5
+            [
+                beam.update_array(name="com_dist_buffer", array=disturbance)
+                for beam in beams
+            ]
 
-        if args.disturboff is not None:
-            disturbance = np.zeros([N_ACTUATORS, DIST_LEN])
-            [beam.update_array(name="com_dist_buffer", array=disturbance) for beam in beams]
-            action_performed = True
 
-    if args.reinvert is not None:
-        [beam.reinvert_control_matrix(nmodes=args.nmodes, alpha=args.alpha) for beam in beams]
+@main.command(help="modify live RTC parameters online")
+@click.option("--gain", type=float, help="set the gain (must also pass leak)")
+@click.option("--leak", type=float, help="set the leak (must also pass gain)")
+@click.option("--interp", type=float, help="set the interpolation parameter")
+@click.option("--flux-thresh", type=float, help="set the flux threshold")
+@click.option("--reset", flag_value=True, help="reset all live values in the RTC")
+@click.option(
+    "--open",
+    "servo_mode_str",
+    flag_value=ServoMode.SERVO_OPEN.value,
+    help="open the loop",
+)
+@click.option(
+    "--close",
+    "servo_mode_str",
+    flag_value=ServoMode.SERVO_CLOSED.value,
+    help="close the loop",
+)
+@click.option(
+    "--off",
+    "servo_mode_str",
+    flag_value=ServoMode.SERVO_OFF.value,
+    help="stop the loop",
+)
+@click.pass_context
+def ctrl(
+    ctx: Context,
+    gain: Optional[float],
+    leak: Optional[float],
+    interp: Optional[float],
+    flux_thresh: Optional[float],
+    servo_mode_str: Optional[str],
+    reset: bool,
+):
+    beams: List[Beam] = ctx.obj["beams"]
+    action_performed = False
+    if gain is None and leak is not None:
+        raise click.BadParameter("gain must only be set if also passing leak")
+    if leak is None and gain is not None:
+        raise click.BadParameter("leak must only be set if also passing gain")
+    if gain is not None and leak is not None:
+        for beam in beams:
+            beam.set_gain_leak(gain=gain, leak=leak)
         action_performed = True
 
-    if args.flat0 is not None:
-        [beam.take_flat(0, navg=args.navg) for beam in beams]
-        action_performed = True
-    if args.flat1 is not None:
-        [beam.take_flat(1, navg=args.navg) for beam in beams]
-        action_performed = True
-
-    if args.recompute is not None:
-        [beam.create_leaky_matrices(
-            nmodes=args.nmodes, poke=args.poke, alpha=args.alpha, navg=args.navg
-        ) for beam in beams]
+    if servo_mode_str is not None:
+        servo_mode = ServoMode(servo_mode_str)
+        for beam in beams:
+            beam.set_servo_mode(mode=servo_mode)
         action_performed = True
 
-    if args.gain is not None and args.leak is not None:
-        gain = args.gain
-        leak = args.leak
-        [beam.set_leaky_gain_leak(gain=gain, leak=leak) for beam in beams]
+    if reset:
+        print("resetting!")
+        [beam.reset() for beam in beams]
         action_performed = True
 
-    if args.status is not None:
-        [beam.print_status() for beam in beams]
+    if flux_thresh is not None:
+        [beam.set_flux_thresh(thresh=flux_thresh) for beam in beams]
+        action_performed = True
+
+    if interp is not None:
+        [beam.set_meas_offset_interp(meas_offset_interp=interp) for beam in beams]
         action_performed = True
 
     if not action_performed:
@@ -737,3 +688,125 @@ This is correct behaviour if the RTC is not yet running.
 WARNING: no actions were taken during the execution of this program.
 This is probably unintentional. Check your command line arguments, or try with --help
 """)
+
+
+@main.command(help="construct an interaction matrix/perform a poke test")
+@click.option("--poke", type=float, default=POKE, help="poke value to use")
+@click.option("--nmodes", type=int, default=N_MODES, help="number of modes to poke")
+@click.option(
+    "--navg", type=int, default=NAVG, help="number of frames to average per poke"
+)
+@click.pass_context
+def imat(ctx: Context, poke: float, nmodes: int, navg: int):
+    beams: List[Beam] = ctx.obj["beams"]
+    for beam in beams:
+        beam.create_modes()
+        beam.measure_interaction_matrix(nmodes=nmodes, poke=poke, navg=navg)
+
+
+@main.command(help="build a control matrix from the interaction matrix")
+@click.option(
+    "--alpha",
+    type=float,
+    default=ALPHA,
+    help="regularisation parameter for matrix inversion",
+)
+@click.option(
+    "--nmodes",
+    type=int,
+    default=N_MODES,
+    help="number of modes to invert, should be at most nmodes used in imat",
+)
+@click.pass_context
+def cmat(ctx: Context, alpha: float, nmodes: int):
+    beams: List[Beam] = ctx.obj["beams"]
+    for beam in beams:
+        beam.compute_control_matrix(nmodes=nmodes, alpha=alpha)
+
+
+@main.command(help="measure a reference image for the control pipeline")
+@click.option("--sky", flag_value=True, help="measuring sky reference")
+@click.option("--lab", flag_value=True, help="measuring lab reference")
+@click.option("--navg", type=int, default=NAVG, help="number of frames to average")
+@click.pass_context
+def ref(ctx: Context, sky: bool, lab: bool, navg: int):
+    beams: List[Beam] = ctx.obj["beams"]
+    if not any([sky, lab]):
+        raise click.BadParameter("at least one of --sky or --lab must be passed")
+    ref_im_types: List[RefImType] = []
+    if sky:
+        ref_im_types.append(RefImType.SKY)
+    if lab:
+        ref_im_types.append(RefImType.LAB)
+    for beam in beams:
+        beam.take_ref_im(ref_im_types=ref_im_types, navg=navg)
+
+
+@main.command(help="probe and print the RTC status")
+@click.pass_context
+def status(ctx: Context):
+    beams: List[Beam] = ctx.obj["beams"]
+    for beam in beams:
+        beam.print_status()
+
+
+@main.command(help="experimental controller")
+@click.option(
+    "--alpha",
+    type=float,
+    default=ALPHA,
+    help="regularisation parameter for matrix inversion",
+)
+@click.option(
+    "--flux-thresh",
+    type=float,
+    help="cutoff threshold for reference intensities to be used in cmat",
+    required=True,
+)
+@click.option(
+    "--resp-thresh",
+    type=float,
+    help="relative response threshold for a given pixel required to be used in cmat (0->1)",
+    required=True,
+)
+@click.option(
+    "--nmodes",
+    type=int,
+    default=N_MODES,
+    help="number of modes to invert, should be at most nmodes used in imat",
+)
+@click.option(
+    "--interp",
+    type=float,
+    help="interpolation value to build cmat around (used for flux lookup)",
+    required=True,
+)
+@click.pass_context
+def cprime(
+    ctx: Context,
+    alpha: float,
+    nmodes: int,
+    flux_thresh: float,
+    resp_thresh: float,
+    interp: float,
+):
+    beams: List[Beam] = ctx.obj["beams"]
+    for beam in beams:
+        beam.compute_experimental_control_matrix(
+            flux_thresh=flux_thresh,
+            resp_thresh=resp_thresh,
+            nmodes=nmodes,
+            alpha=alpha,
+            interp=interp,
+        )
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except ZmqNoResponse as e:
+        print(f"ZMQ Error: {e}")
+        print(
+            f"{bcolors.FAIL}No response from RTC server, is it running?{bcolors.ENDC}"
+        )
+        exit(1)

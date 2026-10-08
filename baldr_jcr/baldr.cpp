@@ -83,7 +83,7 @@ std::string encode(const char *input, unsigned int size)
 //----------commander functions from here---------------
 
 DEF_READ_CTRL_PARAM(meas_offset_0, measurement reference when meas_offset_interp==0, N_PIXELS, 1, DOUBLE)
-DEF_READ_CTRL_PARAM(meas_offset_1, measurement reference when meas_offset_interp==0, N_PIXELS, 1, DOUBLE)
+DEF_READ_CTRL_PARAM(meas_offset_1, measurement reference when meas_offset_interp==1, N_PIXELS, 1, DOUBLE)
 DEF_READ_CTRL_PARAM(flux_mask, mask for normalizing measurement, N_SUBARRAY_PIXELS, 1, DOUBLE)
 DEF_READ_CTRL_PARAM(strehl_mask, mask for estimating strehl, N_SUBARRAY_PIXELS, 1, DOUBLE)
 DEF_READ_CTRL_PARAM(meas_to_mode, reconstructor matrix, N_MODES, N_PIXELS, DOUBLE)

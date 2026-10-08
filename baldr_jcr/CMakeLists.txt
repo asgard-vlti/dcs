@@ -6,7 +6,7 @@ target_compile_options(
     baldr
     PRIVATE
     -Wall -Wextra -Wpedantic -Wno-missing-field-initializers
-    -DEIGEN_STACK_ALLOCATION_LIMIT=259200
+    -DEIGEN_STACK_ALLOCATION_LIMIT=332928
     -save-temps
 )
 

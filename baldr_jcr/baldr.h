@@ -34,7 +34,7 @@
 //----------Defines-----------
 // #define SIMULATE
 
-#define N_MODES 100              // Number of modes to control
+#define N_MODES 144              // Number of modes to control
 #define WIDTH 17                 // Number of pixels across subim
 #define N_PIXELS (WIDTH * WIDTH) // Total number of pixels in subim
 #define SUBARRAY_WIDTH 32        // Number of pixels across subarray
@@ -49,7 +49,7 @@
 // otherwise we might set filter_len to 1 and then request a row-major matrix
 // with only 1 column which is a compile-time error in Eigen.
 #define N_ACTUATORS 144 // Including corners
-#define DIST_LEN 0      // Length of disturbance sequence (periodic)
+#define DIST_LEN 10      // Length of disturbance sequence (periodic)
 
 //----- Structures and typedefs------
 
@@ -108,9 +108,15 @@ struct EncodedImage
 // key variables.
 struct Status
 {
-    double flux;
     int64_t nerrors;
     int64_t nlowflux;
+    double flux;
+    double strehl_flux;
+    double meas_cl_rms;
+    double mode_raw_rms;
+    double mode_filt_rms;
+    double com_raw_rms;
+    double com_clean_rms;
     int cnt;
 };
 
