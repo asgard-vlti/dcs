@@ -75,7 +75,15 @@ def command_dm(beam_no, data):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Load a factory flat file to the DM.")
+    parser = argparse.ArgumentParser(
+        description="Load a flat into DM channel 0.",
+        epilog=(
+            "flat-save records the combined DM command. Loading that shape into "
+            "channel 0 makes it the persistent flat. Other channels are unchanged "
+            "and remain additive; clear temporary channels first if you want the "
+            "saved shape alone."
+        ),
+    )
     parser.add_argument(
         "beam_id",
         type=int,
@@ -92,7 +100,7 @@ def main():
     parser.add_argument(
         "--file",
         type=pathlib.Path,
-        help="The path to the flat file to load. Overrides category and beam if specified.",
+        help="Load this file instead of the selected category for each selected beam.",
     )
     args = parser.parse_args()
 
