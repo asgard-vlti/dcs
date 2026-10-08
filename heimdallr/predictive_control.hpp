@@ -181,6 +181,7 @@ class DdspcServo {
     void enter(const Parameters& params = Parameters{});
 
     void invalidate();
+    void restart_learning();
 
     Telescopes propose(const Telescopes& phase_delay_waves,
                        const Telescopes& current_dm, double wavelength,

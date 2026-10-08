@@ -5,11 +5,13 @@ values unchanged. The controller uses filtered telescope phase delay in K1
 wavelengths, predicts three differential piston modes, and sends clipped DM
 commands. Its QRD RLS model uses 40 history frames and four future frames.
 
-The packaged configuration explores for 5000 valid DDSPC frames after each mode entry. A missed
-frame, lost fringe lock, disconnected phase measurements, an inactive beam, or
-a test pattern selects the existing Lacour command path and resets a model that
-is still learning. Exploration does not restart after a temporary loss of lock. The model
-resumes from the current DM command when four-beam tracking returns.
+The packaged configuration explores for 5000 valid DDSPC frames after each mode entry. A camera
+frame gap restarts the fit and exploration count while learning is active. A frozen
+model ignores camera frame gaps and keeps controlling. Lost fringe lock,
+disconnected phase measurements, an inactive beam, or a test pattern selects the
+existing Lacour command path and resets a model that is still learning. These
+other interruptions do not restart exploration. The model resumes from the
+current DM command when four-beam tracking returns.
 
 The server reads DDSPC defaults from `[ddspc]` in its TOML configuration.
 `continue_learning = true` keeps updating the predictive model after exploration.

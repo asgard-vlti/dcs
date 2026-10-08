@@ -376,6 +376,12 @@ void DdspcServo::invalidate() {
     active_ = false;
 }
 
+void DdspcServo::restart_learning() {
+    if (frozen_) return;
+    invalidate();
+    exploration_frames_ = 0;
+}
+
 void DdspcServo::capture(ModelSnapshot& snapshot) const {
     const auto& rls = controller_.rls();
     snapshot.parameters = controller_.parameters();

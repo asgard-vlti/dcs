@@ -144,6 +144,23 @@ int main() {
     freeze_params.n_exploration = 50;
     freeze_params.reg_interval = 5;
     freeze_params.reg_divisor = 1.1;
+    DdspcServo restarting;
+    Telescopes restarting_dm = Telescopes::Zero();
+    restarting.enter(freeze_params);
+    advance(restarting, restarting_dm, 49);
+    check(restarting.controller().rls_updates() > 0,
+          "Learning restart test did not train a model");
+    restarting.restart_learning();
+    check(!restarting.frozen() && restarting.exploration_frames() == 0 &&
+              restarting.controller().iterations() == 0 &&
+              restarting.controller().rls_updates() == 0,
+          "Camera gap did not restart learning and exploration");
+    advance(restarting, restarting_dm, 1);
+    check(!restarting.frozen() && restarting.exploration_frames() == 1,
+          "Learning froze at the old exploration boundary");
+    advance(restarting, restarting_dm, 49);
+    check(restarting.frozen() && restarting.exploration_frames() == 50,
+          "Learning did not freeze at the restarted exploration boundary");
     DdspcServo automatic;
     Telescopes automatic_dm = Telescopes::Zero();
     automatic.enter(freeze_params);
@@ -169,6 +186,11 @@ int main() {
               automatic.controller().predictive() == frozen_predictive &&
               automatic.controller().rls_updates() == 6,
           "Frozen model was lost after tracking interruption");
+    automatic.restart_learning();
+    check(automatic.frozen() && automatic.exploration_frames() == 73 &&
+              automatic.controller().rls().factor() == frozen_factor &&
+              automatic.controller().rls_updates() == 6,
+          "Camera gap changed a frozen model");
     auto automatic_model = automatic.snapshot_for_off();
     SnapshotJob automatic_job{std::move(automatic_model), 1791200000000000000,
                               2, "servo"};

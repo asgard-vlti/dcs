@@ -753,7 +753,8 @@ void fringe_tracker(){
                                   phase_solver.eigenvalues()(1) > 1e-6;
             }
             const char *block_reason = nullptr;
-            if (ddspc_frame_gap) block_reason = "camera frame gap";
+            if (ddspc_frame_gap && !ddspc.frozen())
+                block_reason = "camera frame gap";
             else if (!control_u.fringe_found) block_reason = "fringes not locked";
             else if (!(control_u.beams_active.minCoeff() > 0.5))
                 block_reason = "inactive beam";
@@ -787,7 +788,9 @@ void fringe_tracker(){
             }
             if (!use_ddspc) {
                 report_ddspc_wait(block_reason);
-                ddspc.invalidate();
+                if (ddspc_frame_gap && !ddspc.frozen())
+                    ddspc.restart_learning();
+                else ddspc.invalidate();
             }
         }
 
