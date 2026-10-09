@@ -11,6 +11,7 @@ import sys
 import fcntl
 
 from dcs.ZMQutils import ZmqReq
+from dcs.log_commit_ids import commit_header
 
 LOCK_FILE_PATH = "/tmp/asg.baldr_tt_telem.lock"
 
@@ -92,6 +93,7 @@ class BTTLogger:
 
         if write_header:
             with open(log_path, "w") as f:
+                f.write(commit_header())
                 f.write(" ".join(["time"] + self.FIELDS) + "\n")
 
     def log_performance(self):
@@ -147,6 +149,7 @@ class BTTSettingLogger:
 
         if write_header:
             with open(log_path, "w") as f:
+                f.write(commit_header())
                 f.write("# timestamp " + " ".join(settings_to_log) + "\n")
 
     def log_settings(self):

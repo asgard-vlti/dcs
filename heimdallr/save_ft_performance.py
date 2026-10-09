@@ -16,6 +16,7 @@ import os
 import sys
 import fcntl
 from dcs.ZMQutils import ZmqReq
+from dcs.log_commit_ids import commit_header
 
 import threading
 
@@ -62,6 +63,7 @@ def log_ft_performance(
         pass
     with open(log_path, "a") as f:
         if write_header:
+            f.write(commit_header())
             f.write(
                 "# timestamp gd_snr pd_snr gd_bl pd_tel gd_tel dm_piston (all values space-separated, 3 decimal places)\n"
             )
@@ -123,6 +125,7 @@ def log_ft_settings(h_z, lock, shared_state, log_path="ft_settings_log.txt", rat
         pass
     with open(log_path, "a") as f:
         if write_header:
+            f.write(commit_header())
             f.write(
                 "# timestamp "
                 + " ".join(settings_keys)
