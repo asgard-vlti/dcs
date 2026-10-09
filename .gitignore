@@ -60,6 +60,8 @@ build-heimdallr/
 *.DS_Store
 
 *.png
+*.old
+*.tgz
 
 *__pycache__*
 # 
@@ -81,3 +83,5 @@ libImageStreamIO/imft
 baldr_tt/baldr_tt
 heimdallr/heimdallr.12apr
 heimdallr/heimdallr.13apr
+baldr_jcr/baldr
+asgard-dm-server/asgard_DM_server2
