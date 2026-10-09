@@ -60,6 +60,10 @@ build-heimdallr/
 *.DS_Store
 
 *.png
+baldr
+asgard_DM_server2
+*.old
+*.tgz
 
 *__pycache__*
 # 
