@@ -93,6 +93,8 @@ template <int HistoryLength = 30, int FutureLength = 3>
 class PredictiveControl {
    public:
     static_assert(HistoryLength >= 2 && FutureLength >= 2);
+    static constexpr int HistorySamples = HistoryLength;
+    static constexpr int FutureSamples = FutureLength;
     static constexpr int Features = (FutureLength - 1 + 2 * HistoryLength) * 3;
     static constexpr int Outputs = FutureLength * 3;
     static constexpr int ControlFeatures = (2 * HistoryLength - 1) * 3;

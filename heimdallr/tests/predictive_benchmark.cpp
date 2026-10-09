@@ -74,7 +74,9 @@ int main() {
     std::sort(update_us.begin(), update_us.end());
     std::sort(total_us.begin(), total_us.end());
     std::cout << std::setprecision(9)
-              << "{\"history\":30,\"future\":3,\"samples\":" << samples
+              << "{\"history\":" << decltype(controller)::HistorySamples
+              << ",\"future\":" << decltype(controller)::FutureSamples
+              << ",\"samples\":" << samples
               << ",\"median_us\":" << total_us[samples / 2]
               << ",\"p999_us\":" << total_us[119879]
               << ",\"max_us\":" << total_us.back()

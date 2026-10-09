@@ -284,6 +284,9 @@ int main() {
               first_json["inverse"].size() == Controller::Outputs &&
               first_json["predictive"].size() == 3,
           "Snapshot matrix dimensions are wrong");
+    check(first_json["dimensions"]["history"] == 30 &&
+              first_json["dimensions"]["future"] == 3,
+          "Snapshot controller dimensions are wrong");
     check(first_json["rls"]["R"][1][2] ==
                   expected_factor[Controller::Features + 2] &&
               first_json["rls"]["weights"][0][1] == expected_weights(0, 1) &&

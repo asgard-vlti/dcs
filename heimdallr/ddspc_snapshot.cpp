@@ -129,8 +129,8 @@ nlohmann::json snapshot_json(const SnapshotJob& job) {
                                         "%04d-%02d-%02dT%02d:%02d:%02d.%03lldZ"))
                                   : nlohmann::json(nullptr)}}},
         {"dimensions",
-         {{"history", 40},
-          {"future", 4},
+         {{"history", ModelSnapshot::Controller::HistorySamples},
+          {"future", ModelSnapshot::Controller::FutureSamples},
           {"features", ModelSnapshot::Controller::Features},
           {"outputs", ModelSnapshot::Controller::Outputs},
           {"control_features", ModelSnapshot::Controller::ControlFeatures}}},
