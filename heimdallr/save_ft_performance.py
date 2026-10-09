@@ -65,9 +65,9 @@ def log_ft_performance(
         if write_header:
             f.write(commit_header())
             f.write(
-                "# timestamp gd_snr pd_snr gd_bl pd_tel gd_tel dm_piston (all values space-separated, 3 decimal places)\n"
+                "# timestamp gd_snr pd_snr gd_bl pd_tel gd_tel dm_piston cnt (measurements: 3 decimal places; cnt: integer)\n"
             )
-        last_cnt = 0
+        last_cnt = None
         while True:
             t0 = time.time()
             try:
@@ -77,12 +77,11 @@ def log_ft_performance(
                 print(f"[FT Performance] Error during request: {e}. Retrying...")
                 time.sleep(1)
                 continue
-            if reply:
-                if "cnt" in reply:
-                    cnt = reply["cnt"]
-                    if last_cnt == cnt:
-                        continue
-                    last_cnt = cnt
+            if reply and "cnt" in reply:
+                cnt = reply["cnt"]
+                if last_cnt == cnt:
+                    continue
+                last_cnt = cnt
                 # Timestamp to ms precision
                 timestamp = "{:.4f}".format(t0)
                 # Flatten all key values into a single line, 3 decimal places
@@ -101,7 +100,7 @@ def log_ft_performance(
                             values.append("{:.3f}".format(float(v)))
                         except Exception:
                             values.append(str(v))
-                line = "{} {}".format(timestamp, " ".join(values))
+                line = "{} {} {}".format(timestamp, " ".join(values), cnt)
                 f.write(line + "\n")
                 f.flush()
             if (
