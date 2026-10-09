@@ -10,7 +10,6 @@ template <> struct adl_serializer<Status> {
         j["shm_error"] = p.shm_error;
         j["fps"] = p.fps;
         j["save_mode"] = p.save_mode;
-        j["last_saved_unix_s"] = p.last_saved_unix_s;
     }
     static void from_json(const json& j, Status& p) {
         p = Status();
@@ -21,7 +20,6 @@ template <> struct adl_serializer<Status> {
         j.at("shm_error").get_to(p.shm_error);
         j.at("fps").get_to(p.fps);
         j.at("save_mode").get_to(p.save_mode);
-        p.last_saved_unix_s = j.at("last_saved_unix_s");
     }
    };
 }

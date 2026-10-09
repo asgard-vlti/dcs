@@ -1,12 +1,11 @@
 import datetime
-import json
 import os
 import pathlib
 import tempfile
 import unittest
 
-from mcs_client.disk_status import DiskSavingMonitor
-from mcs_client.mcs_client import MCSServer
+from mcs_client.disk_status import CRED1_STREAMS, CRED1_WRITE_LIMIT_S, DiskSavingMonitor
+from mcs_client.mcs_client import MCSServer, Watchdog
 
 
 class DiskSavingMonitorTests(unittest.TestCase):
@@ -39,16 +38,6 @@ class DiskSavingMonitorTests(unittest.TestCase):
         os.utime(path, (self.now - age, self.now - age))
         return path
 
-    def _camera(self, ages=None, fps=1000, save_mode=1):
-        ages = ages or {"baldr1": 1.0, "hei_k1": 1.0}
-        return {
-            "fps": fps,
-            "save_mode": save_mode,
-            "last_saved_unix_s": {
-                name: self.now - age for name, age in ages.items()
-            },
-        }
-
     def test_all_fresh_and_partial_tt(self):
         self.ps_output = "\n".join(
             [self._writer("save-ft-performance"), self._writer("save-tt-performance", 101)]
@@ -56,26 +45,33 @@ class DiskSavingMonitorTests(unittest.TestCase):
         self._write_log("ft_performance_")
         for beam in range(1, 5):
             self._write_log(f"btt_performance_beam{beam}_", age=3 if beam == 2 else 0.5)
-        status = self.monitor.collect(self._camera())
-        self.assertEqual(status["cred1"]["state"], "green")
+        status = self.monitor.collect()
+        self.assertEqual(status["cred1"]["state"], "red")
         self.assertEqual(status["ft_performance"]["state"], "green")
         self.assertEqual(status["tt_performance"]["state"], "yellow")
         self.assertEqual(status["tt_performance"]["checks"]["beam2"]["state"], "stale")
 
-    def test_slow_camera_uses_longer_limit_and_saving_off_is_red(self):
-        camera = self._camera({"baldr1": 10.5, "hei_k1": 11.5}, fps=500)
-        group = self.monitor.collect(camera)["cred1"]
-        self.assertEqual(group["state"], "yellow")
-        self.assertEqual(group["checks"]["baldr1"]["limit_s"], 11.0)
-        camera["save_mode"] = 0
-        self.assertEqual(self.monitor.collect(camera)["cred1"]["state"], "red")
+    def test_camera_files_control_status_and_age_out(self):
+        self.assertEqual(self.monitor.collect()["cred1"]["state"], "red")
+        day = datetime.datetime.fromtimestamp(
+            self.now, datetime.timezone.utc
+        ).strftime("%Y%m%d")
+        directory = self.root / day
+        directory.mkdir()
+        for stream in CRED1_STREAMS:
+            path = directory / f"{stream}_T12:00:00.000.fits"
+            path.write_bytes(b"FITS data")
+            os.utime(path, (self.now - 0.5, self.now - 0.5))
+            if stream == "baldr1":
+                self.assertEqual(
+                    self.monitor.collect()["cred1"]["state"], "yellow"
+                )
+        self.assertEqual(self.monitor.collect()["cred1"]["state"], "green")
+        self.now += CRED1_WRITE_LIMIT_S
+        self.assertEqual(self.monitor.collect()["cred1"]["state"], "red")
 
-    def test_camera_status_wrapper_from_zmq_is_decoded(self):
-        response = json.dumps({"status_code": 0, "data": self._camera()})
-        self.assertEqual(self.monitor.collect(response)["cred1"]["state"], "green")
-
-    def test_missing_writer_and_unavailable_camera_are_red(self):
-        status = self.monitor.collect(None)
+    def test_missing_writer_and_camera_files_are_red(self):
+        status = self.monitor.collect()
         self.assertTrue(all(group["state"] == "red" for group in status.values()))
         self.assertEqual(
             status["ft_performance"]["checks"]["ft_performance"]["detail"],
@@ -85,24 +81,49 @@ class DiskSavingMonitorTests(unittest.TestCase):
     def test_header_only_log_is_not_a_write(self):
         self.ps_output = self._writer("save-ft-performance")
         self._write_log("ft_performance_", data=False)
-        check = self.monitor.collect(self._camera())["ft_performance"]["checks"][
+        check = self.monitor.collect()["ft_performance"]["checks"][
             "ft_performance"
         ]
         self.assertEqual(check["state"], "stale")
         self.assertEqual(check["detail"], "no data rows")
 
+    def test_tt_log_updates_after_commit_headers_and_first_data_row(self):
+        self.ps_output = self._writer("save-tt-performance")
+        logs = [
+            self._write_log(f"btt_performance_beam{beam}_", data=False)
+            for beam in range(1, 5)
+        ]
+        for path in logs:
+            path.write_text(
+                "# dcs commit: abc\n"
+                "# asgard-alignment commit: def\n"
+                "time tx ty mx my\n"
+            )
+        self.assertEqual(
+            self.monitor.collect()["tt_performance"]["checks"]["beam1"]["detail"],
+            "no data rows",
+        )
+        for path in logs:
+            with path.open("a") as stream:
+                stream.write("1700000000.0 1.0 2.0 3.0 4.0\n")
+            os.utime(path, (self.now - 0.5, self.now - 0.5))
+        self.assertEqual(
+            self.monitor.collect()["tt_performance"]["state"],
+            "green",
+        )
+
     def test_concurrent_write_just_after_check_start_is_fresh(self):
         self.ps_output = self._writer("save-ft-performance")
         self._write_log("ft_performance_", age=-0.1)
         self.assertEqual(
-            self.monitor.collect(self._camera())["ft_performance"]["state"],
+            self.monitor.collect()["ft_performance"]["state"],
             "green",
         )
 
     def test_restart_discovers_new_file(self):
         self.ps_output = self._writer("save-ft-performance", pid=100)
         self._write_log("ft_performance_", age=10)
-        self.assertEqual(self.monitor.collect(self._camera())["ft_performance"]["state"], "red")
+        self.assertEqual(self.monitor.collect()["ft_performance"]["state"], "red")
         self.ps_output = self._writer("save-ft-performance", pid=200, elapsed=5)
         stamp = datetime.datetime.fromtimestamp(
             self.now - 4, datetime.timezone.utc
@@ -112,7 +133,7 @@ class DiskSavingMonitorTests(unittest.TestCase):
         path.write_text("# timestamp data\n1700000000.0 1.0\n")
         os.utime(path, (self.now - 0.5, self.now - 0.5))
         self.assertEqual(
-            self.monitor.collect(self._camera())["ft_performance"]["state"],
+            self.monitor.collect()["ft_performance"]["state"],
             "green",
         )
 
@@ -120,12 +141,12 @@ class DiskSavingMonitorTests(unittest.TestCase):
         self.ps_output = self._writer("save-ft-performance", pid=100)
         self._write_log("ft_performance_", age=0.5)
         self.assertEqual(
-            self.monitor.collect(self._camera())["ft_performance"]["state"],
+            self.monitor.collect()["ft_performance"]["state"],
             "green",
         )
         self.ps_output = self._writer("save-ft-performance", pid=200, elapsed=5)
         self.assertEqual(
-            self.monitor.collect(self._camera())["ft_performance"]["state"],
+            self.monitor.collect()["ft_performance"]["state"],
             "red",
         )
 
@@ -146,13 +167,20 @@ class DiskSavingMonitorTests(unittest.TestCase):
         self.assertEqual(server.z.payload, {"cred1": "ok"})
         self.assertEqual(server.data, {})
 
+    def test_disk_status_does_not_query_camera(self):
+        watchdog = Watchdog.__new__(Watchdog)
+        watchdog.disk_monitor = type(
+            "FakeMonitor", (), {"collect": lambda self: {"cred1": "files"}}
+        )()
+        self.assertEqual(watchdog.collect_disk_status(), {"cred1": "files"})
+
     def test_log_from_previous_utc_day_remains_visible(self):
         midnight = datetime.datetime(2026, 10, 6, tzinfo=datetime.timezone.utc)
         self.now = midnight.timestamp() + 30
         self.ps_output = self._writer("save-ft-performance", elapsed=120)
         self._write_log("ft_performance_", started=self.now - 120)
         self.assertEqual(
-            self.monitor.collect(self._camera())["ft_performance"]["state"],
+            self.monitor.collect()["ft_performance"]["state"],
             "green",
         )
 

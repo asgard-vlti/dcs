@@ -33,7 +33,6 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <semaphore.h>
-#include <atomic>
 
 #include "cred1_cli_tools.h"     // command line interface (CLI) tools
 
@@ -104,7 +103,6 @@ struct Status
   bool shm_error;
   double fps;
   int save_mode;
-  nlohmann::json last_saved_unix_s;
 };
 
 //-------End of Commander structs------
@@ -114,7 +112,7 @@ struct Status
  *                           function prototypes
  * ========================================================================= */
 
-int save_cube_to_fits(void *dcube, long naxes[3],
+void* save_cube_to_fits(void *dcube, long naxes[3],
 			char *fname, int bitpix, int kw);
 
 // threads
@@ -198,7 +196,6 @@ int nroi = 6; // number of regions of interest on the detector
 int roi0 = 0; // the index of the first ROI to save (for skip_save_baldr_mode)
 
 subarray *ROI = NULL;
-std::atomic<long long> last_roi_save_ns[6] = {};
 int previous_timeouts = 0;
 
 /* =========================================================================
@@ -532,7 +529,7 @@ void free_shm(int roi_too) {
 /* =========================================================================
  *                  Save a memory block a fits data-cube
  * ========================================================================= */
-int save_cube_to_fits(void *dcube, long naxes[3],
+void* save_cube_to_fits(void *dcube, long naxes[3],
 			char *fname, int bitpix, int kw) {
   fitsfile *fptr = NULL;
   int status = 0;
@@ -542,7 +539,7 @@ int save_cube_to_fits(void *dcube, long naxes[3],
 
   fits_create_file(&fptr, fname, &status);
   if (status != 0)
-    return status;
+    return NULL;
   // fits_set_compression_type(fptr, RICE_1, &status);
   fits_create_img(fptr, bitpix, naxis, naxes, &status);
 
@@ -564,9 +561,7 @@ int save_cube_to_fits(void *dcube, long naxes[3],
   }
   int close_status = 0;
   fits_close_file(fptr, &close_status); // This also flushes.
-  if (status == 0)
-    status = close_status;
-  return status;
+  return NULL;
 }
 
 /* =========================================================================
@@ -611,17 +606,8 @@ void* save_roi_cubes(void *) {
       naxes[2] = ROI[ri].nbs / 2;
       //sprintf(fname, "%s/%s_%s.fits[compress Rice]", savedir, ROI[ri].name, tstamp);
       sprintf(fname, "%s/%s_%s.fits", savedir, ROI[ri].name, tstamp);
-      int save_status = save_cube_to_fits((void*) ROI_tosave[ri], naxes,
+      save_cube_to_fits((void*) ROI_tosave[ri], naxes,
 			fname, LONG_IMG, 1);
-      struct stat saved_file;
-      if (save_status == 0 && stat(fname, &saved_file) == 0 &&
-	  saved_file.st_size > 0) {
-	struct timespec saved_at;
-	clock_gettime(CLOCK_REALTIME, &saved_at);
-	last_roi_save_ns[ri].store(
-	    static_cast<long long>(saved_at.tv_sec) * 1000000000LL +
-	    saved_at.tv_nsec);
-      }
     }
   }
   return NULL;
@@ -1117,12 +1103,6 @@ Status get_status() {
   status.cam_status = status_cstr;
   status.fps = camconf->fps;
   status.save_mode = camconf->save_mode;
-  status.last_saved_unix_s = nlohmann::json::object();
-  for (int ii = 0; ii < nroi; ii++) {
-    long long saved_ns = last_roi_save_ns[ii].load();
-    status.last_saved_unix_s[ROI[ii].name] =
-      saved_ns > 0 ? saved_ns / 1000000000.0 : 0.0;
-  }
   if (camconf->ndmr_mode==1)
   	status.nbreads = camconf->nbreads;
   else
@@ -1260,8 +1240,6 @@ void set_save_mode(int _mode) {
     info("Savemode was turned OFF");
   }
   else {
-    for (int ii = 0; ii < nroi; ii++)
-      last_roi_save_ns[ii].store(0);
     camconf->save_mode = 1;
     info("Savemode was turned ON");
     pthread_create(&tid_save, NULL, save_roi_cubes, NULL);
@@ -1277,8 +1255,6 @@ void skip_save_baldr_mode(int _mode) {
   }
   else {
     roi0 = 4;
-    for (int ii = 0; ii < roi0; ii++)
-      last_roi_save_ns[ii].store(0);
   }
 }
 

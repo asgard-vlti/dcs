@@ -1,7 +1,6 @@
 """Check telemetry writes on mimir without reading /data from wag."""
 
 import datetime
-import json
 import math
 import os
 import pathlib
@@ -22,6 +21,11 @@ SOURCES = {
         "limit_s": 2.0,
     },
 }
+CRED1_STREAMS = tuple(f"baldr{beam}" for beam in range(1, 5)) + (
+    "hei_k1",
+    "hei_k2",
+)
+CRED1_WRITE_LIMIT_S = 15.0
 
 
 def _check(last_saved, limit_s, now, detail=""):
@@ -58,6 +62,7 @@ class DiskSavingMonitor:
         self.process_list = process_list or self._process_list
         self.clock = clock or time.time
         self._file_cache = {}
+        self._cred1_cache = {}
 
     @staticmethod
     def _process_list():
@@ -142,19 +147,21 @@ class DiskSavingMonitor:
         if stat.st_size == 0:
             return None
         with path.open("rb") as stream:
-            stream.readline(4096)
-            row = stream.readline(4096)
-        if not row.endswith(b"\n"):
-            return None
-        data = row.split(None, 1)
-        if len(data) < 2:
-            return None
-        try:
-            if not math.isfinite(float(data[0])):
-                return None
-        except ValueError:
-            return None
-        return stat.st_mtime
+            for _ in range(16):
+                row = stream.readline(4096)
+                if not row:
+                    return None
+                if not row.endswith(b"\n"):
+                    return None
+                data = row.split(None, 1)
+                if len(data) < 2:
+                    continue
+                try:
+                    if math.isfinite(float(data[0])):
+                        return stat.st_mtime
+                except ValueError:
+                    continue
+        return None
 
     def _log_group(self, source, writer, now):
         prefixes = SOURCES[source]["prefixes"]
@@ -191,36 +198,55 @@ class DiskSavingMonitor:
                 checks[name] = _check(None, limit_s, now, str(error))
         return _group(checks)
 
-    @staticmethod
-    def _cred1_group(camera_status, now):
-        for _ in range(2):
-            if isinstance(camera_status, str):
-                try:
-                    camera_status = json.loads(camera_status)
-                except ValueError:
-                    camera_status = None
-            if isinstance(camera_status, dict) and "data" in camera_status:
-                camera_status = camera_status["data"]
-        if not isinstance(camera_status, dict):
-            return _group({"CRED1": _check(None, 6.0, now, "cannot verify camera")})
-        saved = camera_status.get("last_saved_unix_s")
-        if not isinstance(saved, dict) or not saved:
-            return _group({"CRED1": _check(None, 6.0, now, "save times unavailable")})
+    def _cred1_file_times(self, now):
+        day = datetime.datetime.fromtimestamp(now, datetime.timezone.utc).strftime(
+            "%Y%m%d"
+        )
+        directory = self.data_root / day
         try:
-            fps = float(camera_status.get("fps"))
-            limit_s = max(6.0, 5000.0 / fps + 1.0) if fps > 0 else 6.0
-        except (TypeError, ValueError, ZeroDivisionError):
-            limit_s = 6.0
-        if not math.isfinite(limit_s):
-            limit_s = 6.0
-        saving_off = camera_status.get("save_mode") != 1
+            directory_mtime = directory.stat().st_mtime_ns
+        except FileNotFoundError:
+            return {}
+        key = (directory, directory_mtime)
+        if self._cred1_cache.get("key") != key:
+            paths = {}
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    name = entry.name
+                    stream, separator, _ = name.partition("_T")
+                    if not separator or stream not in CRED1_STREAMS or not name.endswith(
+                        ".fits"
+                    ):
+                        continue
+                    previous = paths.get(stream)
+                    if previous is None or name > previous.name:
+                        paths[stream] = pathlib.Path(entry.path)
+            self._cred1_cache = {"key": key, "paths": paths}
+        saved = {}
+        for stream, path in self._cred1_cache["paths"].items():
+            try:
+                stat = path.stat()
+            except FileNotFoundError:
+                continue
+            if stat.st_size > 0:
+                saved[stream] = stat.st_mtime
+        return saved
+
+    def _cred1_group(self, now):
+        try:
+            saved = self._cred1_file_times(now)
+        except OSError as error:
+            return _group({
+                name: _check(None, CRED1_WRITE_LIMIT_S, now, str(error))
+                for name in CRED1_STREAMS
+            })
         checks = {
-            name: _check(timestamp, limit_s, now, "saving off" if saving_off else "")
-            for name, timestamp in saved.items()
+            name: _check(saved.get(name), CRED1_WRITE_LIMIT_S, now)
+            for name in CRED1_STREAMS
         }
         return _group(checks)
 
-    def collect(self, camera_status):
+    def collect(self):
         """Return source summaries and per-stream write ages for the ZMQ reply."""
         now = self.clock()
         try:
@@ -228,7 +254,7 @@ class DiskSavingMonitor:
         except (OSError, subprocess.CalledProcessError):
             writers = {}
         return {
-            "cred1": self._cred1_group(camera_status, now),
+            "cred1": self._cred1_group(now),
             **{
                 source: self._log_group(source, writers.get(source), now)
                 for source in SOURCES

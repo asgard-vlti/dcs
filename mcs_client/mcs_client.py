@@ -899,12 +899,7 @@ class Watchdog:
         return wd_status
 
     def collect_disk_status(self):
-        _, zmq_status, camera_status = self._watchdog_lazy_pirate_status(
-            "CRED1", self.watchdog_servers["CRED1"]
-        )
-        return self.disk_monitor.collect(
-            camera_status if zmq_status == "open" else None
-        )
+        return self.disk_monitor.collect()
 
 
 class MCSServer:
