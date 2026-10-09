@@ -24,10 +24,10 @@ K2  = 2.3
 
 [ddspc]
 reg_start = 1e5
-reg_cutoff = 0.3
+reg_cutoff = 0.01
 reg_divisor = 3.0
 reg_interval = 200
 n_exploration = 5000
 exploration_sigma = 0.01
 gamma = 1.0
-continue_learning = true
+continue_learning = false
