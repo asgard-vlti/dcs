@@ -852,8 +852,14 @@ void fringe_tracker(){
             }
             if (!use_ddspc) {
                 reset_ddspc_fit(block_reason, false);
+                if (!phase_connected) {
+                    // Refresh the five-pair hold and zero this frame.
+                    piston_reset_hold.arm();
+                    piston_reset_hold.on_paired_frame(!ddspc_frame_gap);
+                }
                 ddspc_hold_this_frame =
-                    ddspc_hold_this_frame || piston_reset_hold.active();
+                    ddspc_hold_this_frame || !phase_connected ||
+                    piston_reset_hold.active();
             }
         }
 
