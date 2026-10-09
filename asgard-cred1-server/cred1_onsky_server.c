@@ -1507,7 +1507,10 @@ COMMANDER_REGISTER(m)
   m.def("cam_conf", show_cam_conf, "Summary of the current camera configuration");
   m.def("skip_save_baldr", skip_save_baldr_mode, "Skip saving BALDR data",
   	co::arg("mode", "Positive skips BALDR streams; non-positive saves all streams."));
-  m.def("move_roi", move_roi, "Updates position of specified ROI");
+  m.def("move_roi", move_roi, "Updates position of specified ROI",
+        co::arg("roi_str", "Name of the ROI to move."),
+        co::arg("dx", "Horizontal offset in pixels added to the ROI x0 coordinate."),
+        co::arg("dy", "Vertical offset in pixels added to the ROI y0 coordinate."));
 }
 
 /* =========================================================================
