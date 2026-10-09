@@ -53,17 +53,20 @@ def step_tt(cmds, devices, signs):
             connected = True
         except:
             print("Failed to reconnect to MDS.")
-            return
+            return False
     for cmd, device, sign in zip(cmds, devices, signs):
         msg = f"tt_step {device} {int(round(-cmd * sign * 4))}"
-        print(msg)
         try:
             socket.send_string(msg)
-            print(socket.recv_string())  # acknowledgement
+            reply = socket.recv_string().strip()
         except zmq.Again:
             print(f"Timeout while sending command: {msg}.")
-            return
+            return False
+        if reply:
+            print(f"MDS rejected {msg}: {reply}")
+            return False
         time.sleep(0.01)
+    return True
 
 
 def get_baseline_powers():
@@ -93,8 +96,6 @@ def telescope_centroids(baseline_centroids, snrs):
     A = M_tel_avg * np.sqrt(snrs)[:, np.newaxis]  # Weight by sqrt(SNR)
     b = np.array(baseline_centroids).flatten() * np.sqrt(snrs)
     x, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
-    print(baseline_centroids)
-    print(x)
     return x
 
 
@@ -115,18 +116,18 @@ def main_loop():
         baseline_centroids.append(centroid)
         snrs.append(snr)
 
-    print("snr:", snrs)
-    print("centr:", baseline_centroids)
     # Now we have the centroids and SNRs for each baseline, we can compute the telescope commands.
     # Do x then y separately.
     x_centroids = [c[0] for c in baseline_centroids]
     y_centroids = [c[1] for c in baseline_centroids]
     # First, x.
     telescope_cmds = telescope_centroids(x_centroids, snrs)
-    step_tt(telescope_cmds, xdevices, xsigns)
+    x_succeeded = step_tt(telescope_cmds, xdevices, xsigns)
     # Then, y.
     telescope_cmds = telescope_centroids(y_centroids, snrs)
-    step_tt(telescope_cmds, ydevices, ysigns)
+    y_succeeded = step_tt(telescope_cmds, ydevices, ysigns)
+    if x_succeeded and y_succeeded:
+        print("h-tilts: tip/tilt offload complete.")
 
 
 if __name__ == "__main__":
