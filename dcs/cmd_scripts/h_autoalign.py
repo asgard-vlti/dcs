@@ -26,6 +26,8 @@ import json
 
 
 class HeimdallrAA:
+    PUPIL_SCAN_SAMPLES = 9
+
     def __init__(
         self, shutter_pause_time, band, flux_threshold, savepth, output, ncubes, t_pause
     ):
@@ -349,7 +351,7 @@ class HeimdallrAA:
         self._send_and_get_response(cmd)
         time.sleep(0.5)
 
-    def autoalign_pupil(self, beam, send_hdlr_complete=True):
+    def autoalign_pupil(self, beam, send_hdlr_complete=True, progress=None):
 
         mv_time = 2.5
 
@@ -367,7 +369,7 @@ class HeimdallrAA:
 
         # 3. move pupil to optimize flux
         pup_offset = 0.2  # mm
-        n_samp = 9
+        n_samp = self.PUPIL_SCAN_SAMPLES
         flux_beam_radius = 6  # pixels
 
         measurement_locs_x = np.linspace(-pup_offset, pup_offset, n_samp)
@@ -382,6 +384,8 @@ class HeimdallrAA:
         )
 
         fluxes_x = []
+        if progress is not None:
+            progress.set_postfix(beam=beam, axis="X")
         for delta in relative_measurement_locs:
             cmd = f"mv_pup c_red_one_focus {beam} {delta} {0.0}"
             self._send_and_get_response(cmd)
@@ -399,6 +403,8 @@ class HeimdallrAA:
                 centre, flux = self._get_blob(radius=flux_beam_radius, return_flux=True)
 
             fluxes_x.append(flux)
+            if progress is not None:
+                progress.update(1)
 
             # check if centre is close to the edge of the frame
             for bound in self.col_bnds:
@@ -432,6 +438,8 @@ class HeimdallrAA:
         time.sleep(2)
 
         fluxes_y = []
+        if progress is not None:
+            progress.set_postfix(beam=beam, axis="Y")
         for delta in relative_measurement_locs:
             cmd = f"mv_pup c_red_one_focus {beam} {0.0} {delta}"
             self._send_and_get_response(cmd)
@@ -448,6 +456,8 @@ class HeimdallrAA:
                 centre, flux = self._get_blob(radius=flux_beam_radius, return_flux=True)
 
             fluxes_y.append(flux)
+            if progress is not None:
+                progress.update(1)
 
             for bound in self.col_bnds:
                 if np.abs(centre[1] - bound) < 10:
@@ -472,6 +482,8 @@ class HeimdallrAA:
         time.sleep(2)
 
         fluxes_x2 = []
+        if progress is not None:
+            progress.set_postfix(beam=beam, axis="refined X")
         for delta in relative_measurement_locs:
             cmd = f"mv_pup c_red_one_focus {beam} {delta} {0.0}"
             self._send_and_get_response(cmd)
@@ -488,6 +500,8 @@ class HeimdallrAA:
                 centre, flux = self._get_blob(radius=flux_beam_radius, return_flux=True)
 
             fluxes_x2.append(flux)
+            if progress is not None:
+                progress.update(1)
 
             for bound in self.col_bnds:
                 if np.abs(centre[1] - bound) < 10:
@@ -541,11 +555,17 @@ class HeimdallrAA:
     def autoalign_pupil_all(self, plot):
         # just like autoalign_3_pupil but for all beams
         datas = {}
-        for beam in range(1, 5):
-            datas[beam] = self.autoalign_pupil(beam,
-                                               send_hdlr_complete=False)
-            # open all shutters
-            self.open_all_shutters()
+        with tqdm(
+            total=4 * 3 * self.PUPIL_SCAN_SAMPLES,
+            desc="Pupil alignment",
+            unit="sample",
+        ) as progress:
+            for beam in range(1, 5):
+                datas[beam] = self.autoalign_pupil(
+                    beam, send_hdlr_complete=False, progress=progress
+                )
+                # open all shutters
+                self.open_all_shutters()
 
         self._send_internal_complete()
 
