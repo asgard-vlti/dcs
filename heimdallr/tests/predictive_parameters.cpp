@@ -62,7 +62,7 @@ int main() {
     check(read_config(toml::parse("[ddspc]\nreg_start = 100000"))
                   .reg_start == 1e5,
           "Integer TOML value was not accepted for a numeric parameter");
-    check(read_config(toml::parse_file("def.toml")).reg_cutoff == 0.3,
+    check(read_config(toml::parse_file("def.toml")).reg_cutoff == 0.01,
           "Packaged default TOML is invalid");
 
     Parameters active = configured;
@@ -202,6 +202,23 @@ int main() {
     control.update(control.command(), false);
     check(control.rls_updates() == 0 && control.iterations() == 3,
           "Frozen controller did not keep frame history without learning");
+
+    Parameters saturated_params;
+    saturated_params.n_exploration = 0;
+    saturated_params.continue_learning = false;
+    PredictiveControl<4, 2> saturated(saturated_params);
+    const Modes negative_error(-2.0, 0.0, 0.0);
+    const Modes clipped(0.1, 0.0, 0.0);
+    check(std::abs(saturated.propose(negative_error, zero, false)(0) - 0.4) <
+              1e-12,
+          "First proposed command was incorrect");
+    saturated.update(clipped, false);
+    check(std::abs(saturated.propose(negative_error, zero, false)(0) - 0.5) <
+              1e-12,
+          "Saturation did not reset the next command baseline");
+    saturated.update(clipped, false);
+    check((saturated.propose(zero, zero, false) - clipped).norm() < 1e-12,
+          "Frozen controller drifted after repeated saturation");
 
     QrdRls<1, 1> rls(1.0, control_params.gamma);
     Eigen::Matrix<double, 1, 1> feature = Eigen::Matrix<double, 1, 1>::Zero();

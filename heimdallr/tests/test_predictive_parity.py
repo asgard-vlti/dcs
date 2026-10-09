@@ -87,6 +87,7 @@ class PredictiveParity(unittest.TestCase):
                 proposed = controller.propose_command(error).copy()
             applied = onp.clip(proposed, -0.25, 0.25)
             controller.update(applied)
+            controller.u = applied.copy()
             expected_commands.append(proposed)
             inputs.append(" ".join(map(str, onp.r_[error, draw, applied])))
 
@@ -192,7 +193,9 @@ class PredictiveParity(unittest.TestCase):
             proposed = self.main2.S2DM @ modes * wavelength / 6.0 + common
             applied = onp.clip(proposed, -0.4, 0.4)
             saturated |= bool(onp.any(applied != proposed))
-            controller.update(self.main2.DM2S @ (applied * 6.0 / wavelength))
+            applied_modes = self.main2.DM2S @ (applied * 6.0 / wavelength)
+            controller.update(applied_modes)
+            controller.u = applied_modes.copy()
             expected.append(applied)
             inputs.append(" ".join(map(str, onp.r_[phase, draw])))
         actual = onp.array(

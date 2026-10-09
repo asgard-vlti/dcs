@@ -246,6 +246,7 @@ void PredictiveControl<HistoryLength, FutureLength>::update(
     const Modes& applied_command, bool learn) {
     ++iterations_;
     commands_.add(applied_command - previous_command_);
+    command_ = applied_command;
     if (!learn || iterations_ <= HistoryLength + FutureLength) return;
 
     int offset = 0;
