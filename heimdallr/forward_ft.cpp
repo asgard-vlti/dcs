@@ -1,4 +1,5 @@
 #include "heimdallr.h"
+#include <chrono>
 #include <cstring>
 //#define PRINT_TIMING
 #define DARK_OFFSET 1000.0
@@ -164,6 +165,8 @@ void ForwardFt::loop() {
     timespec now, then;
 #endif
     unsigned int ii_shift, jj_shift, szj, last_logged=0;
+    auto next_single_frame_gap_log = std::chrono::steady_clock::time_point{};
+    unsigned long int single_frame_gaps_since_log = 0;
     cnt = subarray->md->cnt0;
     catch_up_with_sem(subarray, 2);
     while (mode != FT_STOPPING) {
@@ -179,6 +182,18 @@ void ForwardFt::loop() {
             // cnt0 shoudl be exactly 1 frame advanced from cnt.
             // The next line means at least 2 frames are skipped.
             // This is bad - we shoudl catch up with the semafore and continue.
+            if (current_cnt0 == cnt+2 && mode == FT_RUNNING) {
+                ++single_frame_gaps_since_log;
+                const auto now = std::chrono::steady_clock::now();
+                if (now >= next_single_frame_gap_log) {
+                    warn("Camera K%d skipped one frame: previous=%lu current=%lu "
+                         "single_frame_gaps_since_log=%lu",
+                         filternum, cnt, current_cnt0,
+                         single_frame_gaps_since_log);
+                    next_single_frame_gap_log = now + std::chrono::seconds(1);
+                    single_frame_gaps_since_log = 0;
+                }
+            }
             if ((current_cnt0 > cnt+2)  && (mode == FT_RUNNING)) {
                 if (cnt - last_logged > 500){
                     warn("Missed cam frames: %lu %lu",

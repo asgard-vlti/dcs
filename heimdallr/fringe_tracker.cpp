@@ -377,6 +377,9 @@ void fringe_tracker(){
 #endif
     auto next_ddspc_wait_log = std::chrono::steady_clock::time_point{};
     auto next_ddspc_active_log = std::chrono::steady_clock::time_point{};
+    auto next_frame_gap_log = std::chrono::steady_clock::time_point{};
+    unsigned long int frame_gap_streak = 0;
+    unsigned long int frame_gaps_since_log = 0;
     auto report_ddspc_wait = [&](const char *reason) {
         {
             std::lock_guard<std::mutex> lock(settings.mutex);
@@ -537,8 +540,9 @@ void fringe_tracker(){
             nerrors++;
             continue;
         }
-        ddspc_frame_gap = (k1_cnt != ft_cnt + 1) ||
-                          (k2_cnt != ft_cnt + 1);
+        const auto expected_cnt = ft_cnt + 1;
+        ddspc_frame_gap = (k1_cnt != expected_cnt) ||
+                          (k2_cnt != expected_cnt);
         // Check for missed frames
         if (k1_cnt > ft_cnt+2 || k2_cnt > ft_cnt+2){
             warn("Missed FT frames! K1: %lu K2: %lu FT: %lu",
@@ -555,6 +559,42 @@ void fringe_tracker(){
         {
             std::lock_guard<std::mutex> lock(settings.mutex);
             servo_mode = settings.s.servo_mode;
+        }
+        if (servo_mode == SERVO_DDSPC && ddspc_frame_gap) {
+            ++frame_gap_streak;
+            ++frame_gaps_since_log;
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= next_frame_gap_log) {
+                int k1_pending = -1;
+                int k2_pending = -1;
+                if (sem_getvalue(&K1ft->sem_new_frame, &k1_pending) != 0)
+                    k1_pending = -1;
+                if (sem_getvalue(&K2ft->sem_new_frame, &k2_pending) != 0)
+                    k2_pending = -1;
+                warn("DDSPC camera frame gap: expected=%lu FFT K1=%lu K2=%lu "
+                     "stream K1=%lu K2=%lu K2_raw=%lu FT_next=%lu "
+                     "streak=%lu gaps_since_log=%lu pending K1=%d K2=%d "
+                     "errors FT=%lu K1=%d K2=%d",
+                     expected_cnt, k1_cnt, k2_cnt,
+                     K1ft->subarray->md->cnt0, K2ft->subarray->md->cnt0,
+                     k2_raw_cnt, ft_cnt,
+                     frame_gap_streak, frame_gaps_since_log, k1_pending,
+                     k2_pending, nerrors, K1ft->nerrors, K2ft->nerrors);
+                next_frame_gap_log = now + std::chrono::seconds(1);
+                frame_gaps_since_log = 0;
+            }
+        } else {
+            if (servo_mode == SERVO_DDSPC && frame_gap_streak > 0) {
+                const auto now = std::chrono::steady_clock::now();
+                if (now >= next_frame_gap_log) {
+                    info("DDSPC camera frame sequence recovered: K1=%lu K2=%lu "
+                         "FT=%lu previous_gap_streak=%lu",
+                         k1_cnt, k2_cnt, ft_cnt, frame_gap_streak);
+                    next_frame_gap_log = now + std::chrono::seconds(1);
+                }
+            }
+            frame_gap_streak = 0;
+            if (servo_mode != SERVO_DDSPC) frame_gaps_since_log = 0;
         }
         bool ddspc_hold_this_frame =
             servo_mode == SERVO_DDSPC &&
