@@ -3,7 +3,7 @@
 Select the new servo with `servo "ddspc"`. Mode value 5 leaves the existing mode
 values unchanged. The controller uses filtered telescope phase delay in K1
 wavelengths, predicts three differential piston modes, and sends clipped DM
-commands. Its QRD RLS model uses 30 history frames and three future frames.
+commands. Its QRD RLS model uses 40 history frames and four future frames.
 
 The packaged configuration explores for 5000 valid DDSPC frames after each mode
 entry. A camera frame gap, lost fringe lock, disconnected phase measurements, an
@@ -59,8 +59,8 @@ simulation build writes under
 atomically and an existing filename is never overwritten.
 
 Each version 1 JSON file contains the RLS upper triangular factor `R` as a full
-186×186 row-major array, its 186×9 weights, the last 9×9 regularized SVD
-inverse, and the applied 3×177 predictive matrix. It also records the DDSPC
+249×249 row-major array, its 249×12 weights, the last 12×12 regularized SVD
+inverse, and the applied 3×237 predictive matrix. It also records the DDSPC
 parameters, actual RLS update count, freeze reason, frame and UTC time, UTC
 transition and model times, and whether the
 model came from the active or a retained segment. After lost lock or a bad

@@ -89,7 +89,7 @@ class QrdRls {
     WeightMatrix weights_;
 };
 
-template <int HistoryLength = 30, int FutureLength = 3>
+template <int HistoryLength = 40, int FutureLength = 4>
 class PredictiveControl {
    public:
     static_assert(HistoryLength >= 2 && FutureLength >= 2);

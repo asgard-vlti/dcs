@@ -119,8 +119,8 @@ class PredictiveParity(unittest.TestCase):
         self.compare_controller(history=4, future=2, count=510)
 
     def test_production_dimensions_and_fresh_model(self):
-        self.compare_controller(history=30, future=3, count=110)
-        self.compare_controller(history=30, future=3, count=51)
+        self.compare_controller(history=40, future=4, count=110)
+        self.compare_controller(history=40, future=4, count=51)
 
     def test_phase_sign_and_dm_units(self):
         wavelength = 2.1
@@ -162,8 +162,8 @@ class PredictiveParity(unittest.TestCase):
         wavelength = 2.1
         controller = self.main2.PredictiveControl(
             n_actuators=3,
-            n_history=30,
-            n_future=3,
+            n_history=40,
+            n_future=4,
             n_explore=500,
             gain=0.2,
             learning_exponent=1.0,
