@@ -95,6 +95,7 @@ def _build_cmap_lut(name: str) -> np.ndarray:
 class DMView(QtWidgets.QMainWindow):
     UPDATE_MS = 200  # 5 Hz refresh for low bandwidth and stable CPU usage.
     SATURATION_EPS = 0.01
+    PISTON_LEVELS = (-0.4, 0.4)
 
     class _BeamRow:
         def __init__(self, beam: str):
@@ -163,7 +164,11 @@ class DMView(QtWidgets.QMainWindow):
                 image_item.setLookupTable(
                     self._cividis_lut if col_idx < 2 else self._rdbu_lut
                 )
-                image_item.setLevels((row.dm.VMIN, row.dm.VMAX))
+                image_item.setLevels(
+                    self.PISTON_LEVELS
+                    if col_idx == row.dm.N_CHANNELS
+                    else (row.dm.VMIN, row.dm.VMAX)
+                )
                 plot.addItem(image_item)
                 row.image_items.append(image_item)
 
@@ -202,8 +207,10 @@ class DMView(QtWidgets.QMainWindow):
                 if frame is not None:
                     if i == 0 or i == 1:
                         row.image_items[i].setLevels((row.dm.VMIN, row.dm.VMAX))
+                    elif i == row.dm.N_CHANNELS:
+                        row.image_items[i].setLevels(self.PISTON_LEVELS)
                     else:
-                        # Use centered levels for RdBu colormap (channels 1-4)
+                        # Use centered levels for RdBu colormap (channels 1-3).
                         row.image_items[i].setLevels(self._frame_levels_centered(frame))
                     row.image_items[i].setImage(frame, autoLevels=False)
 
