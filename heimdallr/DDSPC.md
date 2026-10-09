@@ -99,6 +99,12 @@ The 120,000-update benchmark is available for the instrument-host timing check:
 make -C dcs/heimdallr predictive_benchmark
 ```
 
+The JSON reports total `median_us`, `p999_us`, and `max_us`, plus matching
+`control_*_us` and `update_*_us` values. Control timing includes regularization,
+prediction, and DM command conversion. Update timing includes QRD RLS learning
+and rebuilding the predictive matrix. These are synthetic controller timings;
+they do not include `set_dm_piston` or camera and full servo-loop work.
+
 Before operational use, verify the complete fringe loop on the instrument host
 at 2 kHz and check its 500 microsecond frame deadline. This verification is
 pending while the host is unavailable.

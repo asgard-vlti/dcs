@@ -19,8 +19,12 @@ int main() {
     constexpr double wavelength = 2.1;
     PredictiveControl<40, 4> controller;
     std::array<Telescopes, 2> lag{Telescopes::Zero(), Telescopes::Zero()};
-    std::vector<double> microseconds;
-    microseconds.reserve(samples);
+    std::vector<double> control_us;
+    std::vector<double> update_us;
+    std::vector<double> total_us;
+    control_us.reserve(samples);
+    update_us.reserve(samples);
+    total_us.reserve(samples);
     double checksum = 0.0;
 
     for (int i = 0; i < warmup + samples; ++i) {
@@ -43,6 +47,7 @@ int main() {
                                   .cwiseMin(0.4);
         const Modes applied =
             heimdallr_ddspc::applied_command_waves(dm, wavelength);
+        const auto control_done = Clock::now();
         controller.update(applied);
         const auto stop = Clock::now();
 
@@ -54,17 +59,31 @@ int main() {
         lag[0] = dm * (6.0 / wavelength);
         checksum += proposed.squaredNorm();
         if (i >= warmup) {
-            microseconds.push_back(
+            control_us.push_back(std::chrono::duration<double, std::micro>(
+                                     control_done - start)
+                                     .count());
+            update_us.push_back(std::chrono::duration<double, std::micro>(
+                                    stop - control_done)
+                                    .count());
+            total_us.push_back(
                 std::chrono::duration<double, std::micro>(stop - start).count());
         }
     }
 
-    std::sort(microseconds.begin(), microseconds.end());
+    std::sort(control_us.begin(), control_us.end());
+    std::sort(update_us.begin(), update_us.end());
+    std::sort(total_us.begin(), total_us.end());
     std::cout << std::setprecision(9)
               << "{\"history\":40,\"future\":4,\"samples\":" << samples
-              << ",\"median_us\":" << microseconds[samples / 2]
-              << ",\"p999_us\":" << microseconds[119879]
-              << ",\"max_us\":" << microseconds.back()
+              << ",\"median_us\":" << total_us[samples / 2]
+              << ",\"p999_us\":" << total_us[119879]
+              << ",\"max_us\":" << total_us.back()
+              << ",\"control_median_us\":" << control_us[samples / 2]
+              << ",\"control_p999_us\":" << control_us[119879]
+              << ",\"control_max_us\":" << control_us.back()
+              << ",\"update_median_us\":" << update_us[samples / 2]
+              << ",\"update_p999_us\":" << update_us[119879]
+              << ",\"update_max_us\":" << update_us.back()
               << ",\"checksum\":" << checksum << "}\n";
     return 0;
 }
