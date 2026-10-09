@@ -3,6 +3,7 @@
 #include "heimdallr.h"
 #include "ddspc_snapshot.hpp"
 #include "ddspc_tuning.hpp"
+#include "ft_telemetry.hpp"
 #include <math.h>
 #include <unistd.h>
 #include <cerrno>
@@ -29,6 +30,7 @@ ControlA control_a;
 Baselines baselines;
 Bispectrum bispectra_K1[N_CP];
 Bispectrum bispectra_K2[N_CP];
+heimdallr_ft::Ring ft_telemetry;
 
 // Generally, we either work with beams or baselines, so have a separate lock for each.
 std::mutex baseline_mutex, beam_mutex;
@@ -413,6 +415,46 @@ Status get_status() {
     return status;
 }
 
+template <std::size_t N>
+std::array<double, N> rounded_telemetry(const std::array<double, N>& values,
+                                        double scale) {
+    std::array<double, N> rounded{};
+    for (std::size_t i = 0; i < N; ++i) {
+        rounded[i] = std::round(values[i] * scale) / scale;
+    }
+    return rounded;
+}
+
+nlohmann::json get_ft_telemetry(std::uint64_t stream_id,
+                                std::uint32_t after_seq,
+                                std::uint32_t limit) {
+    const auto batch = ft_telemetry.read_since(stream_id, after_seq, limit);
+    nlohmann::json rows = nlohmann::json::array();
+    for (const auto& row : batch.rows) {
+        rows.push_back({
+            {"seq", row.seq},
+            {"cnt", row.cnt},
+            {"servo_mode", row.servo_mode},
+            {"time_ns", row.time_ns},
+            {"gd_snr", rounded_telemetry(row.gd_snr, 100.0)},
+            {"pd_snr", rounded_telemetry(row.pd_snr, 100.0)},
+            {"gd_bl", rounded_telemetry(row.gd_bl, 1000.0)},
+            {"pd_tel", rounded_telemetry(row.pd_tel, 1000.0)},
+            {"gd_tel", rounded_telemetry(row.gd_tel, 1000.0)},
+            {"dm_piston", rounded_telemetry(row.dm_piston, 1000.0)},
+        });
+    }
+    return {
+        {"stream_id", batch.stream_id},
+        {"oldest_seq", batch.oldest_seq},
+        {"latest_seq", batch.latest_seq},
+        {"overrun", batch.overrun},
+        {"reset", batch.reset},
+        {"dropped_total", batch.dropped_total},
+        {"rows", std::move(rows)},
+    };
+}
+
 Settings get_settings() {
     // Fill in the few unusual parameters.
     settings.mutex.lock();
@@ -752,6 +794,14 @@ COMMANDER_REGISTER(m)
     m.def("set_itime", set_itime, "Set the target integration time",
         commander::arg("itime", "Target integration time in seconds, from 0 to 1000.", 100));
     m.def("status", get_status, "Get the status of the system");
+    m.def("ft_telemetry", get_ft_telemetry,
+          "Get buffered fringe-tracker performance samples",
+          commander::arg("stream_id", "Stream ID returned by the first request.",
+                         std::uint64_t(0)),
+          commander::arg("after_seq", "Last sequence written by the client.",
+                         std::uint32_t(0)),
+          commander::arg("limit", "Maximum samples to return; zero queries the cursor.",
+                         std::uint32_t(0)));
     m.def("settings", get_settings, "Get current system settings");
     m.def("test", test, "Make a test pattern - fractional DM motion every n samples.",
         commander::arg("beam", "Beam number from 1 to 4."),
