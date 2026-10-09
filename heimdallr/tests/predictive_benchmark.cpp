@@ -17,7 +17,7 @@ int main() {
     constexpr int warmup = 1200;
     constexpr int samples = 120000;
     constexpr double wavelength = 2.1;
-    PredictiveControl<40, 4> controller;
+    PredictiveControl<> controller;
     std::array<Telescopes, 2> lag{Telescopes::Zero(), Telescopes::Zero()};
     std::vector<double> control_us;
     std::vector<double> update_us;
@@ -74,7 +74,7 @@ int main() {
     std::sort(update_us.begin(), update_us.end());
     std::sort(total_us.begin(), total_us.end());
     std::cout << std::setprecision(9)
-              << "{\"history\":40,\"future\":4,\"samples\":" << samples
+              << "{\"history\":30,\"future\":3,\"samples\":" << samples
               << ",\"median_us\":" << total_us[samples / 2]
               << ",\"p999_us\":" << total_us[119879]
               << ",\"max_us\":" << total_us.back()
