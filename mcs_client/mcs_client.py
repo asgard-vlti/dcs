@@ -22,6 +22,7 @@ import socket
 import fcntl
 
 import subprocess
+from mcs_client.disk_status import DiskSavingMonitor
 
 # Following protocol described in
 # Top-Level Control Software
@@ -149,10 +150,11 @@ class ZmqRep:
         except zmq.error.Again:
             return None
 
-    def send_payload(self, payload: Dict[str, Any]) -> bool:
+    def send_payload(self, payload: Dict[str, Any], log_payload=True) -> bool:
         try:
             self.s.send_string(json.dumps(payload))
-            logging.info(f"Sent payload: {payload}")
+            if log_payload:
+                logging.info(f"Sent payload: {payload}")
             return True
         except zmq.error.Again:
             return False
@@ -699,6 +701,7 @@ class HeimdallrAdapter(CppServerAdapter):
 
 class Watchdog:
     def __init__(self, hdlr_zmq):
+        self.disk_monitor = DiskSavingMonitor()
         self.watchdog_last_check = time.time()
         self.watchdog_fast_timeout_ms = 80
         self.watchdog_fast_retries = 2
@@ -895,11 +898,19 @@ class Watchdog:
 
         return wd_status
 
+    def collect_disk_status(self):
+        _, zmq_status, camera_status = self._watchdog_lazy_pirate_status(
+            "CRED1", self.watchdog_servers["CRED1"]
+        )
+        return self.disk_monitor.collect(
+            camera_status if zmq_status == "open" else None
+        )
+
 
 class MCSServer:
     """
     A channel for talking to DCS command scripts that have been run, and to the watchdog client on
-    wag.
+    wag. The watchdog accepts ``status`` and ``disk_status`` requests.
 
     This differs from the C++ servers in that it has be the server side of a ZMQ REQ/REP pair
     and the scripts are the clients. When the data is dumped by the client, this class
@@ -941,7 +952,8 @@ class MCSServer:
             inputready.append(self.z.s)
         for s in inputready:  # loop through our array of sockets/inputs
             msg = self.socket_funct(s)
-            logging.info(f"Received message: {msg}")
+            if msg != "disk_status":
+                logging.info(f"Received message: {msg}")
             self.handle_message(msg)
             self.has_new_data = True
 
@@ -958,6 +970,9 @@ class MCSServer:
             logging.info("recieved status message from WAG")
             stats = self.watchdog.collect_wd_status()
             self.z.send_payload(stats)
+            self.data = {}
+        elif msg == "disk_status":
+            self.z.send_payload(self.watchdog.collect_disk_status(), log_payload=False)
             self.data = {}
         else:
             msg = json.loads(msg)

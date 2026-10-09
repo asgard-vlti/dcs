@@ -6,18 +6,22 @@ template <> struct adl_serializer<Status> {
         j["cam_status"] = p.cam_status;
         j["skipped_frames"] = p.skipped_frames;
         j["nbreads"] = p.nbreads;
+        j["tsig_len"] = p.tsig_len;
         j["shm_error"] = p.shm_error;
         j["fps"] = p.fps;
-        j["tsig_len"] = p.tsig_len;
+        j["save_mode"] = p.save_mode;
+        j["last_saved_unix_s"] = p.last_saved_unix_s;
     }
     static void from_json(const json& j, Status& p) {
         p = Status();
         j.at("cam_status").get_to(p.cam_status);
         j.at("skipped_frames").get_to(p.skipped_frames);
         j.at("nbreads").get_to(p.nbreads);
+        j.at("tsig_len").get_to(p.tsig_len);
         j.at("shm_error").get_to(p.shm_error);
         j.at("fps").get_to(p.fps);
-        j.at("tsig_len").get_to(p.tsig_len);
+        j.at("save_mode").get_to(p.save_mode);
+        p.last_saved_unix_s = j.at("last_saved_unix_s");
     }
    };
 }
