@@ -2,6 +2,7 @@
 
 import fcntl
 import json
+import math
 import shutil
 import subprocess
 import sys
@@ -157,6 +158,9 @@ def monitor_camera(deadline, kaya_class):
     last_status = None
     restart_kaya(kaya_class)
     time.sleep(2)
+
+    send_cli("set cooling on")
+    time.sleep(2)
     while True:
         try:
             last_temp = send_command("get_det_temp")
@@ -169,15 +173,19 @@ def monitor_camera(deadline, kaya_class):
             last_status = str(exc)
             print(f"Camera status query failed: {exc}", file=sys.stderr)
         status_observed_at = time.monotonic()
-        if status_observed_at <= deadline and cli_state_is(
-            last_status, "operational", "status"
+        if (
+            status_observed_at <= deadline
+            and type(last_temp) in (int, float)
+            and math.isfinite(last_temp)
+            and last_temp < 81
+            and cli_state_is(last_status, "ready", "status")
         ):
             return
 
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise RuntimeError(
-                "Camera did not become operational within 15 minutes; "
+                "Camera did not become ready below 81 within 15 minutes; "
                 f"last temperature: {last_temp!r}; last status: {last_status!r}"
             )
         time.sleep(min(POLL_INTERVAL_S, remaining))
@@ -231,7 +239,7 @@ def power_cycle_camera():
     cropping = send_cli("cropping")
     if not cli_state_is(cropping, "active", "cropping"):
         raise RuntimeError(f"Camera cropping is not active: {cropping!r}")
-    print("Camera operational; cam_server restarted with cropped mode", flush=True)
+    print("Camera ready below 81; cam_server restarted with cropped mode", flush=True)
 
 
 def main():

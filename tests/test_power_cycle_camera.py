@@ -39,6 +39,7 @@ class PowerCycleCameraTest(unittest.TestCase):
                 side_effect=lambda deadline, cls: events.append("monitor"),
             ) as monitor,
             patch.object(camera.time, "monotonic", return_value=100),
+            patch.object(camera.time, "sleep"),
         ):
             camera.power_cycle_camera()
 
@@ -114,20 +115,23 @@ class PowerCycleCameraTest(unittest.TestCase):
         )
         self.assertEqual(wait.call_args_list, [call(pdu, "off"), call(pdu, "on")])
 
-    def test_monitor_restarts_kaya_before_sampling_and_stops_at_operational(self):
+    def test_monitor_requires_ready_and_temperature_below_81(self):
         events = []
-        statuses = iter(["isbeingcooled", "operational"])
+        temperatures = iter([80.5, 81.0, 80.5])
+        statuses = iter(["isbeingcooled", "ready", "status: ready"])
+
+        def cli(command):
+            events.append(f"cli:{command}")
+            return "" if command == "set cooling on" else next(statuses)
+
         with (
             patch.object(
                 camera,
                 "send_command",
-                side_effect=lambda command: events.append(command) or 85.0,
+                side_effect=lambda command: events.append(command)
+                or next(temperatures),
             ),
-            patch.object(
-                camera,
-                "send_cli",
-                side_effect=lambda command: events.append(command) or next(statuses),
-            ),
+            patch.object(camera, "send_cli", side_effect=cli),
             patch.object(camera, "restart_kaya", side_effect=lambda cls: events.append("kaya")),
             patch.object(camera.time, "monotonic", return_value=0),
             patch.object(camera.time, "sleep") as sleep,
@@ -135,9 +139,18 @@ class PowerCycleCameraTest(unittest.TestCase):
             camera.monitor_camera(900, Mock())
         self.assertEqual(
             events,
-            ["kaya", "get_det_temp", "status", "get_det_temp", "status"],
+            [
+                "kaya",
+                "cli:set cooling on",
+                "get_det_temp",
+                "cli:status",
+                "get_det_temp",
+                "cli:status",
+                "get_det_temp",
+                "cli:status",
+            ],
         )
-        sleep.assert_called_once_with(5)
+        self.assertEqual(sleep.call_args_list, [call(2), call(2), call(5), call(5)])
 
     def test_monitor_times_out_after_15_minutes(self):
         now = [0.0]
@@ -159,18 +172,21 @@ class PowerCycleCameraTest(unittest.TestCase):
         self.assertIn("isbeingcooled", str(error.exception))
         restart.assert_called_once()
 
-    def test_operational_status_after_deadline_is_too_late(self):
+    def test_ready_status_after_deadline_is_too_late(self):
         now = [899.0]
 
-        def late_status(_):
+        def late_status(command):
+            if command == "set cooling on":
+                return ""
             now[0] = 901.0
-            return "operational"
+            return "ready"
 
         with (
-            patch.object(camera, "send_command", return_value=85.0),
+            patch.object(camera, "send_command", return_value=80.5),
             patch.object(camera, "send_cli", side_effect=late_status),
             patch.object(camera, "restart_kaya"),
             patch.object(camera.time, "monotonic", side_effect=lambda: now[0]),
+            patch.object(camera.time, "sleep"),
         ):
             with self.assertRaisesRegex(RuntimeError, "within 15 minutes"):
                 camera.monitor_camera(900, Mock())
@@ -181,7 +197,7 @@ class PowerCycleCameraTest(unittest.TestCase):
             patch.object(camera, "wait_for_server_stop") as wait,
         ):
             camera.stop_server()
-        send.assert_called_once_with("exit")
+        self.assertEqual(send.call_args_list, [call("stop"), call("exit")])
         wait.assert_called_once()
 
     def test_server_start_waits_for_valid_status(self):
@@ -227,6 +243,7 @@ class PowerCycleCameraTest(unittest.TestCase):
             patch.object(camera, "cycle_pdu"),
             patch.object(camera, "start_server"),
             patch.object(camera, "monitor_camera"),
+            patch.object(camera.time, "sleep"),
         ):
             with self.assertRaisesRegex(RuntimeError, "cropping is not active"):
                 camera.power_cycle_camera()

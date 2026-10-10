@@ -109,9 +109,10 @@ On `mimir`, with the `asg` environment active and `asgard-alignment` installed,
 run `power-cycle-camera` to recover a C-RED1 that is running but no longer returns
 settings. The command shuts down the camera, cycles PDU outlet 6, restarts the
 camera server, enables cooling, restarts Kaya, and monitors temperature and camera
-status. It waits up to 15 minutes for `operational`, then restarts the server again
-and verifies cropped mode. If cooling times out, the camera remains powered and
-the first restarted server remains running.
+status. It waits up to 15 minutes for detector temperature below 81 and camera
+CLI status `ready`, then restarts the server again and verifies cropped mode. If
+cooling times out, the camera remains powered and the first restarted server
+remains running.
 
 The offline sequence checks are:
 
