@@ -73,6 +73,7 @@ def wait_for_server_stop():
 
 
 def stop_server():
+    response = send_command("stop")
     response = send_command("exit")
     if str(response).strip() != "Exiting!":
         raise RuntimeError(f"Unexpected cam_server exit response: {response!r}")
