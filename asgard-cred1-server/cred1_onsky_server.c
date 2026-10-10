@@ -102,6 +102,7 @@ struct Status
   unsigned int tsig_len[6];
   bool shm_error;
   double fps;
+  int gain;
 };
 
 //-------End of Commander structs------
@@ -1101,6 +1102,7 @@ Status get_status() {
   // Fill with known values
   status.cam_status = status_cstr;
   status.fps = camconf->fps;
+  status.gain = camconf->gain;
   if (camconf->ndmr_mode==1)
   	status.nbreads = camconf->nbreads;
   else
