@@ -114,7 +114,7 @@ class PowerCycleCameraTest(unittest.TestCase):
         )
         self.assertEqual(wait.call_args_list, [call(pdu, "off"), call(pdu, "on")])
 
-    def test_monitor_samples_before_kaya_and_stops_at_operational(self):
+    def test_monitor_restarts_kaya_before_sampling_and_stops_at_operational(self):
         events = []
         statuses = iter(["isbeingcooled", "operational"])
         with (
@@ -135,7 +135,7 @@ class PowerCycleCameraTest(unittest.TestCase):
             camera.monitor_camera(900, Mock())
         self.assertEqual(
             events,
-            ["get_det_temp", "status", "kaya", "get_det_temp", "status"],
+            ["kaya", "get_det_temp", "status", "get_det_temp", "status"],
         )
         sleep.assert_called_once_with(5)
 
@@ -197,14 +197,21 @@ class PowerCycleCameraTest(unittest.TestCase):
         self.assertEqual(send.call_args_list, [call("status"), call("status")])
         sleep.assert_called_once_with(1)
 
-    def test_kaya_restart_requires_powered_on_status(self):
+    def test_kaya_restart_accepts_powered_on_status(self):
         kaya = Mock()
         kaya.get_status.return_value = "0"
         kaya.client = None
         with patch.object(camera.subprocess, "run") as run:
+            camera.restart_kaya(Mock(return_value=kaya))
+        run.assert_called_once_with(["restart-kaya"], check=True, timeout=45)
+
+    def test_kaya_restart_rejects_powered_off_status(self):
+        kaya = Mock()
+        kaya.get_status.return_value = "1"
+        kaya.client = None
+        with patch.object(camera.subprocess, "run"):
             with self.assertRaisesRegex(RuntimeError, "did not report powered on"):
                 camera.restart_kaya(Mock(return_value=kaya))
-        run.assert_called_once_with(["restart-kaya"], check=True, timeout=45)
 
     def test_final_crop_failure_is_reported(self):
         pdu = Mock()

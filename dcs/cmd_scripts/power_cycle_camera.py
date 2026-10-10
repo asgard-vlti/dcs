@@ -152,7 +152,7 @@ def cli_state_is(response, state, label):
 def monitor_camera(deadline, kaya_class):
     last_temp = None
     last_status = None
-    kaya_restarted = False
+    restart_kaya(kaya_class)
     while True:
         try:
             last_temp = send_command("get_det_temp")
@@ -165,9 +165,6 @@ def monitor_camera(deadline, kaya_class):
             last_status = str(exc)
             print(f"Camera status query failed: {exc}", file=sys.stderr)
         status_observed_at = time.monotonic()
-        if not kaya_restarted:
-            restart_kaya(kaya_class)
-            kaya_restarted = True
         if status_observed_at <= deadline and cli_state_is(
             last_status, "operational", "status"
         ):
@@ -187,7 +184,7 @@ def restart_kaya(kaya_class):
     kaya = kaya_class(KAYA_HOST, init_motors=False)
     try:
         status = kaya.get_status("Kaya")
-        if status.strip() != "1":
+        if status.strip() != "0":
             raise RuntimeError(f"Kaya did not report powered on: {status!r}")
         print("Kaya reports powered on", flush=True)
     finally:
