@@ -160,8 +160,10 @@ def monitor_camera(deadline, kaya_class):
     time.sleep(2)
 
     while True:
-        send_cli("set cooling on") # theres something weird where if you do this at the very start it doesn't actually start cooling
-        
+        send_cli(
+            "set cooling on"
+        )  # theres something weird where if you do this at the very start it doesn't actually start cooling
+
         try:
             last_temp = send_command("get_det_temp")
         except RuntimeError as exc:
