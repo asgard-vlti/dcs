@@ -9,7 +9,6 @@ import time
 
 import zmq
 
-
 CAMERA_ENDPOINT = "tcp://127.0.0.1:6667"
 CAMERA_LOCK = "/tmp/asg.cam_server.lock"
 PDU_HOST = "192.168.100.11"
@@ -134,7 +133,10 @@ def cycle_pdu(pdu):
                 pdu.switch_outlet_status(PDU_OUTLET, "on")
                 wait_for_outlet(pdu, "on")
             except Exception as exc:
-                print(f"ERROR: Could not restore PDU outlet {PDU_OUTLET}: {exc}", file=sys.stderr)
+                print(
+                    f"ERROR: Could not restore PDU outlet {PDU_OUTLET}: {exc}",
+                    file=sys.stderr,
+                )
 
 
 def cli_state_is(response, state, label):
@@ -153,6 +155,7 @@ def monitor_camera(deadline, kaya_class):
     last_temp = None
     last_status = None
     restart_kaya(kaya_class)
+    time.sleep(2)
     while True:
         try:
             last_temp = send_command("get_det_temp")
@@ -215,8 +218,11 @@ def power_cycle_camera():
     finally:
         pdu.close()
 
+    time.sleep(2)
     start_server()
+    time.sleep(2)
     send_cli("set cooling on")
+    time.sleep(2)
     cooling_deadline = time.monotonic() + COOLING_TIMEOUT_S
     monitor_camera(cooling_deadline, kaya_class)
     stop_server()
@@ -231,7 +237,10 @@ def main():
     try:
         power_cycle_camera()
     except KeyboardInterrupt:
-        print("Interrupted; camera power was restored if outlet 6 was off", file=sys.stderr)
+        print(
+            "Interrupted; camera power was restored if outlet 6 was off",
+            file=sys.stderr,
+        )
         return 130
     except (RuntimeError, OSError, subprocess.SubprocessError, ImportError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
