@@ -3,7 +3,8 @@
 Select the new servo with `servo "ddspc"`. Mode value 5 leaves the existing mode
 values unchanged. The controller uses filtered telescope phase delay in K1
 wavelengths, predicts three differential piston modes, and sends clipped DM
-commands. Its QRD RLS model uses 30 history frames and three future frames.
+commands. Its QRD RLS model defaults to 30 history frames and three future
+frames.
 
 The packaged configuration explores for 5000 valid DDSPC frames after each mode
 entry. A camera frame gap, lost fringe lock, disconnected phase measurements, an
@@ -31,8 +32,13 @@ The other setters are `set-reg-cutoff`, `set-reg-divisor`, `set-reg-interval`,
 `set-n-exploration`, `set-exploration-sigma`, `set-gamma`, and
 `set-continue-learning`. For example,
 `ddspc "set-continue-learning" false` stages a freeze after exploration.
-Commander requires
-the quoted action; a comma between the action and value is also accepted.
+While the servo is off, `ddspc "set-history" [20,2]` selects a history and
+future-frame preset for the next DDSPC run. The supported pairs are `[20,2]`,
+`[30,3]`, `[40,3]`, and `[50,3]`. `ddspc "get"` reports the selected pair in
+`configured` and the running pair in `active`. The command is rejected in every
+other servo mode. The selection is held in server memory; a restart restores
+`[30,3]`. Commander requires the quoted action; a comma between the action and
+value is also accepted.
 
 `ddspc "freeze"` queues an immediate one-way freeze of the active run at the
 next control-loop boundary. It also stops exploration dither. It does not change
@@ -59,9 +65,10 @@ simulation build writes under
 atomically and an existing filename is never overwritten.
 
 Each version 1 JSON file contains the RLS upper triangular factor `R` as a full
-186×186 row-major array, its 186×9 weights, the last 9×9 regularized SVD
-inverse, and the applied 3×177 predictive matrix. It also records the DDSPC
-parameters, actual RLS update count, freeze reason, frame and UTC time, UTC
+row-major array, its weights, the last regularized SVD inverse, and the applied
+predictive matrix. Their sizes follow the recorded `dimensions` object. For the
+default `[30,3]` preset they are 186×186, 186×9, 9×9, and 3×177. It also
+records the DDSPC parameters, actual RLS update count, freeze reason, frame and UTC time, UTC
 transition and model times, and whether the
 model came from the active or a retained segment. After lost lock or a bad
 frame, the last trained segment is retained for the eventual off transition.
@@ -98,6 +105,10 @@ The 120,000-update benchmark is available for the instrument-host timing check:
 ```sh
 make -C dcs/heimdallr predictive_benchmark
 ```
+
+The resulting `/tmp/heimdallr_predictive_benchmark` accepts a preset pair,
+for example `/tmp/heimdallr_predictive_benchmark 50 3`. Run it for all four
+pairs before operational use.
 
 The JSON reports total `median_us`, `p999_us`, and `max_us`, plus matching
 `control_*_us` and `update_*_us` values. Control timing includes regularization,

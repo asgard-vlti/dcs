@@ -6,6 +6,7 @@
 #include <commander/server/inline_arguments.h>
 
 #include <cmath>
+#include <array>
 #include <iostream>
 #include <stdexcept>
 
@@ -34,7 +35,8 @@ int main() {
     using namespace heimdallr_ddspc;
 
     Parameters configured = read_config(toml::parse("name = 'defaults'"));
-    check(configured.reg_start == 1e5 && configured.reg_cutoff == 0.2 &&
+    check(configured.history == 30 && configured.future == 3 &&
+              configured.reg_start == 1e5 && configured.reg_cutoff == 0.2 &&
               configured.reg_divisor == 5.0 && configured.reg_interval == 100 &&
               configured.n_exploration == 500 &&
               configured.exploration_sigma == 0.01 && configured.gamma == 1.0 &&
@@ -130,10 +132,12 @@ int main() {
           "Frozen run did not report its state or remain idempotent");
 
     commander::Module commands;
+    bool servo_off = false;
     commands.def(
         "ddspc",
         [&](std::string action, nlohmann::json value) {
-            return execute_command(configured, &active, action, value);
+            return execute_command(configured, &active, action, value,
+                                   nullptr, servo_off);
         },
         "DDSPC tuning", commander::arg("action", "Subcommand"),
         commander::arg("value", "Value", nlohmann::json(nullptr)));
@@ -173,6 +177,58 @@ int main() {
         "ddspc", nlohmann::json::array({"set-reg-interval", 1.5}));
     check(bad_reply.contains("error") && configured.reg_interval == 2,
           "Commander accepted an invalid integer setter");
+
+    const std::array<std::pair<int, int>, 4> presets{{
+        {20, 2}, {30, 3}, {40, 3}, {50, 3}}};
+    const auto initial_history = configured.history;
+    const auto initial_future = configured.future;
+    auto preset_args = commander::server::parse_inline_arguments(
+        "\"set-history\" [20,2]");
+    auto preset_reply = commands.execute("ddspc", preset_args);
+    check(preset_reply.contains("error") &&
+              configured.history == initial_history &&
+              configured.future == initial_future,
+          "History changed while servo was on");
+    servo_off = true;
+    for (const auto& [history, future] : presets) {
+        const std::string wire = "\"set-history\" [" +
+                                 std::to_string(history) + "," +
+                                 std::to_string(future) + "]";
+        preset_args = commander::server::parse_inline_arguments(wire);
+        preset_reply = commands.execute("ddspc", preset_args);
+        check(preset_reply["configured"]["history"] == history &&
+                  preset_reply["configured"]["future"] == future &&
+                  preset_reply["active"]["history"] == 30 &&
+                  preset_reply["active"]["future"] == 3,
+              "History command did not stage the selected pair");
+        const auto status = commands.execute(
+            "ddspc", nlohmann::json::array({"get"}));
+        check(status["configured"]["history"] == history &&
+                  status["configured"]["future"] == future,
+              "Get did not report the selected history preset");
+    }
+    for (const auto& invalid : {nlohmann::json(nullptr),
+                                nlohmann::json::array({20}),
+                                nlohmann::json::array({20, 3}),
+                                nlohmann::json::array({30, 2}),
+                                nlohmann::json::array({50.0, 3}),
+                                nlohmann::json("20,2")}) {
+        const auto reply = commands.execute(
+            "ddspc", nlohmann::json::array({"set-history", invalid}));
+        check(reply.contains("error") && configured.history == 50 &&
+                  configured.future == 3,
+              "Invalid history value changed the configured preset");
+    }
+    servo_off = false;
+    preset_reply = commands.execute(
+        "ddspc", nlohmann::json::array({"set-history", {20, 2}}));
+    check(preset_reply.contains("error") && configured.history == 50 &&
+              configured.future == 3,
+          "History change was accepted after servo left off");
+    DdspcServo selected;
+    selected.enter(configured);
+    check(selected.controller<50, 3>().iterations() == 0,
+          "Next DDSPC entry did not adopt the staged history preset");
 
     Parameters control_params = configured;
     control_params.reg_start = 100.0;

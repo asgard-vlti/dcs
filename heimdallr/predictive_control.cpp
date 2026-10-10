@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 #include <stdexcept>
+#include <type_traits>
 
 namespace heimdallr_ddspc {
 
@@ -350,8 +351,30 @@ auto PredictiveControl<HistoryLength, FutureLength>::rls() const
 }
 
 void DdspcServo::enter(const Parameters& params) {
-    controller_.configure(params);
+    validate(params);
+    if (!supported_history_preset(params.history, params.future)) {
+        throw std::invalid_argument("Unsupported ddspc history preset");
+    }
+    if (params.history == 20) {
+        controller_->emplace<PredictiveControl<20, 2>>(params);
+    } else if (params.history == 30) {
+        controller_->emplace<PredictiveControl<30, 3>>(params);
+    } else if (params.history == 40) {
+        controller_->emplace<PredictiveControl<40, 3>>(params);
+    } else {
+        controller_->emplace<PredictiveControl<50, 3>>(params);
+    }
     if (!last_trained_) last_trained_ = std::make_unique<ModelSnapshot>();
+    const int features = (params.future - 1 + 2 * params.history) * 3;
+    const int outputs = params.future * 3;
+    const int control_features = (2 * params.history - 1) * 3;
+    last_trained_->features = features;
+    last_trained_->outputs = outputs;
+    last_trained_->control_features = control_features;
+    last_trained_->factor.resize(features * features);
+    last_trained_->weights.resize(features, outputs);
+    last_trained_->inverse.resize(outputs, outputs);
+    last_trained_->predictive.resize(3, control_features);
     last_trained_valid_ = false;
     last_update_ns_ = 0;
     active_ = false;
@@ -368,33 +391,41 @@ void DdspcServo::enter(const Parameters& params) {
 void DdspcServo::invalidate() {
     if (active_ && !frozen_) {
         if (!last_trained_) last_trained_ = std::make_unique<ModelSnapshot>();
-        if (controller_.rls_updates() > 0) {
+        if (rls_updates() > 0) {
             capture(*last_trained_);
             last_trained_valid_ = true;
         }
-        controller_.reset();
+        std::visit([](auto& controller) { controller.reset(); }, *controller_);
     }
     active_ = false;
 }
 
 void DdspcServo::capture(ModelSnapshot& snapshot) const {
-    const auto& rls = controller_.rls();
-    snapshot.parameters = controller_.parameters();
-    snapshot.iterations = controller_.iterations();
-    snapshot.exploration_frames = exploration_frames_;
-    snapshot.rls_updates = controller_.rls_updates();
-    snapshot.frozen = frozen_;
-    snapshot.freeze_reason = freeze_reason_;
-    snapshot.freeze_frame = freeze_frame_;
-    snapshot.freeze_time_ns = freeze_time_ns_;
-    snapshot.regularization = controller_.regularization();
-    snapshot.initial_covariance = rls.initial_covariance();
-    snapshot.model_time_ns = last_update_ns_;
-    snapshot.trained = snapshot.rls_updates > 0;
-    snapshot.factor = rls.factor();
-    snapshot.weights = rls.weights();
-    snapshot.inverse = controller_.inverse();
-    snapshot.predictive = controller_.predictive();
+    std::visit([&](const auto& controller) {
+        const auto& rls = controller.rls();
+        snapshot.parameters = controller.parameters();
+        snapshot.features = std::decay_t<decltype(controller)>::Features;
+        snapshot.outputs = std::decay_t<decltype(controller)>::Outputs;
+        snapshot.control_features =
+            std::decay_t<decltype(controller)>::ControlFeatures;
+        snapshot.iterations = controller.iterations();
+        snapshot.exploration_frames = exploration_frames_;
+        snapshot.rls_updates = controller.rls_updates();
+        snapshot.frozen = frozen_;
+        snapshot.freeze_reason = freeze_reason_;
+        snapshot.freeze_frame = freeze_frame_;
+        snapshot.freeze_time_ns = freeze_time_ns_;
+        snapshot.regularization = controller.regularization();
+        snapshot.initial_covariance = rls.initial_covariance();
+        snapshot.model_time_ns = last_update_ns_;
+        snapshot.trained = snapshot.rls_updates > 0;
+        snapshot.factor.resize(rls.factor().size());
+        std::copy(rls.factor().begin(), rls.factor().end(),
+                  snapshot.factor.begin());
+        snapshot.weights = rls.weights();
+        snapshot.inverse = controller.inverse();
+        snapshot.predictive = controller.predictive();
+    }, *controller_);
 }
 
 std::unique_ptr<ModelSnapshot> DdspcServo::snapshot_for_off() {
@@ -404,7 +435,7 @@ std::unique_ptr<ModelSnapshot> DdspcServo::snapshot_for_off() {
         last_trained_->source = !last_trained_->trained
                                     ? "untrained"
                                     : (active_ ? "active" : "retained");
-    } else if (active_ && controller_.rls_updates() > 0) {
+    } else if (active_ && rls_updates() > 0) {
         capture(*last_trained_);
         last_trained_->source = "active";
     } else if (last_trained_valid_) {
@@ -415,7 +446,7 @@ std::unique_ptr<ModelSnapshot> DdspcServo::snapshot_for_off() {
     }
     last_trained_valid_ = false;
     active_ = false;
-    controller_.reset();
+    std::visit([](auto& controller) { controller.reset(); }, *controller_);
     return std::move(last_trained_);
 }
 
@@ -426,17 +457,22 @@ Telescopes DdspcServo::propose(
     if (!active_) {
         const Modes current_command =
             applied_command_waves(current_dm, wavelength, opd_per_dm_unit);
-        if (frozen_) controller_.reset_tracking(current_command);
-        else controller_.reset(current_command);
+        std::visit([&](auto& controller) {
+            if (frozen_) controller.reset_tracking(current_command);
+            else controller.reset(current_command);
+        }, *controller_);
         common_mode_ = current_dm.mean();
         if (!frozen_) last_update_ns_ = 0;
         active_ = true;
     }
-    if (!frozen_) controller_.advance_regularization(controller_.iterations());
-    const Modes command = controller_.propose(
-        phase_error_modes(phase_delay_waves), normal_draw,
-        !frozen_ &&
-            exploration_frames_ < controller_.parameters().n_exploration);
+    const Modes error = phase_error_modes(phase_delay_waves);
+    const Modes command = std::visit([&](auto& controller) -> Modes {
+        if (!frozen_) controller.advance_regularization(controller.iterations());
+        return controller.propose(
+            error, normal_draw,
+            !frozen_ &&
+                exploration_frames_ < controller.parameters().n_exploration);
+    }, *controller_);
     return (dm_command(command, wavelength, opd_per_dm_unit).array() +
             common_mode_)
         .matrix()
@@ -446,18 +482,22 @@ Telescopes DdspcServo::propose(
 
 void DdspcServo::update(const Telescopes& applied_dm, double wavelength,
                         double opd_per_dm_unit) {
-    const int previous_rls_updates = controller_.rls_updates();
-    controller_.update(
-        applied_command_waves(applied_dm, wavelength, opd_per_dm_unit),
-        !frozen_);
-    if (controller_.rls_updates() != previous_rls_updates) {
+    const int previous_rls_updates = rls_updates();
+    const Modes applied =
+        applied_command_waves(applied_dm, wavelength, opd_per_dm_unit);
+    std::visit([&](auto& controller) { controller.update(applied, !frozen_); },
+               *controller_);
+    if (rls_updates() != previous_rls_updates) {
         last_update_ns_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
                               std::chrono::system_clock::now().time_since_epoch())
                               .count();
     }
     ++exploration_frames_;
-    if (!controller_.parameters().continue_learning && !frozen_ &&
-        exploration_frames_ >= controller_.parameters().n_exploration) {
+    const bool should_freeze = std::visit([&](const auto& controller) {
+        return !controller.parameters().continue_learning &&
+               exploration_frames_ >= controller.parameters().n_exploration;
+    }, *controller_);
+    if (should_freeze && !frozen_) {
         freeze("after_exploration");
     }
 }
@@ -480,15 +520,37 @@ const char* DdspcServo::freeze_reason() const { return freeze_reason_; }
 
 int DdspcServo::exploration_frames() const { return exploration_frames_; }
 
-auto DdspcServo::controller() const -> const PredictiveControl<>& { return controller_; }
+int DdspcServo::iterations() const {
+    return std::visit([](const auto& controller) {
+        return controller.iterations();
+    }, *controller_);
+}
+
+int DdspcServo::rls_updates() const {
+    return std::visit([](const auto& controller) {
+        return controller.rls_updates();
+    }, *controller_);
+}
+
+double DdspcServo::regularization() const {
+    return std::visit([](const auto& controller) {
+        return controller.regularization();
+    }, *controller_);
+}
 
 template class QrdRls<1, 1>;
 template class QrdRls<27, 6>;
+template class QrdRls<123, 6>;
 template class QrdRls<186, 9>;
+template class QrdRls<246, 9>;
+template class QrdRls<306, 9>;
 template class QrdRls<249, 12>;
 template class QrdRls<372, 15>;
 template class PredictiveControl<4, 2>;
+template class PredictiveControl<20, 2>;
 template class PredictiveControl<30, 3>;
+template class PredictiveControl<40, 3>;
+template class PredictiveControl<50, 3>;
 template class PredictiveControl<40, 4>;
 template class PredictiveControl<60, 5>;
 

@@ -14,7 +14,9 @@
 namespace heimdallr_ddspc {
 
 inline nlohmann::json profile_json(const Parameters& p) {
-    return {{"reg_start", p.reg_start},
+    return {{"history", p.history},
+            {"future", p.future},
+            {"reg_start", p.reg_start},
             {"reg_cutoff", p.reg_cutoff},
             {"reg_divisor", p.reg_divisor},
             {"reg_interval", p.reg_interval},
@@ -144,11 +146,32 @@ inline nlohmann::json execute_command(Parameters& configured,
                                       const Parameters* active,
                                       const std::string& action,
                                       const nlohmann::json& value,
-                                      const FreezeStatus* freeze_status = nullptr) {
+                                      const FreezeStatus* freeze_status = nullptr,
+                                      bool servo_off = false) {
     if (action == "get") {
         if (!value.is_null()) {
             throw std::invalid_argument("ddspc get takes no value");
         }
+    } else if (action == "set-history") {
+        if (!servo_off) {
+            throw std::invalid_argument("ddspc history can change only with servo off");
+        }
+        if (!value.is_array() || value.size() != 2 ||
+            !value[0].is_number_integer() || !value[1].is_number_integer()) {
+            throw std::invalid_argument("ddspc history requires [history,future] integers");
+        }
+        const auto history = value[0].get<int64_t>();
+        const auto future = value[1].get<int64_t>();
+        if (history < std::numeric_limits<int>::min() ||
+            history > std::numeric_limits<int>::max() ||
+            future < std::numeric_limits<int>::min() ||
+            future > std::numeric_limits<int>::max() ||
+            !supported_history_preset(static_cast<int>(history),
+                                      static_cast<int>(future))) {
+            throw std::invalid_argument("Unsupported ddspc history preset");
+        }
+        configured.history = static_cast<int>(history);
+        configured.future = static_cast<int>(future);
     } else {
         stage_parameter(configured, action, value);
     }

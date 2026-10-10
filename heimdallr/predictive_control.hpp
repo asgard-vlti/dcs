@@ -5,6 +5,8 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <variant>
+#include <vector>
 
 namespace heimdallr_ddspc {
 
@@ -12,6 +14,8 @@ using Modes = Eigen::Vector3d;
 using Telescopes = Eigen::Vector4d;
 
 struct Parameters {
+    int history = 30;
+    int future = 3;
     double reg_start = 1e5;
     double reg_cutoff = 0.2;
     double reg_divisor = 5.0;
@@ -21,6 +25,13 @@ struct Parameters {
     double gamma = 1.0;
     bool continue_learning = true;
 };
+
+inline bool supported_history_preset(int history, int future) {
+    return (history == 20 && future == 2) ||
+           (history == 30 && future == 3) ||
+           (history == 40 && future == 3) ||
+           (history == 50 && future == 3);
+}
 
 struct FreezeStatus {
     bool pending = false;
@@ -153,14 +164,18 @@ class PredictiveControl {
 };
 
 extern template class PredictiveControl<4, 2>;
+extern template class PredictiveControl<20, 2>;
 extern template class PredictiveControl<30, 3>;
+extern template class PredictiveControl<40, 3>;
+extern template class PredictiveControl<50, 3>;
 extern template class PredictiveControl<40, 4>;
 extern template class PredictiveControl<60, 5>;
 
 struct ModelSnapshot {
-    using Controller = PredictiveControl<>;
-
     Parameters parameters;
+    int features = 0;
+    int outputs = 0;
+    int control_features = 0;
     int iterations = 0;
     int exploration_frames = 0;
     int rls_updates = 0;
@@ -173,14 +188,18 @@ struct ModelSnapshot {
     std::int64_t model_time_ns = 0;
     bool trained = false;
     const char* source = "untrained";
-    std::array<double, Controller::Features * Controller::Features> factor{};
-    QrdRls<Controller::Features, Controller::Outputs>::WeightMatrix weights;
-    Controller::CorrelationMatrix inverse;
-    Controller::ControlMatrix predictive;
+    std::vector<double> factor;
+    Eigen::MatrixXd weights;
+    Eigen::MatrixXd inverse;
+    Eigen::MatrixXd predictive;
 };
 
 class DdspcServo {
    public:
+    using ControllerVariant =
+        std::variant<PredictiveControl<30, 3>, PredictiveControl<20, 2>,
+                     PredictiveControl<40, 3>, PredictiveControl<50, 3>>;
+
     void enter(const Parameters& params = Parameters{});
 
     void invalidate();
@@ -198,13 +217,20 @@ class DdspcServo {
     const char* freeze_reason() const;
 
     int exploration_frames() const;
-    const PredictiveControl<>& controller() const;
+    int iterations() const;
+    int rls_updates() const;
+    double regularization() const;
+    template <int HistoryLength = 30, int FutureLength = 3>
+    const PredictiveControl<HistoryLength, FutureLength>& controller() const {
+        return std::get<PredictiveControl<HistoryLength, FutureLength>>(*controller_);
+    }
     std::unique_ptr<ModelSnapshot> snapshot_for_off();
 
    private:
     void capture(ModelSnapshot& snapshot) const;
 
-    PredictiveControl<> controller_;
+    std::unique_ptr<ControllerVariant> controller_ =
+        std::make_unique<ControllerVariant>();
     std::unique_ptr<ModelSnapshot> last_trained_;
     bool last_trained_valid_ = false;
     std::int64_t last_update_ns_ = 0;

@@ -118,10 +118,13 @@ class PredictiveParity(unittest.TestCase):
 
     def test_history_regularization_exploration_and_saturation(self):
         self.compare_controller(history=4, future=2, count=510)
+        self.compare_controller(history=20, future=2, count=110)
 
     def test_production_dimensions_and_fresh_model(self):
         self.compare_controller(history=30, future=3, count=110)
         self.compare_controller(history=30, future=3, count=51)
+        self.compare_controller(history=40, future=3, count=110)
+        self.compare_controller(history=50, future=3, count=110)
 
     def test_phase_sign_and_dm_units(self):
         wavelength = 2.1

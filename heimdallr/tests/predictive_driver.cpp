@@ -128,7 +128,10 @@ int main() {
     int history, future, count;
     std::cin >> history >> future >> count;
     if (history == 4 && future == 2) return run_controller<4, 2>(count);
+    if (history == 20 && future == 2) return run_controller<20, 2>(count);
     if (history == 30 && future == 3) return run_controller<30, 3>(count);
+    if (history == 40 && future == 3) return run_controller<40, 3>(count);
+    if (history == 50 && future == 3) return run_controller<50, 3>(count);
     if (history == 40 && future == 4) return run_controller<40, 4>(count);
     return 2;
 }

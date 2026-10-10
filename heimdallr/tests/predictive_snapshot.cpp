@@ -4,6 +4,7 @@
 #include "../servo_transitions.hpp"
 
 #include <atomic>
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <deque>
@@ -13,6 +14,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 using heimdallr_ddspc::DdspcServo;
@@ -34,8 +36,90 @@ void advance(DdspcServo& servo, Telescopes& dm, int count) {
     }
 }
 
+template <int HistoryLength, int FutureLength>
+void check_preset() {
+    heimdallr_ddspc::Parameters params;
+    params.history = HistoryLength;
+    params.future = FutureLength;
+    DdspcServo servo;
+    Telescopes dm = Telescopes::Zero();
+    servo.enter(params);
+    constexpr int training_delay = HistoryLength + FutureLength;
+    constexpr int frames = training_delay + 4;
+    advance(servo, dm, frames);
+    check(servo.controller<HistoryLength, FutureLength>().rls_updates() == 4,
+          "Preset training delay is wrong");
+    auto active = servo.snapshot_for_off();
+    check(active->trained && active->rls_updates == 4 &&
+              active->factor.size() ==
+                  static_cast<std::size_t>(active->features * active->features),
+          "Preset active model dimensions are wrong");
+    SnapshotJob job{std::move(active), 1791200000000000000, 1, "servo"};
+    const auto data = heimdallr_ddspc::snapshot_json(job);
+    check(data["schema_version"] == 1 &&
+              data["dimensions"]["history"] == HistoryLength &&
+              data["dimensions"]["future"] == FutureLength &&
+              data["rls"]["R"].size() ==
+                  static_cast<std::size_t>(job.model->features) &&
+              data["rls"]["weights"].size() ==
+                  static_cast<std::size_t>(job.model->features) &&
+              data["inverse"].size() ==
+                  static_cast<std::size_t>(job.model->outputs) &&
+              data["predictive"][0].size() ==
+                  static_cast<std::size_t>(job.model->control_features),
+          "Preset snapshot JSON dimensions are wrong");
+
+    servo.enter(params);
+    advance(servo, dm, frames);
+    servo.invalidate();
+    advance(servo, dm, 1);
+    auto retained = servo.snapshot_for_off();
+    check(retained->trained && std::string(retained->source) == "retained" &&
+              retained->parameters.history == HistoryLength &&
+              retained->parameters.future == FutureLength,
+          "Preset retained model was lost");
+
+    params.continue_learning = false;
+    params.n_exploration = frames;
+    servo.enter(params);
+    advance(servo, dm, frames);
+    check(servo.frozen() && servo.rls_updates() == 4,
+          "Preset did not freeze at the exploration boundary");
+    advance(servo, dm, 2);
+    check(servo.rls_updates() == 4,
+          "Preset learned after freezing");
+    auto frozen = servo.snapshot_for_off();
+    check(frozen->frozen && frozen->rls_updates == 4 &&
+              frozen->parameters.history == HistoryLength,
+          "Preset frozen snapshot is wrong");
+}
+
+void check_preset_switches() {
+    DdspcServo servo;
+    Telescopes dm = Telescopes::Zero();
+    heimdallr_ddspc::Parameters params;
+    for (const auto& [history, future] :
+         {std::pair{20, 2}, std::pair{30, 3},
+          std::pair{40, 3}, std::pair{50, 3}}) {
+        params.history = history;
+        params.future = future;
+        servo.enter(params);
+        advance(servo, dm, history + future + 1);
+        auto model = servo.snapshot_for_off();
+        check(model->rls_updates == 1 &&
+                  model->parameters.history == history &&
+                  model->parameters.future == future,
+              "Switching presets retained the previous controller");
+    }
+}
+
 int main() {
     using Controller = heimdallr_ddspc::PredictiveControl<>;
+    check_preset<20, 2>();
+    check_preset<30, 3>();
+    check_preset<40, 3>();
+    check_preset<50, 3>();
+    check_preset_switches();
     constexpr int updates_after_fifty = 50 - Controller::TrainingDelay;
     heimdallr_ddspc::PistonResetHold piston_hold;
     const Telescopes nonzero_piston = Telescopes::Constant(0.2);
@@ -142,7 +226,9 @@ int main() {
     check(active->rls_updates == 60 - Controller::TrainingDelay &&
               !active->frozen,
           "Active model learning count is wrong");
-    check(active->factor == expected_factor, "RLS factor changed in snapshot");
+    check(std::equal(active->factor.begin(), active->factor.end(),
+                     expected_factor.begin(), expected_factor.end()),
+          "RLS factor changed in snapshot");
     check(active->weights == expected_weights, "RLS weights changed in snapshot");
     check(active->inverse == expected_inverse, "SVD inverse changed in snapshot");
     check(active->predictive == expected_predictive,
@@ -157,7 +243,8 @@ int main() {
     auto retained = servo.snapshot_for_off();
     check(retained->trained && std::string(retained->source) == "retained",
           "Last trained segment was not retained");
-    check(retained->factor == retained_factor &&
+    check(std::equal(retained->factor.begin(), retained->factor.end(),
+                     retained_factor.begin(), retained_factor.end()) &&
               retained->weights == retained_weights,
           "Retained model changed after a short new segment");
 

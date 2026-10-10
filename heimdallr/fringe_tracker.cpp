@@ -390,7 +390,7 @@ void fringe_tracker(){
             std::lock_guard<std::mutex> lock(settings.mutex);
             selected = settings.s.servo_mode == SERVO_DDSPC;
         }
-        const int updates = ddspc.controller().iterations();
+        const int updates = ddspc.iterations();
         const bool reset_fit = selected && !ddspc.frozen() && updates > 0;
         ddspc.invalidate();
         if (reset_fit) {
@@ -855,7 +855,7 @@ void fringe_tracker(){
                         draw(i) = standard_normal(exploration_generator);
                     }
                 }
-                ddspc_regularization_before = ddspc.controller().regularization();
+                ddspc_regularization_before = ddspc.regularization();
                 const Eigen::Vector4d command = ddspc.propose(
                     control_a.pd, control_u.dm_piston, wavelength_K1,
                     OPD_PER_DM_UNIT, MAX_DM_PISTON, draw);
@@ -965,9 +965,9 @@ void fringe_tracker(){
                     settings.ddspc_freeze_status =
                         {false, true, ddspc.freeze_reason()};
                 }
-                const int updates = ddspc.controller().iterations();
+                const int updates = ddspc.iterations();
                 const int exploration = ddspc.exploration_frames();
-                const double regularization = ddspc.controller().regularization();
+                const double regularization = ddspc.regularization();
                 if (updates == 1) {
                     const auto now = std::chrono::steady_clock::now();
                     if (now >= next_ddspc_active_log) {

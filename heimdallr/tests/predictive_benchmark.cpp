@@ -6,18 +6,19 @@
 #include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <stdexcept>
 #include <vector>
 
-int main() {
+template <int HistoryLength, int FutureLength>
+int benchmark(int samples) {
     using Clock = std::chrono::steady_clock;
     using heimdallr_ddspc::Modes;
     using heimdallr_ddspc::PredictiveControl;
     using heimdallr_ddspc::Telescopes;
 
     constexpr int warmup = 1200;
-    constexpr int samples = 120000;
     constexpr double wavelength = 2.1;
-    PredictiveControl<> controller;
+    PredictiveControl<HistoryLength, FutureLength> controller;
     std::array<Telescopes, 2> lag{Telescopes::Zero(), Telescopes::Zero()};
     std::vector<double> control_us;
     std::vector<double> update_us;
@@ -78,14 +79,41 @@ int main() {
               << ",\"future\":" << decltype(controller)::FutureSamples
               << ",\"samples\":" << samples
               << ",\"median_us\":" << total_us[samples / 2]
-              << ",\"p999_us\":" << total_us[119879]
+              << ",\"p999_us\":" << total_us[(samples * 999 - 1) / 1000]
               << ",\"max_us\":" << total_us.back()
               << ",\"control_median_us\":" << control_us[samples / 2]
-              << ",\"control_p999_us\":" << control_us[119879]
+              << ",\"control_p999_us\":" << control_us[(samples * 999 - 1) / 1000]
               << ",\"control_max_us\":" << control_us.back()
               << ",\"update_median_us\":" << update_us[samples / 2]
-              << ",\"update_p999_us\":" << update_us[119879]
+              << ",\"update_p999_us\":" << update_us[(samples * 999 - 1) / 1000]
               << ",\"update_max_us\":" << update_us.back()
               << ",\"checksum\":" << checksum << "}\n";
     return 0;
+}
+
+int main(int argc, char** argv) {
+    int history = 30;
+    int future = 3;
+    int samples = 120000;
+    if (argc != 1 && argc != 3 && argc != 4) {
+        std::cerr << "Usage: predictive_benchmark [history future [samples]]\n";
+        return 2;
+    }
+    try {
+        if (argc >= 3) {
+            history = std::stoi(argv[1]);
+            future = std::stoi(argv[2]);
+        }
+        if (argc == 4) samples = std::stoi(argv[3]);
+    } catch (const std::exception&) {
+        std::cerr << "Invalid benchmark argument\n";
+        return 2;
+    }
+    if (samples <= 0) return 2;
+    if (history == 20 && future == 2) return benchmark<20, 2>(samples);
+    if (history == 30 && future == 3) return benchmark<30, 3>(samples);
+    if (history == 40 && future == 3) return benchmark<40, 3>(samples);
+    if (history == 50 && future == 3) return benchmark<50, 3>(samples);
+    std::cerr << "Unsupported history preset\n";
+    return 2;
 }

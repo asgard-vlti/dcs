@@ -83,11 +83,11 @@ nlohmann::json snapshot_json(const SnapshotJob& job) {
     const auto& model = *job.model;
     bool nonfinite = false;
     nlohmann::json factor = nlohmann::json::array();
-    for (int i = 0; i < ModelSnapshot::Controller::Features; ++i) {
+    for (int i = 0; i < model.features; ++i) {
         nlohmann::json row = nlohmann::json::array();
-        for (int j = 0; j < ModelSnapshot::Controller::Features; ++j) {
+        for (int j = 0; j < model.features; ++j) {
             row.push_back(number_json(
-                model.factor[i * ModelSnapshot::Controller::Features + j],
+                model.factor[i * model.features + j],
                 nonfinite));
         }
         factor.push_back(std::move(row));
@@ -129,11 +129,11 @@ nlohmann::json snapshot_json(const SnapshotJob& job) {
                                         "%04d-%02d-%02dT%02d:%02d:%02d.%03lldZ"))
                                   : nlohmann::json(nullptr)}}},
         {"dimensions",
-         {{"history", ModelSnapshot::Controller::HistorySamples},
-          {"future", ModelSnapshot::Controller::FutureSamples},
-          {"features", ModelSnapshot::Controller::Features},
-          {"outputs", ModelSnapshot::Controller::Outputs},
-          {"control_features", ModelSnapshot::Controller::ControlFeatures}}},
+         {{"history", p.history},
+          {"future", p.future},
+          {"features", model.features},
+          {"outputs", model.outputs},
+          {"control_features", model.control_features}}},
         {"parameters",
          {{"reg_start", number_json(p.reg_start, nonfinite)},
           {"reg_cutoff", number_json(p.reg_cutoff, nonfinite)},

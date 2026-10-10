@@ -64,7 +64,8 @@ nlohmann::json ddspc_command(std::string action, nlohmann::json value) {
     }
     return heimdallr_ddspc::execute_command(settings.ddspc_configured, active,
                                             action, value,
-                                            &settings.ddspc_freeze_status);
+                                            &settings.ddspc_freeze_status,
+                                            settings.s.servo_mode == SERVO_OFF);
 }
 
 IMAGE DMs[N_TEL];
@@ -727,7 +728,7 @@ COMMANDER_REGISTER(m)
     m.def("servo", set_servo_mode, "Set the servo mode",
         commander::arg("mode", "One of 'off', 'simple', 'fight', 'lacour', 'ddspc', or 'on'.", "off"));
     m.def("ddspc", ddspc_command, "Get or stage DDSPC tuning, or freeze the active run",
-        commander::arg("action", "'get', 'freeze', or a set-* DDSPC parameter action."),
+        commander::arg("action", "'get', 'freeze', 'set-history', or a set-* DDSPC parameter action."),
         commander::arg("value", "Value for a set action.", nlohmann::json(nullptr)));
     m.def("offload", set_offload_mode, "Set the offload (slow servo) mode",
         commander::arg("mode", "One of 'off', 'nested', 'gd', 'mod', or 'manual'.", "off"));
