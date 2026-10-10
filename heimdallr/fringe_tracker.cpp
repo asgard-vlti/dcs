@@ -3,6 +3,7 @@
 #include "ddspc_piston_hold.hpp"
 #include "fringe_frame_wait.hpp"
 #include "fringe_phasor.hpp"
+#include "ft_telemetry.hpp"
 #include "predictive_control.hpp"
 #include <chrono>
 #include <random>
@@ -21,6 +22,7 @@
 using namespace std::complex_literals;
 
 long unsigned int ft_cnt=0, cnt_since_init=0;
+extern heimdallr_ft::Ring ft_telemetry;
 int mod_ix=0, gd_ix=0; //!!!This shouldn't be a local global.
 long unsigned int nerrors=0;
 double gd_to_K1=1.0;
@@ -488,6 +490,7 @@ void fringe_tracker(){
     bool k1_ready = false;
     bool k2_ready = false;
     while (true) {
+        ft_telemetry.flush_pending();
         process_servo_transitions();
         {
             std::lock_guard<std::mutex> lock(settings.mutex);
@@ -558,6 +561,7 @@ void fringe_tracker(){
             nerrors++;
         }
         ft_cnt++;
+        const auto frame_time = std::chrono::system_clock::now();
         int servo_mode;
         {
             std::lock_guard<std::mutex> lock(settings.mutex);
@@ -924,6 +928,30 @@ void fringe_tracker(){
         control_u.dm_piston = piston_reset_hold.command(
             control_u.dm_piston, ddspc_hold_this_frame);
         set_dm_piston(control_u.dm_piston, ddspc_hold_this_frame);
+        if (ft_telemetry.should_capture(servo_mode,
+                                        std::chrono::steady_clock::now())) {
+            static_assert(N_BL == 6 && N_TEL == 4,
+                          "Update the FT telemetry record dimensions");
+            heimdallr_ft::Sample sample;
+            sample.cnt = ft_cnt % 10000;
+            sample.servo_mode = servo_mode;
+            sample.time_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                 frame_time.time_since_epoch())
+                                 .count();
+            for (int i = 0; i < N_BL; ++i) {
+                sample.gd_snr[i] = baselines.gd_snr(i);
+                sample.pd_snr[i] = baselines.pd_snr(i);
+                sample.gd_bl[i] = baselines.gd(i);
+            }
+            for (int i = 0; i < N_TEL; ++i) {
+                sample.pd_tel[i] = control_a.pd(i);
+                sample.gd_tel[i] = control_a.gd(i);
+                sample.dm_piston[i] = control_u.dm_piston(i);
+            }
+            ft_telemetry.publish(sample);
+        } else {
+            ft_telemetry.flush_pending();
+        }
         if (servo_mode == SERVO_DDSPC && use_ddspc) {
             if (control_u.test_n == 0 &&
                 control_u.beams_active.minCoeff() > 0.5 &&
