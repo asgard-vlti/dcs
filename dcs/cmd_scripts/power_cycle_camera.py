@@ -230,8 +230,8 @@ def power_cycle_camera():
     time.sleep(2)
     start_server()
     time.sleep(2)
-    send_cli("set cooling on")
-    time.sleep(2)
+    # send_cli("set cooling on")
+    # time.sleep(2)
     cooling_deadline = time.monotonic() + COOLING_TIMEOUT_S
     monitor_camera(cooling_deadline, kaya_class)
     stop_server()
