@@ -2,6 +2,7 @@
 #include "ddspc_snapshot.hpp"
 #include "ddspc_piston_hold.hpp"
 #include "fringe_frame_wait.hpp"
+#include "fringe_phasor.hpp"
 #include "predictive_control.hpp"
 #include <chrono>
 #include <random>
@@ -101,15 +102,6 @@ Eigen::Matrix4d make_pinv(Eigen::Matrix<double, N_BL, 1> W, double threshold){
         info("Thresholding time: %ld", now.tv_nsec - then.tv_nsec);
 #endif
     return  es.eigenvectors() * singularDiag * es.eigenvectors().transpose();
-}
-
-// Normalized sinc function
-double sinc_normalized(double x) {
-    if (x == 0.0) {
-        return 1.0;
-    } else {
-        return std::sin(M_PI * x) / (M_PI * x);
-    }
 }
 
 void start_modulation() {
@@ -477,11 +469,20 @@ void fringe_tracker(){
         }
     };
 
-    long x_px, y_px, stride;
     initialise_baselines();
     reset_search();
     set_dm_piston(Eigen::Vector4d::Zero()); 
     ft_cnt = K1ft->cnt;
+    std::array<heimdallr_fringe::FourBinKernel, N_BL> K1_kernels, K2_kernels;
+    for (int bl = 0; bl < N_BL; ++bl) {
+        K1_kernels[bl] = heimdallr_fringe::make_four_bin_kernel(
+            K1ft->subim_sz, fs.x_px_K1[bl], fs.y_px_K1[bl],
+            K1ft->neighbor_noise_correlation);
+        K2_kernels[bl] = heimdallr_fringe::make_four_bin_kernel(
+            K2ft->subim_sz, fs.x_px_K2[bl], fs.y_px_K2[bl],
+            K2ft->neighbor_noise_correlation);
+    }
+    heimdallr_fringe::PowerHistory<N_BL, MAX_N_PS_BOXCAR> K1_power, K2_power;
     bool k1_ready = false;
     bool k2_ready = false;
     while (true) {
@@ -607,31 +608,31 @@ void fringe_tracker(){
         // at a time. This could in principle be vectorised. 
         gd_ix = ft_cnt % baselines.n_gd_boxcar;
         int pd_ix = ft_cnt % baselines.n_pd_boxcar;
+        const double K1_inst_bias = K1ft->power_spectrum_inst_bias;
+        const double K2_inst_bias = K2ft->power_spectrum_inst_bias;
+        const double K1_dc_power = std::norm(dcomp(K1ft->ft[0][0], K1ft->ft[0][1]));
+        const double K2_dc_power = std::norm(dcomp(K2ft->ft[0][0], K2ft->ft[0][1]));
+        K1_power.begin_frame(K1_dc_power, K1_inst_bias);
+        K2_power.begin_frame(K2_dc_power, K2_inst_bias);
+        for (int bl = 0; bl < N_BL; ++bl) {
+            K1_phasor[bl] = K1_kernels[bl].sample(K1ft->ft, fs.sign[bl]);
+            K2_phasor[bl] = K2_kernels[bl].sample(K2ft->ft, fs.sign[bl]);
+            K1_power.record(bl, std::norm(K1_phasor[bl]) -
+                K1_kernels[bl].noise_gain * K1_inst_bias);
+            K2_power.record(bl, std::norm(K2_phasor[bl]) -
+                K2_kernels[bl].noise_gain * K2_inst_bias);
+        }
+        K1_power.end_frame();
+        K2_power.end_frame();
         for (int bl=0; bl<N_BL; bl++){
-            // Use the peak of the splodge to compute the phase
-            x_px = lround(fs.x_px_K1[bl]) % K1ft->subim_sz;
-            y_px = lround(fs.y_px_K1[bl]) % K1ft->subim_sz;
-            stride = K1ft->subim_sz/2 + 1;
-            K1_phasor[bl] = K1ft->ft[y_px*stride + x_px][0] + 
-                1i*K1ft->ft[y_px*stride + x_px][1]*fs.sign[bl];
-            // Also fill in the V^2 from the power spectrum.
-            baselines.v2_K1(bl) = (K1ft->power_spectrum[y_px*stride + x_px]-K1ft->power_spectrum_bias)
-                /K1ft->power_spectrum[0] * 16;
+            baselines.v2_K1(bl) = K1_power.v2(bl);
+            baselines.v2_K2(bl) = K2_power.v2(bl);
 
             // Fill in the boxcar average of the K1 phasor.
             baselines.pd_phasor_boxcar_avg(bl) -= baselines.pd_phasor_boxcar[pd_ix](bl);
             baselines.pd_phasor_boxcar[pd_ix](bl) = K1_phasor[bl];
             baselines.pd_phasor_boxcar_avg(bl) += baselines.pd_phasor_boxcar[pd_ix](bl);
             baselines.pd_av(bl) = std::arg(baselines.pd_phasor_boxcar_avg(bl)) /2/M_PI;
-            
-            x_px = lround(fs.x_px_K2[bl]) % K2ft->subim_sz;
-            y_px = lround(fs.y_px_K2[bl]) % K2ft->subim_sz;
-            stride = K2ft->subim_sz/2 + 1;
-            K2_phasor[bl] = K2ft->ft[y_px*stride + x_px][0] + 
-                1i*K2ft->ft[y_px*stride + x_px][1]*fs.sign[bl];
-            // Also fill in the V^2 from the power spectrum.
-            baselines.v2_K2(bl) = (K2ft->power_spectrum[y_px*stride + x_px]-K2ft->power_spectrum_bias)
-                /K2ft->power_spectrum[0] * 16;
 
             // Compute the group delay - units of wavelengths at K1
             baselines.gd_phasor(bl) -= baselines.gd_phasor_boxcar[gd_ix](bl);
@@ -664,19 +665,26 @@ void fringe_tracker(){
                 baselines.pd(bl) = std::arg(K1_phasor[bl])/2/M_PI; 
             }
 
-            // Now we need the gd_snr and pd_snr for this baseline. 
-            baselines.pd_snr(bl) = std::fabs(K1_phasor[bl])/std::sqrt(K1ft->power_spectrum_inst_bias);
+            // The noise variance follows the same weighted, corrected estimator.
+            const double pd_noise = K1_kernels[bl].noise_gain * K1_inst_bias;
+            baselines.pd_snr(bl) = pd_noise > 0.0 && std::isfinite(pd_noise)
+                ? std::abs(K1_phasor[bl]) / std::sqrt(pd_noise) : 0.0;
             
             // Without boxcar averaging, the variance of the group delay phasor due to fundamental noise is:
             // Var(K1^* K2) = |K1|^2 Var(K2) + |K2|^2 Var(K1) + Var(K1) Var(K2)
-            // where Var(K) = power_spectrum_bias. 
+            // where Var(K) includes the neighboring-bin covariance from the window.
             // The GD_phasor has a variance sqrt(baselines[bl].n_gd_boxcar) larger than a
             // single phasor, so we need to divide by that. 
-            baselines.gd_snr(bl) = std::fabs(baselines.gd_phasor(bl))/
-                std::sqrt(K1ft->power_spectrum_bias * K2ft->power_spectrum_bias + 
-                (K1ft->power_spectrum[y_px*stride + x_px] - K1ft->power_spectrum_bias)*K2ft->power_spectrum_bias +
-                (K2ft->power_spectrum[y_px*stride + x_px] - K2ft->power_spectrum_bias)*K1ft->power_spectrum_bias)
-                /std::sqrt(baselines.n_gd_boxcar);    
+            const double K1_noise = K1_kernels[bl].noise_gain * K1_power.noise_bias();
+            const double K2_noise = K2_kernels[bl].noise_gain * K2_power.noise_bias();
+            const double K1_signal = std::max(0.0, K1_power.signal_power(bl));
+            const double K2_signal = std::max(0.0, K2_power.signal_power(bl));
+            const double gd_variance = K1_noise * K2_noise +
+                K1_signal * K2_noise + K2_signal * K1_noise;
+            baselines.gd_snr(bl) = gd_variance > 0.0 && std::isfinite(gd_variance)
+                ? std::abs(baselines.gd_phasor(bl)) /
+                    std::sqrt(gd_variance * baselines.n_gd_boxcar)
+                : 0.0;
                 
             // Set the weight matriix (bl,bl) to the square of the SNR, unless 
             // the SNR is too low, in which case we set it to zero.
@@ -794,7 +802,7 @@ void fringe_tracker(){
                 } else {
                     // Scale the pd gain by the sinc of the gd offset, 
                     // so that if the gd is 0.5 waves away, the pd gain is zero.
-                    pd_gain_scale(i) = sinc_normalized(control_a.gd(i));
+                    pd_gain_scale(i) = heimdallr_fringe::sinc(control_a.gd(i));
                 }
             }
         }

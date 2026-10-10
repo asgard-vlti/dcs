@@ -1,4 +1,5 @@
 #include "heimdallr.h"
+#include "fringe_phasor.hpp"
 #include <chrono>
 #include <cstring>
 //#define PRINT_TIMING
@@ -85,6 +86,8 @@ ForwardFt::ForwardFt(IMAGE * subarray_in) {
             window[ii*subim_sz + jj] = std::exp(-temp*temp);
         }
     }
+    heimdallr_fringe::window_noise_correlations(
+        window, ssz, neighbor_noise_correlation);
     for (unsigned int ii=0; ii<subim_sz; ii++) {
         // Also initialise the power spectrum array
         for (unsigned int jj=0; jj<subim_sz / 2 + 1; jj++) {

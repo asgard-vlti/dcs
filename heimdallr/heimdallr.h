@@ -322,6 +322,7 @@ public:
     double *subim;
     double power_spectrum_bias;
     double power_spectrum_inst_bias;
+    std::complex<double> neighbor_noise_correlation[3][3];
     int ps_index = MAX_N_PS_BOXCAR-1;
 
     // The size of the subimage, needed to determine which Fourier components to use.

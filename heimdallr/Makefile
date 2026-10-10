@@ -6,6 +6,7 @@ PREDICTIVE_BENCHMARK = /tmp/heimdallr_predictive_benchmark
 PREDICTIVE_SIMULATION = /tmp/heimdallr_predictive_simulation
 PREDICTIVE_PARAMETERS = /tmp/heimdallr_predictive_parameters
 PREDICTIVE_SNAPSHOT = /tmp/heimdallr_predictive_snapshot
+FRINGE_PHASOR_TEST = /tmp/heimdallr_fringe_phasor_test
 COMMANDER_LIB = ../lib/libcommander.a
 LDFLAGS = -L../lib -lm -lzmq -lImageStreamIO -lb64 -lpthread -lboost_program_options -lfmt -lfftw3
 EXEC    = heimdallr
@@ -44,6 +45,7 @@ heimdallr.o heimdallr.sim.o fringe_tracker.o fringe_tracker.sim.o: ddspc_snapsho
 heimdallr.o heimdallr.sim.o fringe_tracker.o fringe_tracker.sim.o: servo_transitions.hpp
 fringe_tracker.o fringe_tracker.sim.o: fringe_frame_wait.hpp
 fringe_tracker.o fringe_tracker.sim.o: ddspc_piston_hold.hpp
+fringe_tracker.o fringe_tracker.sim.o forward_ft.o forward_ft.sim.o: fringe_phasor.hpp
 heimdallr.o heimdallr.sim.o: ddspc_tuning.hpp
 
 .PHONY: predictive_benchmark
@@ -77,6 +79,11 @@ predictive_parameters: tests/predictive_parameters.cpp predictive_control.o
 predictive_snapshot: tests/predictive_snapshot.cpp predictive_control.o ddspc_snapshot.o
 	$(CC) $(PREDICTIVE_CFLAGS) -o $(PREDICTIVE_SNAPSHOT) $< predictive_control.o ddspc_snapshot.o -lpthread
 	$(PREDICTIVE_SNAPSHOT)
+
+.PHONY: fringe_phasor_test
+fringe_phasor_test: tests/fringe_phasor.cpp fringe_phasor.hpp
+	$(CC) $(PREDICTIVE_CFLAGS) -o $(FRINGE_PHASOR_TEST) $<
+	$(FRINGE_PHASOR_TEST)
 
 clean:
 	rm -rf *.o *.so
