@@ -43,13 +43,55 @@ class DiskSavingMonitorTests(unittest.TestCase):
             [self._writer("save-ft-performance"), self._writer("save-tt-performance", 101)]
         )
         self._write_log("ft_performance_")
+        self._write_log("ft_settings_")
         for beam in range(1, 5):
             self._write_log(f"btt_performance_beam{beam}_", age=3 if beam == 2 else 0.5)
+            self._write_log(f"btt_beam{beam}_settings_")
         status = self.monitor.collect()
         self.assertEqual(status["cred1"]["state"], "red")
         self.assertEqual(status["ft_performance"]["state"], "green")
+        self.assertEqual(status["ft_settings"]["state"], "green")
         self.assertEqual(status["tt_performance"]["state"], "yellow")
         self.assertEqual(status["tt_performance"]["checks"]["beam2"]["state"], "stale")
+        self.assertEqual(status["tt_settings"]["state"], "green")
+
+    def test_settings_freshness_and_missing_beam(self):
+        self.ps_output = "\n".join(
+            [self._writer("save-ft-performance"), self._writer("save-tt-performance", 101)]
+        )
+        self._write_log("ft_settings_", age=2.9)
+        for beam in range(1, 4):
+            self._write_log(f"btt_beam{beam}_settings_", age=3.0 if beam == 2 else 0.5)
+        status = self.monitor.collect()
+        self.assertEqual(status["ft_settings"]["state"], "green")
+        self.assertEqual(status["ft_settings"]["checks"]["ft_settings"]["limit_s"], 3.0)
+        self.assertEqual(status["tt_settings"]["state"], "yellow")
+        self.assertEqual(status["tt_settings"]["checks"]["beam2"]["state"], "stale")
+        self.assertEqual(
+            status["tt_settings"]["checks"]["beam4"]["detail"], "log file missing"
+        )
+        self.now += 0.1
+        self.assertEqual(self.monitor.collect()["ft_settings"]["state"], "red")
+
+    def test_settings_header_only_log_and_restart(self):
+        self.ps_output = self._writer("save-ft-performance")
+        old_log = self._write_log("ft_settings_", data=False)
+        check = self.monitor.collect()["ft_settings"]["checks"]["ft_settings"]
+        self.assertEqual(check["state"], "stale")
+        self.assertEqual(check["detail"], "no data rows")
+
+        with old_log.open("a") as stream:
+            stream.write("1700000000.0 1.0\n")
+        os.utime(old_log, (self.now - 0.5, self.now - 0.5))
+        self.assertEqual(self.monitor.collect()["ft_settings"]["state"], "green")
+
+        self.ps_output = self._writer("save-ft-performance", pid=200, elapsed=5)
+        check = self.monitor.collect()["ft_settings"]["checks"]["ft_settings"]
+        self.assertEqual(check["state"], "stale")
+        self.assertEqual(check["detail"], "log file missing")
+        self.now += 5.1
+        self._write_log("ft_settings_", started=self.now - 5)
+        self.assertEqual(self.monitor.collect()["ft_settings"]["state"], "green")
 
     def test_camera_files_control_status_and_age_out(self):
         self.assertEqual(self.monitor.collect()["cred1"]["state"], "red")
@@ -75,6 +117,14 @@ class DiskSavingMonitorTests(unittest.TestCase):
         self.assertTrue(all(group["state"] == "red" for group in status.values()))
         self.assertEqual(
             status["ft_performance"]["checks"]["ft_performance"]["detail"],
+            "writer not running",
+        )
+        self.assertEqual(
+            status["ft_settings"]["checks"]["ft_settings"]["detail"],
+            "writer not running",
+        )
+        self.assertEqual(
+            status["tt_settings"]["checks"]["beam1"]["detail"],
             "writer not running",
         )
 

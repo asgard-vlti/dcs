@@ -13,12 +13,26 @@ SOURCES = {
     "ft_performance": {
         "writer": "save-ft-performance",
         "prefixes": ("ft_performance_",),
+        "labels": ("ft_performance",),
         "limit_s": 2.0,
+    },
+    "ft_settings": {
+        "writer": "save-ft-performance",
+        "prefixes": ("ft_settings_",),
+        "labels": ("ft_settings",),
+        "limit_s": 3.0,
     },
     "tt_performance": {
         "writer": "save-tt-performance",
         "prefixes": tuple(f"btt_performance_beam{beam}_" for beam in range(1, 5)),
+        "labels": tuple(f"beam{beam}" for beam in range(1, 5)),
         "limit_s": 2.0,
+    },
+    "tt_settings": {
+        "writer": "save-tt-performance",
+        "prefixes": tuple(f"btt_beam{beam}_settings_" for beam in range(1, 5)),
+        "labels": tuple(f"beam{beam}" for beam in range(1, 5)),
+        "limit_s": 3.0,
     },
 }
 CRED1_STREAMS = tuple(f"baldr{beam}" for beam in range(1, 5)) + (
@@ -165,26 +179,22 @@ class DiskSavingMonitor:
 
     def _log_group(self, source, writer, now):
         prefixes = SOURCES[source]["prefixes"]
+        labels = SOURCES[source]["labels"]
         limit_s = SOURCES[source]["limit_s"]
-
-        def label(prefix):
-            return prefix.replace("btt_performance_", "").rstrip("_")
 
         if writer is None:
             return _group({
-                label(prefix): _check(None, limit_s, now, "writer not running")
-                for prefix in prefixes
+                label: _check(None, limit_s, now, "writer not running")
+                for label in labels
             })
         try:
             paths = self._paths_for(source, writer, now)
         except OSError as error:
             return _group({
-                label(prefix): _check(None, limit_s, now, str(error))
-                for prefix in prefixes
+                label: _check(None, limit_s, now, str(error)) for label in labels
             })
         checks = {}
-        for prefix in prefixes:
-            name = label(prefix)
+        for prefix, name in zip(prefixes, labels):
             path = paths.get(prefix)
             if path is None:
                 checks[name] = _check(None, limit_s, now, "log file missing")
