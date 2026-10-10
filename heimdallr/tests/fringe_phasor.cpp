@@ -90,7 +90,7 @@ void test_phase_and_amplitude() {
 
     for (const auto& peak : {std::array<double, 2>{7.0, 11.0}, {7.35, 11.4}}) {
         const auto kernel = heimdallr_fringe::make_four_bin_kernel(
-            size, peak[0], peak[1], correlation);
+            size, peak[0], peak[1], window.data(), correlation);
         if (peak[0] == 7.0) {
             check(std::abs(kernel.amplitude_response - 1.0) < 1e-12 &&
                   std::abs(kernel.noise_gain - 1.0) < 1e-12,
@@ -110,7 +110,7 @@ void test_phase_and_amplitude() {
         check(std::abs(phase_error(phasor, 0.7)) < 0.02,
               "fractional peak changed the piston phase");
         check(std::abs(std::abs(phasor) / (size * size) - 1.0) < 0.025,
-              "sinc correction did not recover fringe amplitude");
+              "window response correction did not recover fringe amplitude");
         const Complex reversed = kernel.sample(ft.data(), -1.0);
         check(std::abs(reversed - std::conj(phasor)) < 1e-9,
               "baseline sign did not conjugate the phasor");
@@ -129,7 +129,7 @@ void test_fft_boundaries() {
                              {16.0, 31.0}, {31.7, 31.6},
                              {-0.3, -0.4}}) {
         const auto kernel = heimdallr_fringe::make_four_bin_kernel(
-            size, peak[0], peak[1], correlation);
+            size, peak[0], peak[1], window.data(), correlation);
         const auto ft = fft_for_kernel(image, size, kernel);
         const Complex sampled = kernel.sample(ft.data(), 1.0);
         Complex expected = 0.0;
@@ -151,7 +151,7 @@ void test_tip_tilt_coupling() {
     Complex correlation[3][3];
     heimdallr_fringe::window_noise_correlations(window.data(), size, correlation);
     const auto kernel = heimdallr_fringe::make_four_bin_kernel(
-        size, fx, fy, correlation);
+        size, fx, fy, window.data(), correlation);
     double old_drift = 0.0;
     double new_drift = 0.0;
     for (double shift : {-4.0, -2.0, 2.0, 4.0}) {
@@ -172,7 +172,7 @@ void test_noise_gain() {
     Complex correlation[3][3];
     heimdallr_fringe::window_noise_correlations(window.data(), size, correlation);
     const auto kernel = heimdallr_fringe::make_four_bin_kernel(
-        size, 7.4, 11.35, correlation);
+        size, 7.4, 11.35, window.data(), correlation);
     std::array<std::vector<Complex>, 4> factors;
     for (int tap = 0; tap < 4; ++tap) {
         factors[tap].reserve(size * size);
@@ -240,7 +240,61 @@ void test_power_history() {
     dark_history.record(0, 10.0);
     dark_history.end_frame();
     check(dark_history.v2(0) == 0.0,
-          "zero DC denominator produced an invalid V squared");
+          "zero DC denominator produced invalid V squared");
+}
+
+void test_windowed_visibility() {
+    constexpr int size = 32;
+    const auto window = super_gaussian_window(size);
+    Complex correlation[3][3];
+    heimdallr_fringe::window_noise_correlations(window.data(), size, correlation);
+    // Beam pair 2-3 in def.toml has a K1 y peak near half a bin.
+    const double fx = 0.0085 * 24.0 / 2.1 * size;
+    const double fy = 0.01484 * 24.0 / 2.1 * size;
+    for (const auto& peak : {std::array<double, 2>{fx, fy}, {7.5, 11.5}}) {
+        const auto kernel = heimdallr_fringe::make_four_bin_kernel(
+            size, peak[0], peak[1], window.data(), correlation);
+        const double dx = peak[0] - std::floor(peak[0]);
+        const double dy = peak[1] - std::floor(peak[1]);
+        const double ideal_response =
+            heimdallr_fringe::interpolation_response(dx) *
+            heimdallr_fringe::interpolation_response(dy);
+        heimdallr_fringe::PowerHistory<1, 4> history;
+        double nearest_power_sum = 0.0;
+        double dc_power_sum = 0.0;
+        for (double phase : {0.0, 0.5, 1.0, 1.5}) {
+            const auto fringe = fringe_image(size, peak[0], peak[1], phase);
+            std::vector<double> image(size * size);
+            for (int pixel = 0; pixel < size * size; ++pixel) {
+                image[pixel] = (4.0 + fringe[pixel]) * window[pixel];
+            }
+            const auto ft = fft_for_kernel(image, size, kernel);
+            const double dc_power = std::norm(direct_fft(image, size, 0, 0));
+            const double corrected_power =
+                std::norm(kernel.sample(ft.data(), 1.0));
+            history.begin_frame(dc_power, 0.0);
+            history.record(0, corrected_power);
+            history.end_frame();
+            const auto& nearest = kernel.taps[(dy >= 0.5 ? 2 : 0) +
+                                              (dx >= 0.5 ? 1 : 0)];
+            const auto& nearest_bin = ft[nearest.index];
+            nearest_power_sum += nearest_bin[0] * nearest_bin[0] +
+                                 nearest_bin[1] * nearest_bin[1];
+            dc_power_sum += dc_power;
+        }
+        const double ideal_v2 = history.v2(0) *
+            std::pow(kernel.amplitude_response / ideal_response, 2);
+        check(std::abs(history.v2(0) - 1.0) < 0.08,
+              "window-corrected four-bin V squared missed unit visibility");
+        check(ideal_v2 > 1.25,
+              "synthetic fringe did not expose ideal-sinc overcorrection");
+        if (peak[0] == fx) {
+            const double nearest_v2 = 16.0 * nearest_power_sum / dc_power_sum;
+            check(history.v2(0) / nearest_v2 > 1.4 &&
+                  ideal_v2 / nearest_v2 > 1.8,
+                  "beam pair 2-3 did not show the expected fractional-bin effect");
+        }
+    }
 }
 
 int main() {
@@ -250,6 +304,7 @@ int main() {
         test_tip_tilt_coupling();
         test_noise_gain();
         test_power_history();
+        test_windowed_visibility();
         std::cout << "fringe phasor tests passed\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

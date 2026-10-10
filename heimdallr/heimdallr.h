@@ -328,6 +328,8 @@ public:
     // The size of the subimage, needed to determine which Fourier components to use.
     unsigned int subim_sz, rft_sz;
 
+    const double* window_data() const { return window; }
+
     // The image that contains the metadata.
     IMAGE *subarray;
 

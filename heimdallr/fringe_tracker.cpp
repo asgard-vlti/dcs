@@ -477,9 +477,11 @@ void fringe_tracker(){
     for (int bl = 0; bl < N_BL; ++bl) {
         K1_kernels[bl] = heimdallr_fringe::make_four_bin_kernel(
             K1ft->subim_sz, fs.x_px_K1[bl], fs.y_px_K1[bl],
+            K1ft->window_data(),
             K1ft->neighbor_noise_correlation);
         K2_kernels[bl] = heimdallr_fringe::make_four_bin_kernel(
             K2ft->subim_sz, fs.x_px_K2[bl], fs.y_px_K2[bl],
+            K2ft->window_data(),
             K2ft->neighbor_noise_correlation);
     }
     heimdallr_fringe::PowerHistory<N_BL, MAX_N_PS_BOXCAR> K1_power, K2_power;
@@ -625,6 +627,7 @@ void fringe_tracker(){
         K1_power.end_frame();
         K2_power.end_frame();
         for (int bl=0; bl<N_BL; bl++){
+            // The factor of 16 assumes four equally bright beams.
             baselines.v2_K1(bl) = K1_power.v2(bl);
             baselines.v2_K2(bl) = K2_power.v2(bl);
 

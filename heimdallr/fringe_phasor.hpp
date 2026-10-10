@@ -77,7 +77,7 @@ struct FourBinKernel {
 };
 
 inline FourBinKernel make_four_bin_kernel(
-    int size, double peak_x, double peak_y,
+    int size, double peak_x, double peak_y, const double* window,
     const std::complex<double> (&correlation)[3][3]) {
     if (size < 2 || size % 2 != 0 ||
         !std::isfinite(peak_x) || !std::isfinite(peak_y)) {
@@ -93,8 +93,6 @@ inline FourBinKernel make_four_bin_kernel(
     const double dx = x - x0;
     const double dy = y - y0;
     FourBinKernel kernel;
-    kernel.amplitude_response =
-        interpolation_response(dx) * interpolation_response(dy);
 
     for (int row = 0; row < 2; ++row) {
         for (int col = 0; col < 2; ++col) {
@@ -113,6 +111,27 @@ inline FourBinKernel make_four_bin_kernel(
                     (row == 0 ? 1.0 - dy : dy),
                 conjugate, tap_x, tap_y};
         }
+    }
+    // Use the applied FFT window: ideal sinc underestimates off-bin response.
+    double window_sum = 0.0;
+    std::complex<double> weighted_response = 0.0;
+    for (int pixel_y = 0; pixel_y < size; ++pixel_y) {
+        for (int pixel_x = 0; pixel_x < size; ++pixel_x) {
+            const double window_value = window[pixel_y * size + pixel_x];
+            window_sum += window_value;
+            for (const auto& tap : kernel.taps) {
+                const double angle = 2.0 * pi *
+                    ((x - tap.x) * (pixel_x - size / 2) +
+                     (y - tap.y) * (pixel_y - size / 2)) / size;
+                weighted_response += window_value * tap.weight *
+                    std::polar(1.0, angle);
+            }
+        }
+    }
+    kernel.amplitude_response = std::abs(weighted_response) / window_sum;
+    if (!(kernel.amplitude_response > 0.0) ||
+        !std::isfinite(kernel.amplitude_response)) {
+        throw std::invalid_argument("Invalid four-bin amplitude response");
     }
 
     double weighted_noise = 0.0;
@@ -154,7 +173,8 @@ public:
     }
 
     double v2(std::size_t baseline) const {
-        return dc_sum_ > 0.0 && std::isfinite(dc_sum_)
+        return dc_sum_ > 0.0 && std::isfinite(dc_sum_) &&
+               std::isfinite(signal_sums_[baseline])
             ? 16.0 * signal_sums_[baseline] / dc_sum_ : 0.0;
     }
 
