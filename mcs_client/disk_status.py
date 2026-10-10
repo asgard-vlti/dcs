@@ -8,7 +8,6 @@ import shlex
 import subprocess
 import time
 
-
 SOURCES = {
     "ft_performance": {
         "writer": "save-ft-performance",
@@ -39,7 +38,7 @@ CRED1_STREAMS = tuple(f"baldr{beam}" for beam in range(1, 5)) + (
     "hei_k1",
     "hei_k2",
 )
-CRED1_WRITE_LIMIT_S = 15.0
+CRED1_WRITE_LIMIT_S = 10.0
 
 
 def _check(last_saved, limit_s, now, detail=""):
@@ -125,9 +124,13 @@ class DiskSavingMonitor:
                             if entry.name.startswith(prefix):
                                 stamp = entry.name[len(prefix) : len(prefix) + 15]
                                 try:
-                                    file_started = datetime.datetime.strptime(
-                                        stamp, "%Y%m%dT%H%M%S"
-                                    ).replace(tzinfo=datetime.timezone.utc).timestamp()
+                                    file_started = (
+                                        datetime.datetime.strptime(
+                                            stamp, "%Y%m%dT%H%M%S"
+                                        )
+                                        .replace(tzinfo=datetime.timezone.utc)
+                                        .timestamp()
+                                    )
                                 except ValueError:
                                     continue
                                 if file_started < started - 2:
@@ -183,16 +186,18 @@ class DiskSavingMonitor:
         limit_s = SOURCES[source]["limit_s"]
 
         if writer is None:
-            return _group({
-                label: _check(None, limit_s, now, "writer not running")
-                for label in labels
-            })
+            return _group(
+                {
+                    label: _check(None, limit_s, now, "writer not running")
+                    for label in labels
+                }
+            )
         try:
             paths = self._paths_for(source, writer, now)
         except OSError as error:
-            return _group({
-                label: _check(None, limit_s, now, str(error)) for label in labels
-            })
+            return _group(
+                {label: _check(None, limit_s, now, str(error)) for label in labels}
+            )
         checks = {}
         for prefix, name in zip(prefixes, labels):
             path = paths.get(prefix)
@@ -224,8 +229,10 @@ class DiskSavingMonitor:
                 for entry in entries:
                     name = entry.name
                     stream, separator, _ = name.partition("_T")
-                    if not separator or stream not in CRED1_STREAMS or not name.endswith(
-                        ".fits"
+                    if (
+                        not separator
+                        or stream not in CRED1_STREAMS
+                        or not name.endswith(".fits")
                     ):
                         continue
                     previous = paths.get(stream)
@@ -246,10 +253,12 @@ class DiskSavingMonitor:
         try:
             saved = self._cred1_file_times(now)
         except OSError as error:
-            return _group({
-                name: _check(None, CRED1_WRITE_LIMIT_S, now, str(error))
-                for name in CRED1_STREAMS
-            })
+            return _group(
+                {
+                    name: _check(None, CRED1_WRITE_LIMIT_S, now, str(error))
+                    for name in CRED1_STREAMS
+                }
+            )
         checks = {
             name: _check(saved.get(name), CRED1_WRITE_LIMIT_S, now)
             for name in CRED1_STREAMS
