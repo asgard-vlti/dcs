@@ -22,6 +22,7 @@ import socket
 import fcntl
 
 import subprocess
+from urllib.parse import urlsplit
 from mcs_client.disk_status import DiskSavingMonitor
 
 # Following protocol described in
@@ -68,10 +69,13 @@ def acquire_process_lock(lock_path=LOCK_FILE_PATH):
     return lock_file
 
 
-def check_port(port):
+def check_port(port, host="mimir", timeout_s=0.1):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        result = s.connect_ex(("mimir", port))
-        return "open" if result == 0 else "closed"
+        s.settimeout(timeout_s)
+        try:
+            return "open" if s.connect_ex((host, port)) == 0 else "closed"
+        except OSError:
+            return "closed"
 
 
 class ZmqReq:
@@ -793,36 +797,20 @@ class Watchdog:
             "Baldr TT Telem": "/home/asg/.conda/envs/asgard/bin/save-tt-performance",
         }
 
-        self.processes_of_interest_zmq = {
-            "MDS": "python asgard_alignment/MultiDeviceServer.py",
-            "Eng gui": "streamlit run asgard_alignment/cmd_scripts/engineering_GUI.py",
-            "CRED1": "/bin/cred1_server",
-            "DM": "/bin/cred1_server",
-            "BTT1": "/usr/local/bin/baldr_tt /usr/local/etc/def1.toml --socket 'tcp://*:6671'",
-            "BTT2": "/usr/local/bin/baldr_tt /usr/local/etc/def2.toml --socket 'tcp://*:6672'",
-            "BTT3": "/usr/local/bin/baldr_tt /usr/local/etc/def3.toml --socket 'tcp://*:6673'",
-            "BTT4": "/usr/local/bin/baldr_tt /usr/local/etc/def4.toml --socket 'tcp://*:6674'",
-            "BAO1": "Server.py --beam 1",
-            "BAO2": "Server.py --beam 2",
-            "BAO3": "Server.py --beam 3",
-            "BAO4": "Server.py --beam 4",
-            "HDLR": "/usr/local/bin/heimdallr",
-            "back_end": "/home/asg/.conda/envs/asgard/bin/back-end-server",
-        }
-
     def _watchdog_lazy_pirate_status(
-        self, proc_name: str, zmq_obj: ZmqReq, ps_output: Optional[str] = None
+        self, proc_name: str, zmq_obj: ZmqReq
     ) -> Tuple[str, str, str]:
         """
         Fast Lazy Pirate probe for watchdog status requests.
         On timeout or socket state errors, reset the REQ socket and retry quickly.
+        If no status reply arrives, check whether the server's TCP port still accepts
+        connections before reporting its process as closed.
 
         returns a tuple of (process_status, zmq_status, custom_status)
 
         Args:
             proc_name: Name of the process to check
             zmq_obj: ZMQ socket object
-            ps_output: Cached output from 'ps aux' (if None, process status cannot be checked)
         """
         for attempt in range(self.watchdog_fast_retries):
             try:
@@ -858,9 +846,10 @@ class Watchdog:
 
                 time.sleep(self.watchdog_retry_delay_s)
 
-        # Check if process is running using cached ps output
-        if ps_output and self.processes_of_interest_zmq.get(proc_name) in ps_output:
-            return "running", "closed", "no-reply"
+        endpoint = urlsplit(zmq_obj.endpoint)
+        if endpoint.scheme == "tcp" and endpoint.hostname and endpoint.port:
+            if check_port(endpoint.port, host=endpoint.hostname) == "open":
+                return "running", "no-reply", "no-reply"
 
         return "closed", "closed", "no-reply"
 
@@ -895,7 +884,7 @@ class Watchdog:
             custom_status = ""
             if isinstance(zmq_obj, ZmqReq):
                 proc_status, zmq_status, custom_status = (
-                    self._watchdog_lazy_pirate_status(proc_name, zmq_obj, ps_output)
+                    self._watchdog_lazy_pirate_status(proc_name, zmq_obj)
                 )
             else:
                 logging.warning(
