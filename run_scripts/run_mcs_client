@@ -1,2 +1,3 @@
 #!/bin/bash
-setsid /home/asg/.conda/envs/asgard/bin/mcs-client 1>> /home/asg/logs/mcs_client/log.txt 2>&1 &
+log_path="/home/asg/logs/mcs_client/log_$(date -u +%Y%m%dT%H%M%S.%NZ)_$$.txt"
+setsid /home/asg/.conda/envs/asgard/bin/mcs-client 1>"$log_path" 2>&1 &

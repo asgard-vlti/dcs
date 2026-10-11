@@ -1,3 +1,5 @@
 #!/bin/bash
-setsid /home/asg/.conda/envs/asgard/bin/save-ft-performance 1>> /home/asg/logs/heim_telem/log.txt 2>&1 &
-setsid /home/asg/.conda/envs/asgard/bin/save-tt-performance 1>> /home/asg/logs/baldr_tt_telem/log.txt 2>&1 &
+heim_log_path="/home/asg/logs/heim_telem/log_$(date -u +%Y%m%dT%H%M%S.%NZ)_$$.txt"
+setsid /home/asg/.conda/envs/asgard/bin/save-ft-performance 1>"$heim_log_path" 2>&1 &
+baldr_tt_log_path="/home/asg/logs/baldr_tt_telem/log_$(date -u +%Y%m%dT%H%M%S.%NZ)_$$.txt"
+setsid /home/asg/.conda/envs/asgard/bin/save-tt-performance 1>"$baldr_tt_log_path" 2>&1 &
