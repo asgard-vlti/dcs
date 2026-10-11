@@ -214,6 +214,10 @@ class MCSClient:
         self.wag_req_timeout_ms = 500
         self.wag_req_retries = 2
         self.wag_req_retry_delay_s = 0.05
+        self.wag_write_backoff_s = 0.0
+        self.wag_max_write_backoff_s = 10.0
+        self.wag_next_write_at = 0.0
+        self._pending_script_params = {}
 
         self.dcs_adapters = {}
         for dcs_name, endpoint in dcs_endpoints.items():
@@ -250,8 +254,13 @@ class MCSClient:
                 self.req_z.reconnect()
 
             rep = self.req_z.send_payload(body)
-            if rep and "reply":
-                content = rep["reply"].get("content", "ERROR")
+            if (
+                isinstance(rep, dict)
+                and isinstance(rep.get("reply"), dict)
+                and "content" in rep["reply"]
+                and rep["reply"]["content"] is not None
+            ):
+                content = rep["reply"]["content"]
                 return (content != "ERROR"), rep
 
             logging.warning(
@@ -267,14 +276,17 @@ class MCSClient:
 
     def run(self):
         """
-        Check if any new data has arrived from the scripts, and
-        also poll the cpp databases for new data. Publish all at once.
+        Service requests between periodic database publications.
+        Collect script results immediately, before another request can replace them.
         """
+        next_publish = time.monotonic()
         while True:
-            # self.read_from_wag()
-            self.publish_all_to_wag()
-
-            time.sleep(self.sleep_time)
+            self.server_z.fetch()
+            if time.monotonic() >= next_publish or (
+                self.server_z.has_new_data and self.server_z.data
+            ):
+                self.publish_all_to_wag()
+                next_publish = time.monotonic() + self.sleep_time
 
     def read_from_wag(self):
         """Read WAG parameters if connection is open, and update self.wag_reads. Only query if connection is open."""
@@ -380,8 +392,7 @@ class MCSClient:
         return param_list
 
     def gather_script_parameters(self):
-        """Gather script parameters if new data is available, as a list of dicts. Only query if connection is open."""
-        self.server_z.fetch()
+        """Convert the pending script message into parameter dictionaries."""
         msg = self.server_z.read_most_recent_msg()
         if not msg:
             return None
@@ -419,6 +430,15 @@ class MCSClient:
 
     def publish_all_to_wag(self):
         """Publish all parameters (baldr, hdlr, script) in a single message."""
+        for param in self.gather_script_parameters() or []:
+            key = (param["name"], param.get("range"))
+            # Keep the latest value per range, in write order for overlapping ranges.
+            self._pending_script_params.pop(key, None)
+            self._pending_script_params[key] = param
+
+        if time.monotonic() < self.wag_next_write_at:
+            return
+
         all_params = []
 
         if not self.script_only:
@@ -428,22 +448,36 @@ class MCSClient:
             hdlr_params = self.gather_hdlr_parameters()
             if hdlr_params:
                 all_params.extend(hdlr_params)
-        script_params = self.gather_script_parameters()
-        print("script_params", script_params)
-        if script_params:
-            all_params.extend(script_params)
+        all_params.extend(self._pending_script_params.values())
         if not all_params:
             logging.info("No msgs found, waiting...")
             return
         body = self.ESO_format(all_params)
-        # logging.info(f"pushing: {str(body)[:20]}]...")
-        logging.info(f"pushing: {str(body)}...")
+        logging.debug("pushing: %s", body)
         try:
             ok, rep = self._send(body)
-            if not ok:
-                logging.warning(f"failed to write combined data to wag: {rep}")
         except zmq.error.ZMQError as e:
             logging.error(f"ZMQ error to wag: {e}")
+            ok, rep = False, None
+
+        if ok:
+            self._pending_script_params.clear()
+            if self.wag_write_backoff_s:
+                logging.info("WAG publishing recovered at %s", self.req_z.endpoint)
+            self.wag_write_backoff_s = 0.0
+            self.wag_next_write_at = 0.0
+        else:
+            self.wag_write_backoff_s = min(
+                self.wag_max_write_backoff_s,
+                max(1.0, 2 * self.wag_write_backoff_s),
+            )
+            self.wag_next_write_at = time.monotonic() + self.wag_write_backoff_s
+            logging.warning(
+                "WAG write to %s failed (%s); retrying in %.1fs",
+                self.req_z.endpoint,
+                rep,
+                self.wag_write_backoff_s,
+            )
 
     def publish_bld_databases_to_wag(self):
         adapter_names = [f"BLD{idx}" for idx in range(1, 5)]
