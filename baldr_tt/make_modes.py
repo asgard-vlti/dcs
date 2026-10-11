@@ -45,6 +45,7 @@ def create_modes():
     Y = np.arange(N_ACTUATORS) - (N_ACTUATORS - 1) / 2
     X, Y = np.meshgrid(X, Y)
     rho = np.sqrt(X**2 + Y**2) / OUTER_RADIUS
+    pupil = rho <= 1
     rho = np.clip(rho, 0, 1)  # Limit to the unit circle
     theta = np.arctan2(Y, X)
     modes = np.zeros((N_MODES, N_ACTUATORS, N_ACTUATORS))
@@ -54,15 +55,15 @@ def create_modes():
         modes[i] = zernike(n, m, rho, theta)
         #if (i==9):
         #    breakpoint()
-    # Slave the outer actuator ring to half the adjacent inner-ring value.
-    modes[:, 0, 1:-1] = 0.5 * modes[:, 1, 1:-1]
-    modes[:, -1, 1:-1] = 0.5 * modes[:, -2, 1:-1]
-    modes[:, 1:-1, 0] = 0.5 * modes[:, 1:-1, 1]
-    modes[:, 1:-1, -1] = 0.5 * modes[:, 1:-1, -2]
-    modes[:, 0, 0] = 0.5 * modes[:, 1, 1]
-    modes[:, 0, -1] = 0.5 * modes[:, 1, -2]
-    modes[:, -1, 0] = 0.5 * modes[:, -2, 1]
-    modes[:, -1, -1] = 0.5 * modes[:, -2, -2]
+    # Slave outside-pupil actuators to half the nearest in-pupil value.
+    inside_points = np.argwhere(pupil)
+    outside_points = np.argwhere(~pupil)
+    distance_squared = np.sum(
+        (outside_points[:, None, :] - inside_points[None, :, :]) ** 2, axis=2
+    )
+    nearest = distance_squared == distance_squared.min(axis=1, keepdims=True)
+    weights = nearest / nearest.sum(axis=1, keepdims=True)
+    modes[:, ~pupil] = 0.5 * (modes[:, pupil] @ weights.T)
     return modes    
 
 if __name__ == "__main__":
