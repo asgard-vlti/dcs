@@ -19,6 +19,8 @@ import pyqtgraph as pg
 from PyQt5 import QtCore, QtWidgets, QtGui
 from xaosim.shmlib import shm
 
+from dcs.cmd_scripts.window_geometry import apply_startup_geometry
+
 Frame = np.ndarray
 
 
@@ -257,6 +259,7 @@ def main(argv=None):
         win.resize(875, 616)
     else:
         win.resize(1100, 250 * max(1, len(beams)))
+    apply_startup_geometry(win)
     win.show()
     return app.exec_()
 
