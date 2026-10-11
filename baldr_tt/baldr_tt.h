@@ -163,6 +163,7 @@ extern long unsigned int cnt;
 extern double *im_av, *im_plus, *im_minus;
 extern float *im_plus_sum, *im_minus_sum;
 extern std::mutex im_mutex;
+extern std::mutex dm_command_mutex;
 extern TTMet_save ttmet_save;
 
 // Main thread function for fringe tracking.
@@ -173,5 +174,4 @@ extern std::mutex control_u_mutex;
 Peak peak();
 void start_camera_client();
 void stop_camera_client();
-
 

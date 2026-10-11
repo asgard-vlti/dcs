@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <string>
+#include <algorithm>
 #define SCHED_PRIORITY 70
 // Commander struct definitions for json. This is in a separate file to keep the main code clean.
 #include "commander_structs.h"
@@ -27,6 +28,7 @@ IMAGE DM_low;
 IMAGE DM_high;
 IMAGE master_DM;
 IMAGE subarray;
+std::mutex dm_command_mutex;
 
 // Utility functions
 
@@ -160,7 +162,6 @@ void set_servo_mode(std::string mode) {
     int new_mode;
     if (mode == "off") {
         new_mode = SERVO_OFF;
-        update_DM_when_off = true;
     } else if (mode == "tt") {
         new_mode = SERVO_TT;
     } else if (mode == "ho") {
@@ -169,9 +170,10 @@ void set_servo_mode(std::string mode) {
         info("Servo mode not recognised");
         return;
     }
-    settings.mutex.lock();
+    std::lock_guard<std::mutex> dm_lock(dm_command_mutex);
+    std::lock_guard<std::mutex> settings_lock(settings.mutex);
     settings.s.servo_mode = new_mode;
-    settings.mutex.unlock();
+    if (new_mode == SERVO_OFF) update_DM_when_off = true;
     // Reset the control_u parameters !!! TODO
     info("Servo mode updated to %d", new_mode);
     return;
@@ -237,6 +239,7 @@ void set_pxy(int px_new, int py_new){
 }
 
 void set_tto(double x, double y){
+    std::lock_guard<std::mutex> dm_lock(dm_command_mutex);
     settings.mutex.lock();
     settings.s.ttxo = x;
     settings.s.ttyo = y;
@@ -245,10 +248,34 @@ void set_tto(double x, double y){
 }
 
 void set_focus_offset(double offset){
+    std::lock_guard<std::mutex> dm_lock(dm_command_mutex);
     settings.mutex.lock();
     settings.s.focus_offset = offset;
     settings.mutex.unlock();
     update_DM_when_off = true;
+}
+
+bool stop_and_clear_dm(){
+    std::lock_guard<std::mutex> dm_lock(dm_command_mutex);
+    {
+        std::lock_guard<std::mutex> settings_lock(settings.mutex);
+        settings.s.servo_mode = SERVO_OFF;
+        settings.s.ttxo = 0.0;
+        settings.s.ttyo = 0.0;
+        settings.s.focus_offset = 0.0;
+    }
+    update_DM_when_off = false;
+    control_u.tx = 0.0;
+    control_u.ty = 0.0;
+    control_a.mode_amplitudes.setZero();
+    control_u.DM.setZero();
+#ifndef SIMULATE
+    std::fill_n(DM_low.array.D, N_ACTUATORS, 0.0);
+    std::fill_n(DM_high.array.D, N_ACTUATORS, 0.0);
+    ImageStreamIO_sempost(&master_DM, 1);
+#endif
+    info("Stopped servo and cleared Baldr TT DM channels for beam %d", beam);
+    return true;
 }
 
 void set_coupling(double ttx_coupling, double tty_coupling){
@@ -367,8 +394,11 @@ ImAvgs poke_mode(int mode_ix, double amplitude){
     im_avgs.width = width;
 
     // Set the control_u DM command to be the poke of the given mode and amplitude.
-    control_a.mode_amplitudes.setZero();
-    control_a.mode_amplitudes(mode_ix) = amplitude;
+    {
+        std::lock_guard<std::mutex> dm_lock(dm_command_mutex);
+        control_a.mode_amplitudes.setZero();
+        control_a.mode_amplitudes(mode_ix) = amplitude;
+    }
     info("Poking mode %d with amplitude %f", mode_ix, amplitude);
 
     // Wait 10ms for DM to settle, then set the im_plus_sum 
@@ -405,6 +435,7 @@ COMMANDER_REGISTER(m)
     m.def("zero_tt", zero_tt, "Zero tip/tilt based on current image position");
     m.def("ttmet", get_ttmet, "Get the saved tip/tilt metrology", "last_cnt"_arg=0);
     m.def("poke", poke_mode, "Poke the DM with a given mode and amplitude", "mode_ix"_arg=0, "amplitude"_arg=0.1);
+    m.def("stop_clear_dm", stop_and_clear_dm, "Stop the TT servo and clear its two DM channels");
     m.def("recon", load_reconstructor, "Load a reconstructor from a fits file", "filename"_arg="recon.fits");
     m.def("set_coupling", set_coupling, "Set the tip/tilt coupling terms", "ttx_coupling"_arg=0.0, "tty_coupling"_arg=0.0);
     m.def("auto_coupling", auto_coupling, "Set the tip/tilt coupling terms based on observed tilt", "scale"_arg=1.0);
@@ -522,7 +553,10 @@ int main(int argc, char* argv[]) {
     printf("about to join servo thread\n");
 
     // join the servo thread
-    settings.s.servo_mode = SERVO_STOP;
+    {
+        std::lock_guard<std::mutex> dm_lock(dm_command_mutex);
+        settings.s.servo_mode = SERVO_STOP;
+    }
     servo_thread.join();
 
     stop_camera_client();

@@ -131,7 +131,11 @@ void servo_loop(){
     initialise_servo();
     cnt = subarray.md->cnt0;
     catch_up_with_sem(&subarray, 2);
-    while(settings.s.servo_mode != SERVO_STOP){
+    while (true) {
+        {
+            std::lock_guard<std::mutex> dm_lock(dm_command_mutex);
+            if (settings.s.servo_mode == SERVO_STOP) break;
+        }
         cnt_since_init++; //This should "never" wrap around, as a long int is big.
         // See if there was a semaphore signalled for the next frame to be ready in K1 and K2
         ImageStreamIO_semwait(&subarray, 2);
@@ -210,6 +214,7 @@ void servo_loop(){
             add_ty = 0.0;
         }
         rt_status.mutex.unlock();
+        std::unique_lock<std::mutex> dm_lock(dm_command_mutex);
         control_u.tx = (1-settings.s.ttl) * (control_u.tx - settings.s.ttxo) + add_tx;
         control_u.ty = (1-settings.s.ttl) * (control_u.ty - settings.s.ttyo) + add_ty;
 
@@ -234,10 +239,10 @@ void servo_loop(){
         }
 
         // Set the DM if we are in the appropriate mode. Add in the coupling terms to the tip/tilt.
-        if ((settings.s.servo_mode == SERVO_HO) || (settings.s.servo_mode == SERVO_TT)) 
-            set_dm_tilt_foc(control_u.tx + settings.s.ttx_coupling * settings.s.focus_amp * control_u.ho_sign / PIX_PER_TT, 
-            				control_u.ty + settings.s.tty_coupling * settings.s.focus_amp * control_u.ho_sign / PIX_PER_TT, 
-            				settings.s.focus_offset + settings.s.focus_amp * control_u.ho_sign);
+        if ((settings.s.servo_mode == SERVO_HO) || (settings.s.servo_mode == SERVO_TT))
+            set_dm_tilt_foc(control_u.tx + settings.s.ttx_coupling * settings.s.focus_amp * control_u.ho_sign / PIX_PER_TT,
+                control_u.ty + settings.s.tty_coupling * settings.s.focus_amp * control_u.ho_sign / PIX_PER_TT,
+                settings.s.focus_offset + settings.s.focus_amp * control_u.ho_sign);
         else if (update_DM_when_off) {
             set_dm_tilt_foc(settings.s.ttxo, settings.s.ttyo, settings.s.focus_offset);
             update_DM_when_off = false;
@@ -249,6 +254,7 @@ void servo_loop(){
         ttmet_save.ty[ttmet_save.cnt] = rt_status.s.ty;
         ttmet_save.tx[ttmet_save.cnt] = rt_status.s.tx;
         ttmet_save.cnt = (ttmet_save.cnt + 1) % N_TTMET;
+        dm_lock.unlock();
 
         // Accumulate the im_plus and im_minus images for the high-order modulation.
         // ho_ix=0 : last frame invalid.
@@ -308,17 +314,20 @@ void servo_loop(){
             im_mutex.unlock();
             // Here we compute the high-order modes based on norm_imsub, again with
             // a leaky integrator.
-            if (settings.s.servo_mode == SERVO_HO) {
-                control_a.mode_amplitudes = (1-settings.s.hol) * control_a.mode_amplitudes - settings.s.hog * control_u.recon * norm_imsub;
-            } 
+            {
+                std::lock_guard<std::mutex> dm_lock(dm_command_mutex);
+                if (settings.s.servo_mode == SERVO_HO) {
+                    control_a.mode_amplitudes = (1-settings.s.hol) * control_a.mode_amplitudes - settings.s.hog * control_u.recon * norm_imsub;
+                }
 
-            if (settings.s.servo_mode != SERVO_OFF){
-                // Matrix multiply the high-order modes by the amplitudes to get the DM shape.
-                control_u.DM = control_a.modes * control_a.mode_amplitudes;
-                // Update the DM image with the new high-order shape.
-                for (int i=0; i<N_ACTUATORS; i++) 
-                    DM_high.array.D[i] = control_u.DM(i);
-                ImageStreamIO_sempost(&master_DM, 1);
+                if (settings.s.servo_mode != SERVO_OFF){
+                    // Matrix multiply the high-order modes by the amplitudes to get the DM shape.
+                    control_u.DM = control_a.modes * control_a.mode_amplitudes;
+                    // Update the DM image with the new high-order shape.
+                    for (int i=0; i<N_ACTUATORS; i++)
+                        DM_high.array.D[i] = control_u.DM(i);
+                    ImageStreamIO_sempost(&master_DM, 1);
+                }
             }
         }
 

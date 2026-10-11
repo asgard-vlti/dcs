@@ -6,6 +6,9 @@ import argparse
 import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+import signal
+import sys
+import threading
 import numpy as np
 from astropy.io import fits
 from scipy.linalg import svd
@@ -32,6 +35,37 @@ _N_ITER = 1
 _OUTPUT_ROOT = DEFAULT_OUTPUT_ROOT
 _RUN_TIMESTAMP = None
 args=None
+_CANCEL = threading.Event()
+
+
+class ReconCancelled(Exception):
+    pass
+
+
+def _request_cancel(signum, _frame):
+    if not _CANCEL.is_set():
+        _CANCEL.set()
+        raise ReconCancelled(f"Received signal {signum}")
+
+
+def _check_cancelled():
+    if _CANCEL.is_set():
+        raise ReconCancelled("Reconstructor stopped")
+
+
+def _wait_for_settle(seconds):
+    if _CANCEL.wait(seconds):
+        _check_cancelled()
+
+
+def stop_and_clear_beam(beam):
+    socket = get_zmq_socket(beam, host=DEFAULT_HOST)
+    try:
+        reply = socket.send_payload("stop_clear_dm", is_str=True, decode_ascii=False)
+        if reply is not True:
+            raise RuntimeError(f"Beam {beam} did not acknowledge stop_clear_dm: {reply}")
+    finally:
+        socket.s.close(0)
 
 
 def get_zmq_socket(beam, host=DEFAULT_HOST):
@@ -44,7 +78,9 @@ def get_zmq_socket(beam, host=DEFAULT_HOST):
 
 
 def get_ims(socket, cmd):
+    _check_cancelled()
     resp = socket.send_payload(cmd, is_str=True, decode_ascii=False)
+    _check_cancelled()
     if not isinstance(resp, dict):
         raise RuntimeError(f"No valid response for command '{cmd}': {resp}")
 
@@ -74,12 +110,12 @@ def run_fpdr_pokes_single(n_iter, socket=None, amp=None, n_modes=None, settle_se
     for _ in range(n_iter):
         iter_ims = []
         _ = get_ims(socket, "poke 0,0")
-        time.sleep(settle_sec)
+        _wait_for_settle(settle_sec)
         for mode in range(n_modes):
             iter_ims.append(get_ims(socket, f"poke {mode},{amp}"))
-            time.sleep(settle_sec)
+            _wait_for_settle(settle_sec)
             iter_ims.append(get_ims(socket, f"poke {mode},{-amp}"))
-            time.sleep(settle_sec)
+            _wait_for_settle(settle_sec)
         iter_ims.append(get_ims(socket, "poke 0,0"))
         all_iters.append(np.array(iter_ims, dtype=np.float32))
 
@@ -87,7 +123,27 @@ def run_fpdr_pokes_single(n_iter, socket=None, amp=None, n_modes=None, settle_se
 
 
 def run_pokes_and_save(beam):
+    _check_cancelled()
     socket = get_zmq_socket(beam, host=DEFAULT_HOST)
+    completed = False
+    try:
+        result = _run_pokes_and_save(beam, socket)
+        completed = True
+        return result
+    finally:
+        try:
+            if not completed:
+                try:
+                    stop_and_clear_beam(beam)
+                    print(f"Beam {beam} servo stopped and DM channels cleared", file=sys.stderr)
+                except Exception as cleanup_error:
+                    print(f"Beam {beam} cleanup failed: {cleanup_error}", file=sys.stderr)
+                    raise RuntimeError(f"Beam {beam} cleanup failed") from cleanup_error
+        finally:
+            socket.s.close(0)
+
+
+def _run_pokes_and_save(beam, socket):
     ims = run_fpdr_pokes_single(
         _N_ITER,
         socket=socket,
@@ -167,22 +223,37 @@ def main():
     _SETTLE_SEC = args.settle_sec
     _N_ITER = args.n_iter
     _RUN_TIMESTAMP = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
-
-    if args.beam == -1:
-        beams = sorted(BEAM_TO_PORT)
-        with ThreadPoolExecutor(max_workers=len(beams)) as executor:
-            futures = {
-                executor.submit(run_pokes_and_save, beam_id): beam_id
-                for beam_id in beams
-            }
-            for future in as_completed(futures):
-                beam_id = futures[future]
-                try:
-                    future.result()
-                except (RuntimeError, ValueError, OSError) as exc:
-                    print(f"Beam {beam_id} failed: {exc}")
-    else:
+    _CANCEL.clear()
+    previous_sigterm = signal.signal(signal.SIGTERM, _request_cancel)
+    previous_sigint = signal.signal(signal.SIGINT, _request_cancel)
+    try:
+        if args.beam == -1:
+            beams = sorted(BEAM_TO_PORT)
+            failures = []
+            with ThreadPoolExecutor(max_workers=len(beams)) as executor:
+                futures = {
+                    executor.submit(run_pokes_and_save, beam_id): beam_id
+                    for beam_id in beams
+                }
+                for future in as_completed(futures):
+                    beam_id = futures[future]
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        failures.append(beam_id)
+                        print(f"Beam {beam_id} failed: {exc}", file=sys.stderr)
+            return 1 if failures else 0
         run_pokes_and_save(args.beam)
+        return 0
+    except ReconCancelled as exc:
+        print(f"Reconstructor stopped: {exc}", file=sys.stderr)
+        return 143
+    except Exception as exc:
+        print(f"Reconstructor failed: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)
+        signal.signal(signal.SIGINT, previous_sigint)
         
 if __name__ == "__main__":
-	main()
+	sys.exit(main())
