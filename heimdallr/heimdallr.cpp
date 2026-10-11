@@ -882,7 +882,7 @@ int main(int argc, char* argv[]) {
     settings.s.gd_threshold = 8.0;
     settings.s.pd_threshold = 4.5;
     settings.s.gd_search_reset = 6.0;
-    settings.s.kp = 0.5;
+    settings.s.kp = 0.05;
     settings.s.gd_gain = settings.s.kp / INIT_N_GD_BOXCAR;
     settings.s.offload_gd_gain = 0.1;
     settings.s.servo_mode=SERVO_OFF;
