@@ -379,6 +379,7 @@ void DdspcServo::enter(const Parameters& params) {
     last_update_ns_ = 0;
     active_ = false;
     exploration_frames_ = 0;
+    is_ddspc_exploring_ = params.n_exploration > 0;
     frozen_ = false;
     freeze_reason_ = nullptr;
     freeze_frame_ = 0;
@@ -397,8 +398,16 @@ void DdspcServo::invalidate() {
         }
         std::visit([](auto& controller) { controller.reset(); }, *controller_);
         exploration_frames_ = 0;
+        is_ddspc_exploring_ = std::visit([](const auto& controller) {
+            return controller.parameters().n_exploration > 0;
+        }, *controller_);
     }
     active_ = false;
+}
+
+void DdspcServo::leave() {
+    invalidate();
+    is_ddspc_exploring_ = false;
 }
 
 void DdspcServo::capture(ModelSnapshot& snapshot) const {
@@ -449,6 +458,7 @@ std::unique_ptr<ModelSnapshot> DdspcServo::snapshot_for_off() {
     active_ = false;
     std::visit([](auto& controller) { controller.reset(); }, *controller_);
     exploration_frames_ = 0;
+    is_ddspc_exploring_ = false;
     return std::move(last_trained_);
 }
 
@@ -495,6 +505,9 @@ void DdspcServo::update(const Telescopes& applied_dm, double wavelength,
                               .count();
     }
     ++exploration_frames_;
+    is_ddspc_exploring_ = !frozen_ && std::visit([&](const auto& controller) {
+        return exploration_frames_ < controller.parameters().n_exploration;
+    }, *controller_);
     const bool should_freeze = std::visit([&](const auto& controller) {
         return !controller.parameters().continue_learning &&
                exploration_frames_ >= controller.parameters().n_exploration;
@@ -507,6 +520,7 @@ void DdspcServo::update(const Telescopes& applied_dm, double wavelength,
 void DdspcServo::freeze(const char* reason) {
     if (frozen_) return;
     frozen_ = true;
+    is_ddspc_exploring_ = false;
     freeze_reason_ = reason;
     freeze_frame_ = exploration_frames_;
     freeze_time_ns_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -517,6 +531,8 @@ void DdspcServo::freeze(const char* reason) {
 void DdspcServo::freeze_manual() { freeze("manual"); }
 
 bool DdspcServo::frozen() const { return frozen_; }
+
+bool DdspcServo::is_ddspc_exploring() const { return is_ddspc_exploring_; }
 
 const char* DdspcServo::freeze_reason() const { return freeze_reason_; }
 

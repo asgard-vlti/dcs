@@ -444,10 +444,10 @@ void fringe_tracker(){
                         }
                     } catch (const std::exception& e) {
                         error("DDSPC snapshot capture failed: %s", e.what());
-                        ddspc.invalidate();
+                        ddspc.leave();
                     }
                 } else {
-                    ddspc.invalidate();
+                    ddspc.leave();
                 }
                 std::lock_guard<std::mutex> lock(settings.mutex);
                 settings.ddspc_active_valid = false;
@@ -935,6 +935,8 @@ void fringe_tracker(){
             heimdallr_ft::Sample sample;
             sample.cnt = ft_cnt % 10000;
             sample.servo_mode = servo_mode;
+            sample.is_ddspc_exploring =
+                servo_mode == SERVO_DDSPC && ddspc.is_ddspc_exploring() ? 1 : 0;
             sample.time_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                  frame_time.time_since_epoch())
                                  .count();

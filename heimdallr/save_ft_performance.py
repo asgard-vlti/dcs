@@ -93,8 +93,9 @@ class FTPerformanceLogger:
         if self.file.tell() == 0:
             self.file.write(commit_header())
             self.file.write(
-                "# timestamp gd_snr pd_snr gd_bl pd_tel gd_tel dm_piston cnt seq servo_mode "
-                "(measurements: 3 decimal places; counters and mode: integers)\n"
+                "# timestamp gd_snr pd_snr gd_bl pd_tel gd_tel dm_piston cnt seq "
+                "servo_mode is_ddspc_exploring "
+                "(measurements: 3 decimal places; counters, mode, and exploration flag: integers)\n"
             )
             self.file.flush()
 
@@ -168,7 +169,7 @@ class FTPerformanceLogger:
                 )
             lines.append(
                 f"{timestamp} {' '.join(values)} {row['cnt']} {seq} "
-                f"{row['servo_mode']}\n"
+                f"{row['servo_mode']} {row['is_ddspc_exploring']}\n"
             )
             last_seq = seq
             servo_mode = row["servo_mode"]

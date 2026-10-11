@@ -203,6 +203,7 @@ class DdspcServo {
     void enter(const Parameters& params = Parameters{});
 
     void invalidate();
+    void leave();
 
     Telescopes propose(const Telescopes& phase_delay_waves,
                        const Telescopes& current_dm, double wavelength,
@@ -214,6 +215,7 @@ class DdspcServo {
 
     void freeze_manual();
     bool frozen() const;
+    bool is_ddspc_exploring() const;
     const char* freeze_reason() const;
 
     int exploration_frames() const;
@@ -236,6 +238,7 @@ class DdspcServo {
     std::int64_t last_update_ns_ = 0;
     double common_mode_ = 0.0;
     int exploration_frames_ = 0;
+    bool is_ddspc_exploring_ = false;
     bool active_ = false;
     bool frozen_ = false;
     const char* freeze_reason_ = nullptr;

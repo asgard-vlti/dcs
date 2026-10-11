@@ -214,12 +214,14 @@ int main() {
     DdspcServo servo;
     Telescopes dm = Telescopes::Zero();
     servo.enter();
+    check(servo.is_ddspc_exploring(), "DDSPC entry did not start exploration");
     advance(servo, dm, 60);
     const auto expected_factor = servo.controller().rls().factor();
     const auto expected_weights = servo.controller().rls().weights().eval();
     const auto expected_inverse = servo.controller().inverse().eval();
     const auto expected_predictive = servo.controller().predictive().eval();
     auto active = servo.snapshot_for_off();
+    check(!servo.is_ddspc_exploring(), "Leaving DDSPC for off kept exploration on");
     check(active->trained && std::string(active->source) == "active",
           "Active trained model was not selected");
     check(active->iterations == 60, "Wrong model update count");
@@ -270,24 +272,34 @@ int main() {
     DdspcServo interrupted;
     Telescopes interrupted_dm = Telescopes::Zero();
     interrupted.enter(freeze_params);
+    check(interrupted.is_ddspc_exploring(),
+          "Exploration did not start on DDSPC entry");
     advance(interrupted, interrupted_dm, 49);
+    check(interrupted.is_ddspc_exploring(),
+          "Exploration stopped before the frame limit");
     check(interrupted.controller().rls_updates() > 0,
           "Learning interruption test did not train a model");
     check(interrupted.regularization() < freeze_params.reg_start,
           "Learning interruption test did not advance regularization");
     interrupted.invalidate();
+    check(interrupted.is_ddspc_exploring(),
+          "Fit reset before completion stopped exploration");
     check(!interrupted.frozen() && interrupted.exploration_frames() == 0 &&
               interrupted.controller().iterations() == 0 &&
               interrupted.controller().rls_updates() == 0 &&
               interrupted.regularization() == freeze_params.reg_start,
           "Fit interruption did not reset exploration and regularization");
     advance(interrupted, interrupted_dm, 1);
+    check(interrupted.is_ddspc_exploring(),
+          "Exploration stopped after only one frame of the reset fit");
     check(!interrupted.frozen() && interrupted.exploration_frames() == 1,
           "Learning froze before the new exploration period completed");
     advance(interrupted, interrupted_dm, 48);
     check(!interrupted.frozen() && interrupted.exploration_frames() == 49,
           "Learning froze before the new exploration boundary");
     advance(interrupted, interrupted_dm, 1);
+    check(!interrupted.is_ddspc_exploring(),
+          "Exploration remained on after the final frame");
     check(interrupted.frozen() && interrupted.exploration_frames() == 50 &&
               interrupted.controller().rls_updates() == updates_after_fifty,
           "Learning did not freeze after 50 new valid frames");
@@ -336,7 +348,11 @@ int main() {
     DdspcServo continuing;
     Telescopes continuing_dm = Telescopes::Zero();
     continuing.enter(continuing_params);
+    check(continuing.is_ddspc_exploring(),
+          "Continuing controller did not start exploration");
     advance(continuing, continuing_dm, 50);
+    check(!continuing.is_ddspc_exploring(),
+          "Exploration remained on after continuing learning began");
     check(!continuing.frozen() &&
               continuing.controller().rls_updates() == updates_after_fifty,
           "Default controller stopped learning after exploration");
@@ -347,9 +363,24 @@ int main() {
               continuing.controller().rls_updates() == updates_after_fifty,
           "Manual freeze after exploration did not stop learning");
 
+    DdspcServo reset_after_exploration;
+    Telescopes reset_dm = Telescopes::Zero();
+    reset_after_exploration.enter(continuing_params);
+    advance(reset_after_exploration, reset_dm, 2);
+    check(!reset_after_exploration.is_ddspc_exploring(),
+          "Exploration remained on after continuing learning began");
+    reset_after_exploration.invalidate();
+    check(reset_after_exploration.is_ddspc_exploring(),
+          "Fit reset after exploration did not restart it");
+    advance(reset_after_exploration, reset_dm, 2);
+    check(!reset_after_exploration.is_ddspc_exploring(),
+          "Restarted exploration did not finish");
+
     DdspcServo manual;
     manual.enter();
     manual.freeze_manual();
+    check(!manual.is_ddspc_exploring(),
+          "Manual freeze did not end exploration");
     manual.freeze_manual();
     const Telescopes no_dither = manual.propose(
         Telescopes::Zero(), Telescopes::Zero(), 2.1, 6.0, 1.0,
@@ -372,8 +403,20 @@ int main() {
     freeze_params.n_exploration = 0;
     DdspcServo immediate;
     immediate.enter(freeze_params);
+    check(!immediate.is_ddspc_exploring(),
+          "Zero exploration frames started exploration");
     check(immediate.frozen() && immediate.controller().rls_updates() == 0,
           "Zero exploration did not freeze immediately");
+
+    DdspcServo other_mode;
+    Telescopes other_mode_dm = Telescopes::Zero();
+    other_mode.enter();
+    advance(other_mode, other_mode_dm, 2);
+    check(other_mode.is_ddspc_exploring(),
+          "Active DDSPC run stopped exploration early");
+    other_mode.leave();
+    check(!other_mode.is_ddspc_exploring(),
+          "Leaving DDSPC for another active mode kept exploration on");
 
     active->weights(0, 0) = std::numeric_limits<double>::quiet_NaN();
     SnapshotJob first{std::move(active), 1791200000000000000, 7,

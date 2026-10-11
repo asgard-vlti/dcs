@@ -6,11 +6,12 @@ from pathlib import Path
 from heimdallr.save_ft_performance import FTPerformanceLogger, wait_for_telemetry
 
 
-def row(seq, mode=1):
+def row(seq, mode=1, exploring=0):
     return {
         "seq": seq,
         "cnt": seq % 10000,
         "servo_mode": mode,
+        "is_ddspc_exploring": exploring,
         "time_ns": 1_600_000_000_000_000_000 + 250_000 * seq,
         "gd_snr": [1.0] * 6,
         "pd_snr": [2.0] * 6,
@@ -80,9 +81,41 @@ class FTPerformanceTelemetryTest(unittest.TestCase):
                 if not line.startswith("#")
             ]
             self.assertEqual(len(lines), 2)
-            self.assertEqual([line.split()[-2] for line in lines], ["1", "2"])
-            self.assertEqual(len(lines[0].split()), 34)
+            self.assertEqual([line.split()[-3] for line in lines], ["1", "2"])
+            self.assertEqual(len(lines[0].split()), 35)
             self.assertEqual(lines[0].split()[0], "1600000000.0003")
+
+    def test_exploration_flag_is_written_from_each_server_row(self):
+        with tempfile.TemporaryDirectory() as temp:
+            logger, _, path = make_logger(
+                Path(temp),
+                [
+                    reply(
+                        1,
+                        6,
+                        [
+                            row(1, mode=5, exploring=1),
+                            row(2, mode=5, exploring=0),
+                            row(3, mode=0, exploring=0),
+                            row(4, mode=1, exploring=0),
+                            row(5, mode=3, exploring=0),
+                            row(6, mode=4, exploring=0),
+                        ],
+                    )
+                ],
+            )
+            try:
+                logger.poll_once()
+            finally:
+                logger.close()
+            lines = path.read_text().splitlines()
+            header = next(line for line in lines if line.startswith("# timestamp"))
+            self.assertIn("servo_mode is_ddspc_exploring", header)
+            values = [line.split()[-2:] for line in lines if not line.startswith("#")]
+            self.assertEqual(
+                values,
+                [["5", "1"], ["5", "0"], ["0", "0"], ["1", "0"], ["3", "0"], ["4", "0"]],
+            )
 
     def test_loss_restart_and_mode_from_rows(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -124,7 +157,7 @@ class FTPerformanceTelemetryTest(unittest.TestCase):
             self.assertNotIn("# telemetry_loss", content)
             self.assertEqual(
                 [
-                    int(line.split()[-2])
+                    int(line.split()[-3])
                     for line in content.splitlines()
                     if not line.startswith("#")
                 ],

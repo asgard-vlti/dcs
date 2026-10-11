@@ -22,6 +22,7 @@ struct Sample {
     std::uint32_t seq = 0;
     std::uint16_t cnt = 0;
     int servo_mode = kServoOff;
+    int is_ddspc_exploring = 0;
     std::int64_t time_ns = 0;
     std::array<double, 6> gd_snr{};
     std::array<double, 6> pd_snr{};

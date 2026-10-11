@@ -20,6 +20,7 @@ int main() {
         assert(transition.should_capture(1, frame_time));
         Sample row;
         row.servo_mode = 1;
+        row.is_ddspc_exploring = 0;
         row.cnt = i + 2;
         transition.publish(row);
     }
@@ -37,6 +38,24 @@ int main() {
         }
     }
     assert(received == 410);
+    Ring exploration(20);
+    Sample exploring;
+    exploring.servo_mode = 5;
+    exploring.is_ddspc_exploring = 1;
+    exploration.publish(exploring);
+    Sample completed = exploring;
+    completed.is_ddspc_exploring = 0;
+    exploration.publish(completed);
+    Sample other_mode;
+    other_mode.servo_mode = 1;
+    exploration.publish(other_mode);
+    exploration.publish(Sample{});
+    const auto exploration_rows = exploration.read_since(20, 0, 128).rows;
+    assert(exploration_rows.size() == 4);
+    assert(exploration_rows[0].is_ddspc_exploring == 1);
+    assert(exploration_rows[1].is_ddspc_exploring == 0);
+    assert(exploration_rows[2].is_ddspc_exploring == 0);
+    assert(exploration_rows[3].is_ddspc_exploring == 0);
     assert(transition.should_capture(heimdallr_ft::kServoOff,
                                      start + std::chrono::milliseconds(103)));
     assert(!transition.should_capture(heimdallr_ft::kServoOff,
