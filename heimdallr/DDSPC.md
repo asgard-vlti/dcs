@@ -7,14 +7,14 @@ commands. Its QRD RLS model defaults to 30 history frames and three future
 frames.
 
 The packaged configuration explores for 5000 valid DDSPC frames after each mode
-entry. A camera frame gap, lost fringe lock, disconnected phase measurements, an
-inactive beam, or a test pattern selects the existing Lacour command path and
-resets a model that is still learning. These interruptions do not restart
-exploration. A frozen model retains its fit across a camera gap, but falls back
-to Lacour for that frame. After an active learning fit resets, the fringe tracker
-immediately zeros all four DM piston commands and holds them at zero for the
-next five valid paired K1/K2 frames. Bad, missing,
-or gapped pairs do not shorten this hold. Delay-line search and offload keep
+entry or fit reset. A camera frame gap, lost fringe lock, disconnected phase
+measurements, an inactive beam, or a test pattern selects the existing Lacour
+command path and resets a model that is still learning. These interruptions
+restart exploration from frame zero. A frozen model retains its fit across a
+camera gap, but falls back to Lacour for that frame. After an active learning fit
+resets, the fringe tracker immediately zeros all four DM piston commands and
+holds them at zero for the next five valid paired K1/K2 frames. Bad, missing, or
+gapped pairs do not shorten this hold. Delay-line search and offload keep
 running. The model resumes from the current DM command when the hold ends and
 four-beam tracking returns. A frozen model does not reset or start a piston hold.
 

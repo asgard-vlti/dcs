@@ -396,6 +396,7 @@ void DdspcServo::invalidate() {
             last_trained_valid_ = true;
         }
         std::visit([](auto& controller) { controller.reset(); }, *controller_);
+        exploration_frames_ = 0;
     }
     active_ = false;
 }
@@ -447,6 +448,7 @@ std::unique_ptr<ModelSnapshot> DdspcServo::snapshot_for_off() {
     last_trained_valid_ = false;
     active_ = false;
     std::visit([](auto& controller) { controller.reset(); }, *controller_);
+    exploration_frames_ = 0;
     return std::move(last_trained_);
 }
 

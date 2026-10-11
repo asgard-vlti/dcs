@@ -223,6 +223,9 @@ int main() {
     check(active->trained && std::string(active->source) == "active",
           "Active trained model was not selected");
     check(active->iterations == 60, "Wrong model update count");
+    check(active->exploration_frames == 60 &&
+              servo.exploration_frames() == 0 && servo.iterations() == 0,
+          "Off snapshot did not reset both frame counts after capture");
     check(active->rls_updates == 60 - Controller::TrainingDelay &&
               !active->frozen,
           "Active model learning count is wrong");
@@ -270,14 +273,24 @@ int main() {
     advance(interrupted, interrupted_dm, 49);
     check(interrupted.controller().rls_updates() > 0,
           "Learning interruption test did not train a model");
+    check(interrupted.regularization() < freeze_params.reg_start,
+          "Learning interruption test did not advance regularization");
     interrupted.invalidate();
-    check(!interrupted.frozen() && interrupted.exploration_frames() == 49 &&
+    check(!interrupted.frozen() && interrupted.exploration_frames() == 0 &&
               interrupted.controller().iterations() == 0 &&
-              interrupted.controller().rls_updates() == 0,
-          "Fit interruption changed the exploration count");
+              interrupted.controller().rls_updates() == 0 &&
+              interrupted.regularization() == freeze_params.reg_start,
+          "Fit interruption did not reset exploration and regularization");
     advance(interrupted, interrupted_dm, 1);
-    check(interrupted.frozen() && interrupted.exploration_frames() == 50,
-          "Learning did not freeze at the original exploration boundary");
+    check(!interrupted.frozen() && interrupted.exploration_frames() == 1,
+          "Learning froze before the new exploration period completed");
+    advance(interrupted, interrupted_dm, 48);
+    check(!interrupted.frozen() && interrupted.exploration_frames() == 49,
+          "Learning froze before the new exploration boundary");
+    advance(interrupted, interrupted_dm, 1);
+    check(interrupted.frozen() && interrupted.exploration_frames() == 50 &&
+              interrupted.controller().rls_updates() == updates_after_fifty,
+          "Learning did not freeze after 50 new valid frames");
     DdspcServo automatic;
     Telescopes automatic_dm = Telescopes::Zero();
     automatic.enter(freeze_params);
@@ -298,6 +311,9 @@ int main() {
               automatic.controller().iterations() == 70,
           "Frozen control law changed after exploration");
     automatic.invalidate();
+    check(automatic.exploration_frames() == 70 &&
+              automatic.controller().regularization() == frozen_regularization,
+          "Frozen interruption reset exploration or regularization");
     advance(automatic, automatic_dm, 3);
     check(automatic.controller().rls().factor() == frozen_factor &&
               automatic.controller().predictive() == frozen_predictive &&
