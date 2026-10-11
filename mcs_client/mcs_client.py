@@ -710,6 +710,9 @@ class Watchdog:
         self.watchdog_fast_timeout_ms = 80
         self.watchdog_fast_retries = 2
         self.watchdog_retry_delay_s = 0.02
+        self.dm_save_client = ZmqReq(
+            "tcp://mimir:6666", timeout_ms=self.watchdog_fast_timeout_ms
+        )
         # TODO: use file of all the endpoints everywhere
 
         # checkports are processes that open a zmq port but don't have a status command
@@ -888,7 +891,12 @@ class Watchdog:
         return wd_status
 
     def collect_disk_status(self):
-        return self.disk_monitor.collect()
+        save_status = self.dm_save_client.send_payload(
+            "get_save_status", is_str=True
+        )
+        if save_status is None:
+            self.dm_save_client.reconnect()
+        return self.disk_monitor.collect(dm_save_status=save_status)
 
 
 class MCSServer:

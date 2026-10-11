@@ -3,8 +3,15 @@ import os
 import pathlib
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 
-from mcs_client.disk_status import CRED1_STREAMS, CRED1_WRITE_LIMIT_S, DiskSavingMonitor
+from mcs_client.disk_status import (
+    CRED1_STREAMS,
+    CRED1_WRITE_LIMIT_S,
+    DM_STREAM,
+    DM_WRITE_LIMIT_S,
+    DiskSavingMonitor,
+)
 from mcs_client.mcs_client import MCSServer, Watchdog
 
 
@@ -37,6 +44,87 @@ class DiskSavingMonitorTests(unittest.TestCase):
         path.write_text(header + ("1700000000.0 1.0\n" if data else ""))
         os.utime(path, (self.now - age, self.now - age))
         return path
+
+    def _dm_status(self, mode=1, started=None):
+        return {
+            "mode": mode,
+            "started_unix_s": self.now - 60 if started is None else started,
+        }
+
+    def _write_dm(self, age=0.5, data=b"FITS data"):
+        written = datetime.datetime.fromtimestamp(
+            self.now - age, datetime.timezone.utc
+        )
+        directory = self.root / written.strftime("%Y%m%d")
+        directory.mkdir(exist_ok=True)
+        path = directory / f"dms_T{written:%H:%M:%S}.fits"
+        path.write_bytes(data)
+        os.utime(path, (self.now - age, self.now - age))
+        return path
+
+    def test_dm_requires_nonempty_file_from_current_save_session(self):
+        save_status = self._dm_status()
+        check = self.monitor.collect(save_status)["dm"]["checks"][DM_STREAM]
+        self.assertEqual(check["state"], "stale")
+        self.assertIn("no nonempty DM FITS", check["detail"])
+
+        path = self._write_dm(data=b"")
+        self.assertEqual(self.monitor.collect(save_status)["dm"]["state"], "red")
+        path.write_bytes(b"FITS data")
+        os.utime(path, (self.now - 0.5, self.now - 0.5))
+        self.assertEqual(self.monitor.collect(save_status)["dm"]["state"], "green")
+        self.assertEqual(
+            self.monitor.collect(self._dm_status(mode=0))["dm"]["state"], "red"
+        )
+
+        self.now += DM_WRITE_LIMIT_S
+        self.assertEqual(self.monitor.collect(save_status)["dm"]["state"], "red")
+        self.assertEqual(
+            self.monitor.collect(self._dm_status(mode=0))["dm"]["checks"][DM_STREAM][
+                "detail"
+            ],
+            "save mode off",
+        )
+
+        self.now -= DM_WRITE_LIMIT_S
+        self.assertEqual(
+            self.monitor.collect(self._dm_status(started=self.now - 0.1))["dm"][
+                "state"
+            ],
+            "red",
+        )
+
+    def test_dm_previous_utc_day_and_unavailable_mode(self):
+        midnight = datetime.datetime(2026, 10, 6, tzinfo=datetime.timezone.utc)
+        self.now = midnight.timestamp() + 5
+        self._write_dm(age=8)
+        self.assertEqual(
+            self.monitor.collect(self._dm_status(started=self.now - 20))["dm"][
+                "state"
+            ],
+            "green",
+        )
+        self.assertEqual(
+            self.monitor.collect(self._dm_status(started=self.now - 3))["dm"][
+                "state"
+            ],
+            "red",
+        )
+        self.assertIsNone(self.monitor.collect()["dm"]["mode"])
+        self.assertIsNone(self.monitor.collect({"mode": 1})["dm"]["mode"])
+
+    def test_dm_new_empty_file_does_not_hide_recent_complete_file(self):
+        self._write_dm(age=3.0)
+        self.assertEqual(self.monitor.collect(self._dm_status())["dm"]["state"], "green")
+        self._write_dm(age=0.5, data=b"")
+        self.assertEqual(self.monitor.collect(self._dm_status())["dm"]["state"], "green")
+
+    def test_dm_disk_error_cannot_be_verified(self):
+        self._write_dm()
+        with patch("mcs_client.disk_status.os.scandir", side_effect=PermissionError("denied")):
+            group = self.monitor._dm_group(self.now, self._dm_status())
+        self.assertIsNone(group["mode"])
+        self.assertIn("denied", group["detail"])
 
     def test_all_fresh_and_partial_tt(self):
         self.ps_output = "\n".join(
@@ -217,12 +305,25 @@ class DiskSavingMonitorTests(unittest.TestCase):
         self.assertEqual(server.z.payload, {"cred1": "ok"})
         self.assertEqual(server.data, {})
 
-    def test_disk_status_does_not_query_camera(self):
+    def test_disk_status_queries_dm_save_mode(self):
         watchdog = Watchdog.__new__(Watchdog)
-        watchdog.disk_monitor = type(
-            "FakeMonitor", (), {"collect": lambda self: {"cred1": "files"}}
-        )()
-        self.assertEqual(watchdog.collect_disk_status(), {"cred1": "files"})
+        watchdog.disk_monitor = Mock()
+        watchdog.disk_monitor.collect.return_value = {"dm": "files"}
+        watchdog.dm_save_client = Mock()
+        save_status = self._dm_status()
+        watchdog.dm_save_client.send_payload.return_value = save_status
+        self.assertEqual(watchdog.collect_disk_status(), {"dm": "files"})
+        watchdog.disk_monitor.collect.assert_called_once_with(
+            dm_save_status=save_status
+        )
+        watchdog.dm_save_client.send_payload.assert_called_once_with(
+            "get_save_status", is_str=True
+        )
+
+        watchdog.dm_save_client.send_payload.return_value = None
+        watchdog.collect_disk_status()
+        watchdog.dm_save_client.reconnect.assert_called_once_with()
+        watchdog.disk_monitor.collect.assert_called_with(dm_save_status=None)
 
     def test_log_from_previous_utc_day_remains_visible(self):
         midnight = datetime.datetime(2026, 10, 6, tzinfo=datetime.timezone.utc)

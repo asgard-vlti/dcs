@@ -1,9 +1,11 @@
 """Check telemetry writes on mimir without reading /data from wag."""
 
 import datetime
+import heapq
 import math
 import os
 import pathlib
+import re
 import shlex
 import subprocess
 import time
@@ -39,6 +41,10 @@ CRED1_STREAMS = tuple(f"baldr{beam}" for beam in range(1, 5)) + (
     "hei_k2",
 )
 CRED1_WRITE_LIMIT_S = 10.0
+DM_STREAM = "DM commands"
+DM_WRITE_LIMIT_S = 10.0
+DM_FILENAME = re.compile(r"dms_T\d{2}:\d{2}:\d{2}\.fits\Z")
+DM_RECENT_FILE_CANDIDATES = 16
 
 
 def _check(last_saved, limit_s, now, detail=""):
@@ -76,6 +82,7 @@ class DiskSavingMonitor:
         self.clock = clock or time.time
         self._file_cache = {}
         self._cred1_cache = {}
+        self._dm_cache = {}
 
     @staticmethod
     def _process_list():
@@ -265,7 +272,86 @@ class DiskSavingMonitor:
         }
         return _group(checks)
 
-    def collect(self):
+    def _dm_file_time(self, now, started):
+        today = datetime.datetime.fromtimestamp(now, datetime.timezone.utc).date()
+        latest = None
+        for day in (today - datetime.timedelta(days=1), today):
+            directory = self.data_root / day.strftime("%Y%m%d")
+            try:
+                directory_mtime = directory.stat().st_mtime_ns
+            except FileNotFoundError:
+                self._dm_cache.pop(directory, None)
+                continue
+
+            cached = self._dm_cache.get(directory)
+            if cached is None or cached["mtime"] != directory_mtime:
+                with os.scandir(directory) as entries:
+                    names = heapq.nlargest(
+                        DM_RECENT_FILE_CANDIDATES,
+                        (entry.name for entry in entries if DM_FILENAME.fullmatch(entry.name)),
+                    )
+                cached = {
+                    "mtime": directory_mtime,
+                    "paths": [directory / name for name in names],
+                }
+                self._dm_cache[directory] = cached
+
+            for path in cached["paths"]:
+                try:
+                    stat = path.stat()
+                except FileNotFoundError:
+                    self._dm_cache.pop(directory, None)
+                    continue
+                if stat.st_size > 0 and started <= stat.st_mtime <= now + 1:
+                    latest = max(latest, stat.st_mtime) if latest is not None else stat.st_mtime
+        return latest
+
+    def _dm_group(self, now, save_status):
+        mode = save_status.get("mode") if isinstance(save_status, dict) else None
+        started = (
+            save_status.get("started_unix_s")
+            if isinstance(save_status, dict)
+            else None
+        )
+        if type(mode) is not int or mode not in (0, 1) or (
+            mode == 1
+            and (
+                not isinstance(started, (int, float))
+                or not math.isfinite(started)
+                or started <= 0
+                or started > now + 1
+            )
+        ):
+            detail = "save mode unavailable"
+            return {
+                "mode": None,
+                "detail": detail,
+                **_group({DM_STREAM: _check(None, DM_WRITE_LIMIT_S, now, detail)}),
+            }
+        if mode == 0:
+            return {
+                "mode": 0,
+                **_group(
+                    {DM_STREAM: _check(None, DM_WRITE_LIMIT_S, now, "save mode off")}
+                ),
+            }
+        try:
+            saved = self._dm_file_time(now, started)
+        except OSError as error:
+            return {
+                "mode": None,
+                "detail": str(error),
+                **_group(
+                    {DM_STREAM: _check(None, DM_WRITE_LIMIT_S, now, str(error))}
+                ),
+            }
+        detail = "" if saved is not None else "no nonempty DM FITS file since save 1"
+        return {
+            "mode": 1,
+            **_group({DM_STREAM: _check(saved, DM_WRITE_LIMIT_S, now, detail)}),
+        }
+
+    def collect(self, dm_save_status=None):
         """Return source summaries and per-stream write ages for the ZMQ reply."""
         now = self.clock()
         try:
@@ -274,6 +360,7 @@ class DiskSavingMonitor:
             writers = {}
         return {
             "cred1": self._cred1_group(now),
+            "dm": self._dm_group(now, dm_save_status),
             **{
                 source: self._log_group(source, writers.get(source), now)
                 for source in SOURCES

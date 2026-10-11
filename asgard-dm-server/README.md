@@ -89,7 +89,13 @@ The commands made available allow for configuration / reconfiguration of the ser
 | get_nch | prints the number of channels used by the server         | N.A.      |
 | start   | triggers the channel monitoring process                  | N.A.      |
 | status  | queries the status of the driver ("running" or "waiting")| N.A.      |
+| save    | enables or disables DM command archiving                 | 1 or 0    |
+| get_save_status | returns `{"mode": 0 or 1, "started_unix_s": timestamp}` | N.A. |
 | quit    | closes the shm data structures and shuts the driver down | N.A.      |
+
+When `save 1` is active, the server writes combined DM command FITS files as
+`/data/YYYYMMDD/dms_THH:MM:SS.fits` on `mimir`. `started_unix_s` is zero while
+saving is off and records the start of the current save session while it is on.
 
 One convenient "reset" command is currently missing and will be added back in a bit.
 

@@ -87,6 +87,7 @@ typedef struct {
 } dm_save_record_t;
 
 static int save_mode_flag = 0;
+static double save_started_unix_s = 0.0;
 static int save_buffer_len = SAVE_BUFFER_LEN_DEFAULT;
 static int save_buffer_capacity = SAVE_BUFFER_LEN_DEFAULT * 2;
 static int save_buffer_count = 0;
@@ -452,6 +453,11 @@ void save_mode(int mode) {
     return;
   }
 
+  if (mode == 1 && save_mode_flag == 0) {
+    struct timespec started;
+    clock_gettime(CLOCK_REALTIME, &started);
+    save_started_unix_s = started.tv_sec + started.tv_nsec * 1e-9;
+  }
   save_mode_flag = mode;
   if (mode == 1) {
     init_save_buffer();
@@ -467,8 +473,13 @@ void save_mode(int mode) {
       tid_save_disk = 0;
     }
     flush_save_buffer();
+    save_started_unix_s = 0.0;
     info("DM command archiving disabled.");
   }
+}
+
+nlohmann::json get_save_status() {
+  return {{"mode", save_mode_flag}, {"started_unix_s", save_started_unix_s}};
 }
 
 /* =========================================================================
@@ -731,6 +742,8 @@ COMMANDER_REGISTER(m) {
   m.def("stop", stop, "Stops monitoring shared memory data structures.");
   m.def("save", save_mode, "Turns DM command archiving on or off.",
         co::arg("mode", "Set to 1 to archive commands and timestamps, 0 to disable."));
+  m.def("get_save_status", get_save_status,
+        "Returns DM command archiving mode and when it was enabled.");
   m.def("status", status, "Returns status of the DM server.");
   m.def("get_nch", get_nch, "Returns the number of virtual channels per DM.");
   m.def("set_nch", set_nch, "Updates the number of virtual channels per DM.",
