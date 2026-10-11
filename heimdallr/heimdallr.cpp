@@ -166,6 +166,9 @@ void set_servo_mode(std::string mode) {
     {
         std::lock_guard<std::mutex> lock(settings.mutex);
         if (mode == "on" || mode=="ddspc") {
+            if (settings.s.offload_mode == OFFLOAD_MOD) {
+                end_modulation();
+            }
             control_u.dl_offload.setZero();
             settings.s.offload_mode = OFFLOAD_NESTED;
         }

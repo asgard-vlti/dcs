@@ -1019,12 +1019,22 @@ void fringe_tracker(){
         // If it has been more than offload_time_ms, do the offload and the search step.
         // The exception is if we are in OFFLOAD_MOD mode, which we will treat separately for 
         // code readability.
-        if ((settings.s.offload_mode == OFFLOAD_MOD) && (gd_ix == (int)baselines.n_gd_boxcar-1)){
-            // In mod mode, we fill the group delay SNR matrix.
-            gd_snr_during_mod.col(mod_ix) = baselines.gd_snr;
-            mod_ix = (mod_ix + 1) % N_MOD;
-            set_mod(MODULATION_AMPLITUDE * modulation_matrix.col(mod_ix));
-            if (mod_ix==0){
+        bool mod_frame = false;
+        bool mod_cycle_complete = false;
+        {
+            std::lock_guard<std::mutex> lock(settings.mutex);
+            if ((settings.s.offload_mode == OFFLOAD_MOD) &&
+                (gd_ix == (int)baselines.n_gd_boxcar-1)) {
+                // In mod mode, we fill the group delay SNR matrix.
+                gd_snr_during_mod.col(mod_ix) = baselines.gd_snr;
+                mod_ix = (mod_ix + 1) % N_MOD;
+                set_mod(MODULATION_AMPLITUDE * modulation_matrix.col(mod_ix));
+                mod_frame = true;
+                mod_cycle_complete = mod_ix == 0;
+            }
+        }
+        if (mod_frame) {
+            if (mod_cycle_complete) {
                 // Print out the full saved gd_snr.
                 debug("GD SNR during mod:\n%s", log_stringify(gd_snr_during_mod).c_str());
                 // Now find the fringe peak. We iterate over baselines, 
@@ -1061,10 +1071,14 @@ void fringe_tracker(){
                 debug("Delays: %s", log_stringify(delays.transpose()).c_str());
                 debug("Valid: %s", log_stringify(valid.transpose()).c_str());
                 I6gd = M_lacour * make_pinv(valid, 0) * M_lacour.transpose() * valid.asDiagonal();
-                control_u.dl_offload = M_lacour_dag * I6gd * delays;
+                const Eigen::Vector4d dl_offload = M_lacour_dag * I6gd * delays;
                 debug("Regularised: %s", log_stringify((I6gd * delays).transpose()).c_str());
-                debug("Telescope Space: %s", log_stringify(control_u.dl_offload.transpose()).c_str());
-                add_to_delay_lines(control_u.search - control_u.dl_offload);
+                std::lock_guard<std::mutex> lock(settings.mutex);
+                if (settings.s.offload_mode == OFFLOAD_MOD) {
+                    control_u.dl_offload = dl_offload;
+                    debug("Telescope Space: %s", log_stringify(control_u.dl_offload.transpose()).c_str());
+                    add_to_delay_lines(control_u.search - control_u.dl_offload);
+                }
             }
         } else if (time_since_last_offload_ms > settings.s.offload_time_ms) {
             // Irrespective of offload type, see if we need to reset the search, 
