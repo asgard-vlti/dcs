@@ -26,6 +26,7 @@ extern heimdallr_ft::Ring ft_telemetry;
 int mod_ix=0, gd_ix=0; //!!!This shouldn't be a local global.
 long unsigned int nerrors=0;
 double gd_to_K1=1.0;
+static Eigen::Vector4d last_dm_piston_sent = Eigen::Vector4d::Zero();
 
 // Local baseline variables
 dcomp K1_phasor[N_BL], K2_phasor[N_BL];
@@ -155,6 +156,7 @@ void set_dm_piston(Eigen::Vector4d dm_piston, bool force_write = false){
     piston_cmd.md->write = 0;
     piston_cmd.md->cnt0++;
     ImageStreamIO_sempost(&piston_cmd, -1);
+    last_dm_piston_sent = dm_piston;
 #else
     // Make sure that we only move the DM for for the active beams.
     control_u.dm_piston = control_u.beams_active.asDiagonal() * control_u.dm_piston;       	
@@ -168,6 +170,7 @@ void set_dm_piston(Eigen::Vector4d dm_piston, bool force_write = false){
             DMs[i].array.D[j] = dm_piston(i);
         }
         ImageStreamIO_sempost(&master_DMs[i], 1);
+        last_dm_piston_sent(i) = dm_piston(i);
     }
 #endif
 }
@@ -396,7 +399,7 @@ void fringe_tracker(){
         if (reset_fit) {
             info("DDSPC paused: %s; resetting fit after %d valid updates",
                  reason, updates);
-            piston_reset_hold.arm();
+            piston_reset_hold.arm(last_dm_piston_sent, MAX_DM_PISTON);
         } else {
             report_ddspc_wait(reason);
         }
@@ -868,8 +871,8 @@ void fringe_tracker(){
             if (!use_ddspc) {
                 reset_ddspc_fit(block_reason, false);
                 if (!phase_connected) {
-                    // Refresh the five-pair hold and zero this frame.
-                    piston_reset_hold.arm();
+                    // Refresh the five-pair hold without replacing its saved command.
+                    piston_reset_hold.arm(last_dm_piston_sent, MAX_DM_PISTON);
                     piston_reset_hold.on_paired_frame(!ddspc_frame_gap);
                 }
                 ddspc_hold_this_frame =

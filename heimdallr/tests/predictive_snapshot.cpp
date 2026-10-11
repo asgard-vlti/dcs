@@ -122,33 +122,68 @@ int main() {
     check_preset_switches();
     constexpr int updates_after_fifty = 50 - Controller::TrainingDelay;
     heimdallr_ddspc::PistonResetHold piston_hold;
-    const Telescopes nonzero_piston = Telescopes::Constant(0.2);
+    const Telescopes nonzero_piston(0.12, -0.2, 0.379, -0.379);
+    const Telescopes next_piston = Telescopes::Constant(0.1);
     check(!piston_hold.active() &&
               piston_hold.command(nonzero_piston, false) == nonzero_piston,
           "Piston command was changed before a reset");
-    piston_hold.arm();
+    piston_hold.arm(nonzero_piston, 0.4);
     check(piston_hold.active() &&
-              piston_hold.command(nonzero_piston, piston_hold.active()).isZero(),
-          "Fit reset did not immediately select zero piston");
+              piston_hold.command(next_piston, piston_hold.active()) == nonzero_piston,
+          "Fit reset did not immediately hold the last piston command");
+    check(piston_hold.on_paired_frame(true),
+          "The first paired frame did not hold the piston command");
+    piston_hold.arm(next_piston, 0.4);
+    check(piston_hold.command(next_piston, true) == nonzero_piston,
+          "Re-arming a hold replaced its saved piston command");
     check(piston_hold.on_paired_frame(false) && piston_hold.active(),
           "Bad or missing camera pair shortened the piston hold");
     for (int i = 0; i < heimdallr_ddspc::PistonResetHold::Frames; ++i) {
         const bool hold_this_frame = piston_hold.on_paired_frame(true);
         check(hold_this_frame &&
-                  piston_hold.command(nonzero_piston, hold_this_frame).isZero(),
-              "Piston was not zero throughout the five valid pairs");
+                  piston_hold.command(next_piston, hold_this_frame) == nonzero_piston,
+              "Piston changed during the five valid pairs");
         if (i == 2) {
             check(piston_hold.on_paired_frame(false),
                   "A gapped camera pair ended the piston hold");
         }
     }
     check(!piston_hold.on_paired_frame(true) &&
-              piston_hold.command(nonzero_piston, false) == nonzero_piston,
+              piston_hold.command(next_piston, false) == next_piston,
           "Piston control did not resume on the sixth valid pair");
-    piston_hold.arm();
+    piston_hold.arm(next_piston, 0.4);
+    check(piston_hold.command(nonzero_piston, true) == next_piston,
+          "A new hold did not capture the latest piston command");
     piston_hold.clear();
     check(!piston_hold.active() && !piston_hold.on_paired_frame(true),
           "Leaving DDSPC did not clear the piston hold");
+
+    Telescopes near_saturation = nonzero_piston;
+    near_saturation(0) = 0.38;
+    piston_hold.arm(near_saturation, 0.4);
+    check(piston_hold.command(next_piston, true).isZero(),
+          "Positive 5% saturation boundary did not reset all pistons");
+    piston_hold.arm(nonzero_piston, 0.4);
+    check(piston_hold.command(next_piston, true).isZero(),
+          "Re-arming replaced a zeroed hold command");
+    piston_hold.clear();
+    near_saturation(0) = nonzero_piston(0);
+    near_saturation(1) = -0.38;
+    piston_hold.arm(near_saturation, 0.4);
+    check(piston_hold.command(next_piston, true).isZero(),
+          "Negative 5% saturation boundary did not reset all pistons");
+    piston_hold.clear();
+    Telescopes nonfinite_piston = nonzero_piston;
+    nonfinite_piston(2) = std::numeric_limits<double>::quiet_NaN();
+    piston_hold.arm(nonfinite_piston, 0.4);
+    check(piston_hold.command(next_piston, true).isZero(),
+          "Non-finite piston command did not reset all pistons");
+    piston_hold.clear();
+    nonfinite_piston(2) = std::numeric_limits<double>::infinity();
+    piston_hold.arm(nonfinite_piston, 0.4);
+    check(piston_hold.command(next_piston, true).isZero(),
+          "Infinite piston command did not reset all pistons");
+    piston_hold.clear();
 
     int mode = 4;
     std::uint64_t sequence = 0;

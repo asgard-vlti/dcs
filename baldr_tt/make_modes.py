@@ -54,6 +54,15 @@ def create_modes():
         modes[i] = zernike(n, m, rho, theta)
         #if (i==9):
         #    breakpoint()
+    # Slave the outer actuator ring to half the adjacent inner-ring value.
+    modes[:, 0, 1:-1] = 0.5 * modes[:, 1, 1:-1]
+    modes[:, -1, 1:-1] = 0.5 * modes[:, -2, 1:-1]
+    modes[:, 1:-1, 0] = 0.5 * modes[:, 1:-1, 1]
+    modes[:, 1:-1, -1] = 0.5 * modes[:, 1:-1, -2]
+    modes[:, 0, 0] = 0.5 * modes[:, 1, 1]
+    modes[:, 0, -1] = 0.5 * modes[:, 1, -2]
+    modes[:, -1, 0] = 0.5 * modes[:, -2, 1]
+    modes[:, -1, -1] = 0.5 * modes[:, -2, -2]
     return modes    
 
 if __name__ == "__main__":

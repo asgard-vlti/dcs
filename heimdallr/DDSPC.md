@@ -12,11 +12,14 @@ measurements, an inactive beam, or a test pattern selects the existing Lacour
 command path and resets a model that is still learning. These interruptions
 restart exploration from frame zero. A frozen model retains its fit across a
 camera gap, but falls back to Lacour for that frame. After an active learning fit
-resets, the fringe tracker immediately zeros all four DM piston commands and
-holds them at zero for the next five valid paired K1/K2 frames. Bad, missing, or
-gapped pairs do not shorten this hold. Delay-line search and offload keep
-running. The model resumes from the current DM command when the hold ends and
-four-beam tracking returns. A frozen model does not reset or start a piston hold.
+resets, the fringe tracker holds the last issued four-channel DM piston command
+for the next five valid paired K1/K2 frames. If any channel is within 5% of the
+±0.4 saturation bound (absolute command at least 0.38), or is non-finite, it
+holds all four channels at zero instead. Disconnected phase baselines also start
+or refresh this hold. Bad, missing, or gapped pairs do not shorten it.
+Delay-line search and offload keep running. The model resumes from the held DM
+command when the hold ends and four-beam tracking returns. A frozen model does
+not reset its fit, but disconnected phase baselines still start a piston hold.
 
 The server reads DDSPC defaults from `[ddspc]` in its TOML configuration.
 `continue_learning = true` keeps updating the predictive model after exploration.
