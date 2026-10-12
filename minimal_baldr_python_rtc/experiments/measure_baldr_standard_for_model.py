@@ -16,6 +16,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from itertools import product
 from pathlib import Path
 from typing import Optional
 
@@ -23,6 +24,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import numpy as onp
+from tqdm.auto import tqdm
 
 
 OUTPUT_DIR = Path("~/tmp/AT_baldr_fitting").expanduser()
@@ -170,21 +172,26 @@ def record_stage(record, stage, mds, beam):
 
 
 def acquire_probes(record, key, dm, cam, starting_channel, delta_maps, config):
-    for mode_index, positive_delta in enumerate(delta_maps):
-        for repeat in range(config.probe_repeats):
-            for sign in (-1, 1):
-                record["dm_touched"] = True
-                set_dm_delta(dm, starting_channel, sign * positive_delta)
-                time.sleep(config.dm_settle_s)
-                if config.discard_frames:
-                    take_frames(cam, config.discard_frames)
-                record[f"{key}_frames"].append(take_frames(cam, config.probe_frames))
-                record[f"{key}_index"].append(mode_index)
-                record[f"{key}_repeat"].append(repeat)
-                record[f"{key}_sign"].append(sign)
-                record[f"{key}_utc"].append(utc_now())
-        if (mode_index + 1) % 10 == 0 or mode_index + 1 == len(delta_maps):
-            print(f"{key}: {mode_index + 1}/{len(delta_maps)} modes")
+    with tqdm(
+        total=len(delta_maps) * config.probe_repeats * 2,
+        desc=key.replace("_", " "),
+        unit="probe",
+        disable=not sys.stderr.isatty(),
+    ) as progress:
+        for mode_index, positive_delta in enumerate(delta_maps):
+            for repeat in range(config.probe_repeats):
+                for sign in (-1, 1):
+                    record["dm_touched"] = True
+                    set_dm_delta(dm, starting_channel, sign * positive_delta)
+                    time.sleep(config.dm_settle_s)
+                    if config.discard_frames:
+                        take_frames(cam, config.discard_frames)
+                    record[f"{key}_frames"].append(take_frames(cam, config.probe_frames))
+                    record[f"{key}_index"].append(mode_index)
+                    record[f"{key}_repeat"].append(repeat)
+                    record[f"{key}_sign"].append(sign)
+                    record[f"{key}_utc"].append(utc_now())
+                    progress.update(1)
     set_dm_delta(dm, starting_channel, onp.zeros_like(starting_channel))
 
 
@@ -246,8 +253,13 @@ def acquire_sequence(record, beam, dm, cam, mds, config):
 
     move_motor(mds, beam, "BMY", mask_target, config)
     record_stage(record, "pupil_start", mds, beam)
-    for pitch_offset in offsets:
-        for tilt_offset in offsets:
+    with tqdm(
+        total=len(offsets) ** 2,
+        desc="pupil grid",
+        unit="position",
+        disable=not sys.stderr.isatty(),
+    ) as progress:
+        for pitch_offset, tilt_offset in product(offsets, offsets):
             move_motor(mds, beam, "BTP", starting["BTP"] + pitch_offset, config)
             move_motor(mds, beam, "BTT", starting["BTT"] + tilt_offset, config)
             positions = read_positions(mds, beam)
@@ -257,6 +269,7 @@ def acquire_sequence(record, beam, dm, cam, mds, config):
             record["pupil_dither_positions"].append(positions)
             record["pupil_dither_utc"].append(captured_at)
             record["pupil_dither_frames"].append(frames)
+            progress.update(1)
     move_motor(mds, beam, "BTP", starting["BTP"], config)
     move_motor(mds, beam, "BTT", starting["BTT"], config)
 

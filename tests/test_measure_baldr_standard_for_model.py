@@ -171,6 +171,35 @@ class MeasureBaldrTests(unittest.TestCase):
             self.assertAlmostEqual(float(saved["fourier_delta_maps"][0].sum()), 0, places=6)
             self.assertAlmostEqual(float(saved["poke_delta_maps"][0].max()), 0.03 * 143 / 144)
 
+    def test_default_frame_counts_and_ten_pokes_per_sign_are_saved(self):
+        config = measure.AcquisitionConfig(
+            mode_count=2,
+            dm_settle_s=0,
+            motor_settle_s=0,
+            motor_poll_s=0,
+        )
+        output = measure.run_and_save(
+            2, self.dm, FakeCam(), self.mds, output_dir=self.output_dir, config=config
+        )
+        with onp.load(output, allow_pickle=False) as saved:
+            self.assertEqual(saved["pupil_dither_frames"].shape, (9, 256, 2, 2))
+            self.assertEqual(saved["masked_poke_frames"].shape, (80, 2, 2, 2))
+            self.assertEqual(
+                set(
+                    zip(
+                        saved["masked_poke_index"],
+                        saved["masked_poke_repeat"],
+                        saved["masked_poke_sign"],
+                    )
+                ),
+                {
+                    (actuator, repeat, sign)
+                    for actuator in range(4)
+                    for repeat in range(10)
+                    for sign in (-1, 1)
+                },
+            )
+
     def test_camera_failure_saves_aligned_partial_data_and_restores_state(self):
         cam = FakeCam(fail_on_call=5)
         with self.assertRaisesRegex(RuntimeError, "camera frame failure"):
