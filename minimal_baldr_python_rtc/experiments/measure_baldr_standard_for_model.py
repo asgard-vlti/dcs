@@ -1,8 +1,8 @@
 """Acquire one standard-mode Baldr beam for later optical-model fitting.
 
-Run from the DCS repository with::
+Run from this directory with::
 
-    python -m minimal_baldr_python_rtc.experiments.measure_baldr_standard_for_model 1
+    python measure_baldr_standard_for_model.py 1
 
 The CRED1 server's existing dark subtraction is left untouched. Every saved image,
 including the shuttered dark cube, comes from the same processed camera stream.
@@ -12,11 +12,15 @@ import argparse
 import json
 import os
 import signal
+import sys
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import numpy as onp
 
@@ -37,7 +41,7 @@ class AcquisitionConfig:
     discard_frames: int = 1
     probe_amplitude: float = 0.03
     dm_settle_s: float = 0.01
-    motor_settle_s: float = 0.5
+    motor_settle_s: float = 2.0
     motor_poll_s: float = 0.05
     motor_timeout_s: float = 60.0
     mask_offset_um: float = -200.0

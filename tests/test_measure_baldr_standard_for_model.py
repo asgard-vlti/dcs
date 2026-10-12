@@ -116,6 +116,16 @@ class MeasureBaldrTests(unittest.TestCase):
         onp.testing.assert_array_equal(self.dm.shms[1].data, onp.zeros(144))
         onp.testing.assert_array_equal(self.dm.shms[3].data, onp.zeros(144))
 
+    def test_motor_move_waits_two_seconds_after_reaching_position(self):
+        config = measure.AcquisitionConfig()
+        self.assertGreaterEqual(config.motor_settle_s, 2.0)
+        measure.move_motor(self.mds, 2, "BTP", 0.13, config)
+        measure.move_motor(self.mds, 2, "BTT", -0.07, config)
+        self.assertEqual(
+            [call.args[0] for call in measure.time.sleep.call_args_list],
+            [config.motor_poll_s, config.motor_settle_s] * 2,
+        )
+
     def test_complete_acquisition_preserves_processed_frames_and_probe_order(self):
         cam = FakeCam()
         output = measure.run_and_save(
