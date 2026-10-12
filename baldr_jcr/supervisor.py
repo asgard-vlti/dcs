@@ -58,7 +58,8 @@ NAVG: int = 5  # number of frames to average for a poke
 
 XC_OFFSET: float = 0.0
 YC_OFFSET: float = 0.0
-FLUX_MASK_RADIUS: float = 1e6 / 2.0  # use every pixel
+FLUX_MASK_RADIUS: float = SUBARRAY_WIDTH /2.0 # use every pixel within subarray circle
+# NB: The above line is responsible for ignoring the CDS pixel too.
 STREHL_MASK_INNER_RADIUS: float = WIDTH / 2.0 + 1.0
 STREHL_MASK_OUTER_RADIUS: float = WIDTH / 2.0 + 6.0
 

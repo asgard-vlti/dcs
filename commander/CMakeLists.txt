@@ -2,7 +2,7 @@ add_library(Commander)
 
 target_compile_features(Commander PRIVATE cxx_std_17)
 
-target_compile_options(Commander PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_options(Commander PRIVATE -Wall -Wextra -Wpedantic -Wno-missing-field-initializers)
 
 target_include_directories(Commander
     PUBLIC

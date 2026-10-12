@@ -82,8 +82,8 @@ std::string encode(const char *input, unsigned int size)
 
 //----------commander functions from here---------------
 
-DEF_READ_CTRL_PARAM(meas_offset_0, measurement reference when meas_offset_interp==0, N_PIXELS, 1, DOUBLE)
-DEF_READ_CTRL_PARAM(meas_offset_1, measurement reference when meas_offset_interp==1, N_PIXELS, 1, DOUBLE)
+DEF_READ_CTRL_PARAM(meas_offset_0, measurement reference when meas_offset_interp == 0, N_PIXELS, 1, DOUBLE)
+DEF_READ_CTRL_PARAM(meas_offset_1, measurement reference when meas_offset_interp == 1, N_PIXELS, 1, DOUBLE)
 DEF_READ_CTRL_PARAM(flux_mask, mask for normalizing measurement, N_SUBARRAY_PIXELS, 1, DOUBLE)
 DEF_READ_CTRL_PARAM(strehl_mask, mask for estimating strehl, N_SUBARRAY_PIXELS, 1, DOUBLE)
 DEF_READ_CTRL_PARAM(meas_to_mode, reconstructor matrix, N_MODES, N_PIXELS, DOUBLE)
@@ -112,9 +112,9 @@ Result reset_ctrl()
   ctrl.com_write.setZero();
   ctrl.mode_raw_buffer.setZero();
   ctrl.mode_filt_buffer.setZero();
-  ctrl.strehl_est = 0.5; // reset to a safe value.
-  ctrl.flux_est = 1.0e8; // reset to an unlikely but safe value.
-  ctrl.meas_offset_interp = 0.0;  // always start with the "zero"th reference, then ramp up to 1.0
+  ctrl.strehl_est = 0.5;         // reset to a safe value.
+  ctrl.flux_est = 1.0e8;         // reset to an unlikely but safe value.
+  ctrl.meas_offset_interp = 0.0; // always start with the "zero"th reference, then ramp up to 1.0
   ctrl.mutex.unlock();
   return SUCCESS();
 }
@@ -295,7 +295,7 @@ int main(int argc, char *argv[])
   settings.settings.py = config["py"].value_or(15);
   // Note that baldr_tt potentally over-writes these values with the values from /usr/local/etc/ttN.txt.
   // The ZWFS Baldr ignores these values.
-  
+
   settings.settings.flux_threshold = config["flux_threshold"].value_or(10000.0);
 
   // We start in off mode - no writing to the DM.
@@ -355,9 +355,14 @@ int main(int argc, char *argv[])
     return err;
   }
 
+  ctrl.tsig_len = 1;
+  ctrl.nbreads = 1;
+
+  // Start the camera client to keep dit, nbreads and tsig_len in sync.
+  start_camera_client();
+
   // Start the main servo thread.
   std::thread servo_thread(servo_loop);
-
   // Prepare the thread parameters.
   struct sched_param param;
   int policy;
@@ -376,6 +381,8 @@ int main(int argc, char *argv[])
   // or if the user changes the servo mode to servo stop via commander
   // join the servo thread
   servo_thread.join();
+
+  stop_camera_client();
 
   unacquire_single_instance_lock();
   return 0;

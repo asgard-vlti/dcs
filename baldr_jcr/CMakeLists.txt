@@ -13,6 +13,7 @@ target_compile_options(
 target_sources(baldr
     PRIVATE
         baldr.cpp
+        cam_client.cpp
         servo_loop.cpp
 
     # PUBLIC

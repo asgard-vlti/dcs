@@ -49,7 +49,7 @@
 // otherwise we might set filter_len to 1 and then request a row-major matrix
 // with only 1 column which is a compile-time error in Eigen.
 #define N_ACTUATORS 144 // Including corners
-#define DIST_LEN 10      // Length of disturbance sequence (periodic)
+#define DIST_LEN 10     // Length of disturbance sequence (periodic)
 
 //----- Structures and typedefs------
 
@@ -61,6 +61,11 @@ struct ControlVariables
     double strehl_est;
     double flux_est;
     double meas_offset_interp;
+
+    double dit; // detector integration time in seconds
+    int nbreads;
+    int tsig_len;
+
     // real-time variables
     // admittedly, this is a LOT of copying, so I might change this to a single
     // "buffer" that we work on through the pipeline, and only keep variables
@@ -232,6 +237,9 @@ void project_com();
 void inject_disturb(int servo_mode);
 void clip_com();
 void write_shm();
+
+void start_camera_client();
+void stop_camera_client();
 
 #define DEF_READ_CTRL_PARAM(PARAM_NAME, DESCRIPTION, NROWS, NCOLS, DATATYPE) \
     Result read_##PARAM_NAME()                                               \

@@ -7,6 +7,7 @@
 #include "commander/commander.h"
 #include "baldr.h"
 // #define PRINT_TIMING
+#define SUBARRAY_SEM_IDX 1
 
 #ifdef PRINT_TIMING
 #include <chrono>
@@ -79,11 +80,10 @@ void servo_loop()
     // global cnt variable initialised to subarray cnt0
     cnt = subarray.md->cnt0;
 
-    // TODO: why semid 2, where is that defined?
-    catch_up_with_sem(&subarray, 1);
+    catch_up_with_sem(&subarray, SUBARRAY_SEM_IDX);
 
     // infinite loop while servo is running (not necessarily closed loop)
-    int servo_mode, last_servo_mode = SERVO_OFF;
+    int servo_mode = SERVO_OFF, last_servo_mode = SERVO_OFF;
     while (true)
     {
         last_servo_mode = servo_mode;
@@ -92,7 +92,29 @@ void servo_loop()
         settings.mutex.unlock();
         cnt_since_init++; // This should "never" wrap around, as a long int is big.
         // See if there was a semaphore signalled for the next frame to be ready in K1 and K2
-        ImageStreamIO_semwait(&subarray, 1);
+        ImageStreamIO_semwait(&subarray, SUBARRAY_SEM_IDX);
+        // If we are here, then a new frame is available in both K1 and K2.
+        // Check that there has not been a counting error.
+        if (subarray.md->cnt0 == cnt)
+        {
+            info("FT: Semaphore signalled but no new frame");
+            nerrors++;
+        }
+        // Check for missed frames
+        // TODO: shouldnt this be >= ? otherwise we are assuming 2 missed frames
+        if (subarray.md->cnt0 > cnt + 2)
+        {
+            info("Missed frames! Image: %llu Servo: %lu", (unsigned long long)subarray.md->cnt0, cnt);
+            // Catch up!
+            catch_up_with_sem(&subarray, SUBARRAY_SEM_IDX);
+            cnt = subarray.md->cnt0 - 1;
+            nerrors++;
+        }
+        cnt++;
+        if ((ctrl.nbreads > 1) && (subarray.array.SI32[0] > (int)(ctrl.nbreads - 1 - ctrl.tsig_len)))
+        {
+            continue;
+        }
 #ifdef PRINT_TIMING
         auto t1 = high_resolution_clock::now();
 #endif
@@ -161,25 +183,6 @@ void servo_loop()
 
 void read_shm()
 {
-    // If we are here, then a new frame is available in both K1 and K2.
-    // Check that there has not been a counting error.
-    if (subarray.md->cnt0 == cnt)
-    {
-        info("FT: Semaphore signalled but no new frame");
-        nerrors++;
-    }
-    // Check for missed frames
-    // TODO: shouldnt this be >= ? otherwise we are assuming 2 missed frames
-    if (subarray.md->cnt0 > cnt + 2)
-    {
-        info("Missed frames! Image: %llu Servo: %lu", (unsigned long long)subarray.md->cnt0, cnt);
-        // Catch up!
-        catch_up_with_sem(&subarray, 2);
-        cnt = subarray.md->cnt0 - 1;
-        nerrors++;
-    }
-    cnt++;
-
     ctrl.mutex.lock();
     // Copy the data from the IMAGE subarray to the subimage.
     for (size_t ii = 0; ii < WIDTH; ii++)
