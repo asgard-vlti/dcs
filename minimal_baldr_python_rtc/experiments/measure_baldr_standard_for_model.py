@@ -176,6 +176,7 @@ def acquire_probes(record, key, dm, cam, starting_channel, delta_maps, config):
         total=len(delta_maps) * config.probe_repeats * 2,
         desc=key.replace("_", " "),
         unit="probe",
+        ascii=True,
         disable=not sys.stderr.isatty(),
     ) as progress:
         for mode_index, positive_delta in enumerate(delta_maps):
@@ -257,6 +258,7 @@ def acquire_sequence(record, beam, dm, cam, mds, config):
         total=len(offsets) ** 2,
         desc="pupil grid",
         unit="position",
+        ascii=True,
         disable=not sys.stderr.isatty(),
     ) as progress:
         for pitch_offset, tilt_offset in product(offsets, offsets):
