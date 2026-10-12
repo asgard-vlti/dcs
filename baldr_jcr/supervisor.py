@@ -121,7 +121,7 @@ INIT_VAL = {
     "mode_to_com": 0.0,
     "com_max": 0.5,
     "com_min": -0.5,
-    "com_dist_buffer": 0.5,  # NOTE: this is to account for the 0.5 offset in cmds, remove for mimir
+    "com_dist_buffer": 0.0,  # NOTE: this is to account for the 0.5 offset in cmds, remove for mimir
 }
 # make sure that all named arrays have an entry in this dict:
 for array_name in ARRAY_NAMES:
