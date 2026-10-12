@@ -39,7 +39,7 @@ def save_flat_for_beam(beam_id, category):
     beam_pth.mkdir(parents=True, exist_ok=True)
 
     # Create the filename with the current timestamp
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     filename = file_naming_format.format(category=category, timestamp=timestamp)
     file_pth = beam_pth / filename
 

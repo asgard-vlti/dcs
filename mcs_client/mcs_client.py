@@ -23,6 +23,7 @@ import fcntl
 
 import subprocess
 from urllib.parse import urlsplit
+from dcs.logging_utils import UTCFormatter
 from mcs_client.disk_status import DiskSavingMonitor
 
 # Following protocol described in
@@ -1019,6 +1020,21 @@ class MCSServer:
                 self.data = msg
 
 
+def _setup_logging(log_location):
+    log_fname = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ.log")
+    file_handler = logging.FileHandler(
+        os.path.join(os.path.expanduser(log_location), log_fname)
+    )
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    formatter = UTCFormatter("%(asctime)s %(levelname)s %(message)s")
+    file_handler.setFormatter(formatter)
+    console.setFormatter(formatter)
+    logging.basicConfig(
+        level=logging.INFO, handlers=[file_handler, console], force=True
+    )
+
+
 # ---------------- Main publish loop ----------------
 def main():
     import argparse
@@ -1045,22 +1061,7 @@ def main():
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # logname from the current time
-
-    log_fname = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".log"
-    logging.basicConfig(
-        filename=os.path.join(os.path.expanduser(args.log_location), log_fname),
-        level=logging.INFO,
-        format="%(asctime)s.%(msecs)03d %(levelname)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-
-    # Add stream handler to also log to stdout
-    console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
-    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
-    console.setFormatter(formatter)
-    logging.getLogger().addHandler(console)
+    _setup_logging(args.log_location)
 
     mcs = MCSClient(
         dcs_endpoints={  #!!! Removed Baldr for now...

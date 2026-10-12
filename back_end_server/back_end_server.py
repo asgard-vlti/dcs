@@ -11,6 +11,7 @@ import sys
 import subprocess
 import logging
 import fcntl
+from dcs.logging_utils import UTCFormatter
 
 # from rts_base import AbstractRTSTask, RTSContext, RTSState, RTSErr
 # !!!ADAM please educate Mike on this path bit for editable installs.
@@ -28,7 +29,7 @@ def _setup_logging():
     logger.setLevel(logging.INFO)
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
-    formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
+    formatter = UTCFormatter("%(asctime)s %(levelname)s: %(message)s")
     ch.setFormatter(formatter)
     logger.handlers = []
     logger.addHandler(ch)

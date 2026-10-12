@@ -60,6 +60,23 @@ So far, the `cmake` only manages (see `./CMakeLists.txt`):
 
 For the other targets, use whatever build system those targets provide.
 
+## UTC timestamps
+
+The MCS file/console logs and back-end console logs use UTC timestamps formatted
+as `YYYY-MM-DDTHH:MM:SS.mmmZ`, independent of the host timezone. MCS log filenames
+use `YYYYMMDDTHHMMSSZ.log`. Protocol message timestamps retain their existing
+format.
+
+`flat-save` names new DM flats `{category}_YYYYMMDDTHHMMSSZ.npy` using UTC.
+`flat-load` continues to discover both these names and existing local-time
+`{category}_YYYYMMDD_HHMMSS.npy` names; existing files are not renamed or converted.
+
+Offline checks, including UTC and America/Santiago host timezones:
+
+```bash
+python -m unittest discover -s tests -p 'test_utc_timestamps.py' -q
+```
+
 ## Beam flattening sources
 
 Run `dcs/cmd_scripts/flatten_beam.py` on `mimir` in the `asg` conda environment.
