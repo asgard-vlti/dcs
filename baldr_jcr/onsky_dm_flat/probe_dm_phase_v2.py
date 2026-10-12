@@ -28,7 +28,17 @@ import tempfile
 import numpy as np
 from astropy.io import fits
 
-DEFAULT_DCS=Path('/home/bbarrer/Documents/baldr/dcs/baldr_jcr')
+#DEFAULT_DCS=Path('/home/bbarrer/Documents/baldr/dcs/baldr_jcr')
+# __file__ is the path to the current script.
+# .resolve() makes it absolute, resolving any symlinks.
+THIS_DIR = Path(__file__).resolve().parent
+
+# Traverse up to the 'dcs' root. 
+# Adjust the number of `.parent` calls based on where this script lives.
+# For example, if this script is in dcs/src/config/settings.py:
+GIT_ROOT = THIS_DIR.parent.parent.parent 
+
+DEFAULT_DCS = GIT_ROOT / 'baldr_jcr'
 # Material-independent mask definitions: wavelength [m], phase shift [rad],
 # DIAMETER [lambda/D]. Physical diameters converted with F#=21.2.
 MASKS = {
@@ -46,7 +56,7 @@ MIXED_LABELS = ['defocus','astigmatism_0','astigmatism_45'] + [
     for frequency in (1,2) for axis in ('x','y') for quadrature in ('sin','cos')]
 
 # Standard controls stay on the CLI; edit these installation/fit settings here.
-SIMULATION = True #False  # --simulator selects the local MDS; default is on-sky.
+SIMULATION = False  # --simulator selects the local MDS; default is on-sky.
 MDS_HOST_ONSKY = 'mimir'
 MDS_HOST_SIMULATOR = '127.0.0.1'
 ACQUISITION_DEFAULTS = dict(
