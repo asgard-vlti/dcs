@@ -144,7 +144,7 @@ void servo_loop()
         // write to shared memory and post the semaphore for that DM shmim
         if (servo_mode != SERVO_OFF || last_servo_mode != SERVO_OFF)
         {
-        write_shm();
+            write_shm();
         }
 #ifdef PRINT_TIMING
         auto t2 = high_resolution_clock::now();
@@ -369,7 +369,6 @@ void write_shm()
     rt_status.status.mode_filt_rms = sqrt(ctrl.mode_filt.squaredNorm()) * powf(N_MODES, -0.5);
     rt_status.status.com_raw_rms = sqrt(ctrl.com_raw.squaredNorm()) * powf(N_ACTUATORS, -0.5);
     rt_status.status.com_clean_rms = sqrt(ctrl.com_clean.squaredNorm()) * powf(N_ACTUATORS, -0.5);
-    /*
     info(
         "|%lu|flux=%0.2e|strehl_flux=%0.2e|meas_cl_rms=%0.2e"
         "|mode_raw_rms=%0.2e|mode_filt_rms=%0.2e"
@@ -383,7 +382,6 @@ void write_shm()
         rt_status.status.com_raw_rms,
         rt_status.status.com_clean_rms
     );
-    */
     rt_status.mutex.unlock();
     ctrl.mutex.unlock();
 }
@@ -429,7 +427,6 @@ void inject_dm_signal()
     ctrl.com_fb_buffer.col(0) = ctrl.com_feedback.col(0);
     int idx_a = floor(ctrl.delay);
     double remainder = ctrl.delay - (double)idx_a;
-    ctrl.com_effective = ctrl.com_fb_buffer.col(idx_a) * (1 - remainder) + ctrl.com_fb_buffer.col(idx_a + 1) * (remainder);
-    ctrl.meas_feedback = -ctrl.com_to_meas * ctrl.com_effective;
+    ctrl.meas_feedback = -ctrl.com_to_meas * (ctrl.com_fb_buffer.col(idx_a) * (1 - remainder) + ctrl.com_fb_buffer.col(idx_a + 1) * (remainder));
     ctrl.mutex.unlock();
 }

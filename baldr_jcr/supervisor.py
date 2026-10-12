@@ -52,6 +52,7 @@ DEFAULT_HOST = os.environ.get("BALDR_HOST", default="mimir")
 # Default values, will be overridden by CLI arguments
 POKE: float = 0.05
 ALPHA: float = 1e-3
+BETA: float = 1e-5
 CNT_MIN: int = 3  # minimum number of measurements to wait after applying poke
 NAVG: int = 5  # number of frames to average for a poke
 
@@ -81,6 +82,10 @@ ARRAY_NAMES = [
 ]
 if DIST_LEN > 0:
     ARRAY_NAMES += ["com_dist_buffer"]
+
+DONT_PUSH_TO_RTC = [
+    "mode_to_meas",
+]
 
 ARRAY_SHAPES = {
     "meas_offset_0": (N_PIXELS,),
@@ -275,7 +280,7 @@ class Beam:
         """Convenience function for updating RTC parameters from numpy arrays"""
         self.check_name(name)
         self.writefits(name=name, array=array)
-        if push_rtc:
+        if push_rtc and name not in DONT_PUSH_TO_RTC:
             self.request(name)
 
     def read_array(self, *, name: str) -> NDArray:
@@ -297,8 +302,10 @@ class Beam:
             # Flux mask requires special treatment:
             self.init_flux_mask()
             self.init_strehl_mask()
-        for name in ARRAY_NAMES:
-            if push_rtc:
+        if push_rtc:
+            for name in ARRAY_NAMES:
+                if name in DONT_PUSH_TO_RTC:
+                    continue
                 self.request(name)
         self.request("reset")
 
@@ -455,6 +462,7 @@ class Beam:
         self,
         *,
         alpha: float = ALPHA,
+        beta: float = BETA,
         nmodes: Optional[int] = None,
         scheme: str = "leaky",
     ):
@@ -473,14 +481,21 @@ class Beam:
         self.update_array(name="meas_to_mode", array=meas_to_mode)
         
         if scheme == "leaky":
-            # wipe com_to_meas
-            pass
+            com_to_meas = np.zeros((N_PIXELS, N_ACTUATORS))
+            self.update_array(name="com_to_meas", array=com_to_meas)
         elif scheme == "polc":
             # save com_to_meas
-            pass
+            mode_to_com = self.read_array(name="mode_to_com")
+            com_to_meas = (
+                mode_to_meas[:, :nmodes]
+                @ np.linalg.solve(
+                    mode_to_com[:, :nmodes].T @ mode_to_com[:, :nmodes] + beta * np.eye(nmodes),
+                    mode_to_com[:, :nmodes].T,
+                )
+            )
+            self.update_array(name="com_to_meas", array=com_to_meas)
         else:
-            # raise error
-            pass
+            raise ValueError(f"control scheme unrecognized: {scheme}")
 
     def compute_experimental_control_matrix(
         self,
@@ -761,6 +776,8 @@ def cmat(ctx: Context, alpha: float, nmodes: int, scheme: str):
     elif scheme == "polc":
         for beam in beams:
             beam.compute_control_matrix(nmodes=nmodes, alpha=alpha, scheme="polc")
+    else:
+        click.BadParameter(f"unrecognised control scheme: {scheme}")
         
 
 @main.command(help="measure a reference image for the control pipeline")
