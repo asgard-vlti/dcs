@@ -7,6 +7,7 @@ from xaosim.shmlib import shm
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QRect
 
+
 import matplotlib.cm as cm
 
 # from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
@@ -16,6 +17,8 @@ import threading
 import time
 import sys
 import json
+import os
+import re
 
 # =====================================================================
 #                           global variables
@@ -478,6 +481,13 @@ def main():
     myqt = QtMain()
 
     gui = App()
+    geometry = re.fullmatch(
+        r"(\d+)x(\d+)([+-]\d+)([+-]\d+)",
+        os.environ.get("ASGARD_SETUP_FRINGES_GEOMETRY", ""),
+    )
+    if geometry:
+        width, height, x, y = map(int, geometry.groups())
+        gui.setGeometry(x, y, width, height)
     gui.show()
 
     proxy = pg.SignalProxy(
