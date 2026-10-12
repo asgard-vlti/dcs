@@ -119,6 +119,12 @@ prediction, and DM command conversion. Update timing includes QRD RLS learning
 and rebuilding the predictive matrix. These are synthetic controller timings;
 they do not include `set_dm_piston` or camera and full servo-loop work.
 
+Each run also saves a JSON file in `~/tmp/predictive_benchmark_h*_f*_*.json`
+and prints its path to stderr. The file contains the UTC run time, all predictive
+controller parameters, the test setup, and unsorted per-frame `control`,
+`update`, and `total` arrays under `timing_samples_us`. Values at the same
+array index come from the same frame and can be plotted as histograms.
+
 Before operational use, verify the complete fringe loop on the instrument host
 at 2 kHz and check its 500 microsecond frame deadline. This verification is
 pending while the host is unavailable.
