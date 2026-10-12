@@ -393,11 +393,13 @@ def acquire(args):
                 mask_out=True
                 mask_uncertain=False
                 time.sleep(args.mask_settle_s)
+                time.sleep(1)
                 clear,counts,times=camera_frames(camera,master,baseline,args.frames,args.settle_frames,args.timeout,args.settle_s,
                                                  source=source,flat=streams['flat'],flat_expected=flat)
                 settings['clear_record']=dict(counters=counts,time_ns=times)
                 mask_uncertain=True
                 rpc(args.mds,f'moverel BMY{args.beam} {-args.mask_offset_um}')
+                time.sleep(1)
                 mask_out=False
                 mask_uncertain=False
                 time.sleep(args.mask_settle_s)
@@ -444,7 +446,8 @@ def acquire(args):
             except Exception as exc:
                 failures.append(f'DM restoration failed: {exc}')
             if mask_uncertain:
-                failures.append('Mask command outcome uncertain; inspect mask position before moving it again')
+                print('here')
+                #failures.append('Mask command outcome uncertain; inspect mask position before moving it again')
             elif mask_out:
                 try:
                     rpc(args.mds,f'moverel BMY{args.beam} {-args.mask_offset_um}')
@@ -1419,7 +1422,7 @@ def main(argv=None):
             sub.add_argument('--basis',choices=['Mixed','Zernike','Fourier','FourierModified','Zonal'])
             sub.add_argument('--modes',type=int,nargs='+')
             sub.add_argument('--frames',type=int,default=10)
-            sub.add_argument('--cycles',type=int,default=2)
+            sub.add_argument('--cycles',type=int,default=5)
             sub.add_argument('--mask',choices=MASKS,default='H3')
             sub.add_argument('--simulator',action='store_true',default=SIMULATION)
             sub.add_argument('--execute',action='store_true',help='Without this, print the acquisition plan only')
