@@ -119,3 +119,30 @@ The offline sequence checks are:
 ```bash
 python -m unittest discover -s tests -p 'test_power_cycle_camera.py' -q
 ```
+
+## Static DM sparkles
+
+Run `sparkles` on `mimir` in the `asg` conda environment. The optional beam
+argument selects the initial beam (`sparkles 2`); the GUI can select beams 1–4.
+Set the angle from the DM actuator grid's horizontal axis, separation in
+`lambda/D` (including fractional values from 0.1 to 5.0), and amplitude in
+normalized DM command units (0 to 0.2). The amplitude limits the peak of the
+combined two-mode pattern. Checking **On** writes a fixed pattern with two
+orthogonal Fourier modes, producing four symmetric spots; unchecking clears it.
+
+The utility owns `/dev/shm/dm<beam>disp03.im.shm`. Opening the GUI clears that
+channel, replacing any `dm-zernike` or other pattern there. Switching beams
+clears the previous beam's channel; closing the GUI normally clears the selected
+channel. No other DM channel is changed. The requested angle is in DM grid
+coordinates; camera orientation requires per-beam optical calibration.
+Run only one sparkles GUI per beam. At exactly 5 `lambda/D`, the DM reaches its
+actuator sampling limit; use a smaller distance if the spots overlap or alias.
+
+Offline checks use fake shared-memory streams and an offscreen Qt window:
+
+```bash
+QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -p 'test_sparkles.py' -q
+```
+
+On `mimir`, verify the `disp03` and combined maps in `dmview`, and measure spot
+separation and orientation on a camera before operational use.
