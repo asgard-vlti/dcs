@@ -1,2 +1,3 @@
 #!/bin/bash
-setsid /usr/local/bin/asgard_cam_server --socket tcp://*:6667 1>>/home/asg/logs/cam_server/log.txt 2>&1 &
+log_path="/home/asg/logs/cam_server/log_$(date -u +%Y%m%dT%H%M%S.%NZ)_$$.txt"
+setsid /usr/local/bin/asgard_cam_server --socket tcp://*:6667 1>"$log_path" 2>&1 &

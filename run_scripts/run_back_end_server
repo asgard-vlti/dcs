@@ -1,2 +1,3 @@
 #!/bin/bash
-setsid /home/asg/.conda/envs/asgard/bin/back-end-server 1>> /home/asg/logs/back_end_server/log.txt 2>&1 &
+log_path="/home/asg/logs/back_end_server/log_$(date -u +%Y%m%dT%H%M%S.%NZ)_$$.txt"
+setsid /home/asg/.conda/envs/asgard/bin/back-end-server 1>"$log_path" 2>&1 &
