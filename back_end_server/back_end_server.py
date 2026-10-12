@@ -22,25 +22,17 @@ except:
     from handlers.baldr_rts_handlers import register as register_baldr_rts
 
 
-# --- Logging setup: file and console ---
+# --- Logging setup: console ---
 def _setup_logging():
-    log_dir = os.path.expanduser("~/logs/back_end_server/")
-    os.makedirs(log_dir, exist_ok=True)
-    log_name = time.strftime("back_end_server_%Y%m%d_%H%M%S.log")
-    log_path = os.path.join(log_dir, log_name)
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
-    fh = logging.FileHandler(log_path)
-    fh.setLevel(logging.INFO)
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
     formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
-    fh.setFormatter(formatter)
     ch.setFormatter(formatter)
     logger.handlers = []
-    logger.addHandler(fh)
     logger.addHandler(ch)
-    logger.info(f"Logging started. Log file: {log_path}")
+    logger.info("Console logging started.")
 
 
 _setup_logging()
