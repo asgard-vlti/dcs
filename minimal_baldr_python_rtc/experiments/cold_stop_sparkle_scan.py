@@ -1,4 +1,4 @@
-"""Compare pupil flux while scanning DM sparkle separation.
+"""Compare bias-subtracted pupil flux while scanning DM sparkle separation.
 
 Run on mimir in the asg environment with::
 
@@ -25,6 +25,7 @@ SEPARATIONS = (0.0,) + tuple(round(index / 10, 1) for index in range(1, 66))
 SETTLE_S = 0.02
 DISCARD_FRAMES = 2
 AVERAGE_FRAMES = 16
+PIXEL_BIAS_COUNTS = 1000.0
 FRAME_WAIT_S = 0.2
 CAMERA_STALL_S = 2.0
 
@@ -113,7 +114,10 @@ def acquire_scan(
             total = 0.0
             for _ in range(AVERAGE_FRAMES):
                 frame = camera.read_fresh(cancelled)
-                flux = float(onp.sum(frame, dtype=onp.float64))
+                flux = float(
+                    onp.sum(frame, dtype=onp.float64)
+                    - PIXEL_BIAS_COUNTS * frame.size
+                )
                 if not onp.isfinite(flux):
                     raise ValueError("Baldr camera returned non-finite flux")
                 total += flux
@@ -193,7 +197,9 @@ class ScanWindow(QtWidgets.QWidget):
 
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setLabel("bottom", "Sparkle separation", units="λ/D")
-        self.plot_widget.setLabel("left", "Mean total flux", units="counts/frame")
+        self.plot_widget.setLabel(
+            "left", "Mean bias-subtracted flux", units="counts/frame"
+        )
         self.plot_widget.showGrid(x=True, y=True, alpha=0.25)
         self.plot_widget.setXRange(0.0, 6.5, padding=0.02)
         self.legend = self.plot_widget.addLegend()

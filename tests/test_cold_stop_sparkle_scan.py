@@ -35,7 +35,7 @@ class FakeCamera:
         if self.calls == self.fail_at:
             raise TimeoutError("camera stalled")
         self.events.append(("frame", self.calls))
-        return onp.full((2, 3), self.calls, dtype=onp.float64)
+        return onp.full((2, 3), self.calls, dtype=onp.uint16)
 
     def close(self):
         self.events.append(("close camera",))
@@ -58,8 +58,12 @@ class ScanAcquisitionTest(unittest.TestCase):
         self.assertEqual(len(distances), 66)
         self.assertEqual(distances[-1], 6.5)
         self.assertEqual(len(fluxes), 66)
-        self.assertEqual(fluxes[0], 6 * onp.mean(onp.arange(3, 19)))
-        self.assertEqual(fluxes[1], 6 * onp.mean(onp.arange(21, 37)))
+        self.assertEqual(
+            fluxes[0], 6 * (onp.mean(onp.arange(3, 19)) - scan.PIXEL_BIAS_COUNTS)
+        )
+        self.assertEqual(
+            fluxes[1], 6 * (onp.mean(onp.arange(21, 37)) - scan.PIXEL_BIAS_COUNTS)
+        )
         self.assertEqual(progress[-1], (66, 66))
         self.assertEqual(
             [event[:3] for event in events if event[0] == "set DM"][:2],

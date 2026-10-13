@@ -159,7 +159,8 @@ python -m minimal_baldr_python_rtc.experiments.cold_stop_sparkle_scan 1
 
 Select beam and amplitude, then click **Run**. The sparkle angle is fixed at
 45 degrees. The plot starts with sparkles off at 0 and measures mean whole-frame
-flux every 0.1 `lambda/D` through 6.5. Adjust the motors and click **Run** again
+flux every 0.1 `lambda/D` through 6.5, subtracting 1000 counts per pixel from
+each frame's total before averaging. Adjust the motors and click **Run** again
 to compare colored curves; **Clear Lines** removes the curves. The helper
 clears the selected beam's `disp03` channel when each scan ends. Do not run
 another `disp03` controller for that beam at the same time.
