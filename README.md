@@ -146,3 +146,19 @@ QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -p 'test_sparkles
 
 On `mimir`, verify the `disp03` and combined maps in `dmview`, and measure spot
 separation and orientation on a camera before operational use.
+
+## Cold-stop sparkle flux scan
+
+With the selected beam on its Baldr camera in pupil mode, run this helper on
+`mimir` in the `asg` environment from the `dcs` repository:
+
+```bash
+python -m minimal_baldr_python_rtc.experiments.cold_stop_sparkle_scan 1
+```
+
+Select beam, sparkle angle, and amplitude, then click **Run**. The plot starts
+with sparkles off at 0 and measures mean whole-frame flux every 0.1 `lambda/D`
+through 5.0. Adjust the motors and click **Run** again to compare colored
+curves; **Clear Lines** removes the curves. The helper clears the selected
+beam's `disp03` channel when each scan ends. Do not run another `disp03`
+controller for that beam at the same time.
