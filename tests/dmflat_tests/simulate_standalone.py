@@ -1461,7 +1461,6 @@ def resolve_source_profile(config: dict) -> tuple[str, dict, float, str | None]:
     temperature = profile.get('temperature_K')
     spectral_type = profile.get('spectral_type')
     print(f"temperature={temperature}, spectral_type={spectral_type}")
-    
     if temperature is not None:
         temperature = float(temperature)
         if not np.isfinite(temperature) or temperature <= 0:
@@ -2241,7 +2240,7 @@ def load_settings(path, mode, overrides=None, offline=False):
     if unknown:
         raise ValueError(f'Unknown/obsolete settings: {sorted(unknown)}; use v2 settings')
     # Endpoints are chosen by the entry point, not carried over from old settings.
-    host = MDS_HOST_ONSKY if mode == 'online' else MDS_HOST_SIMULATOR
+    host = MDS_HOST_ONSKY #if mode == 'online' else MDS_HOST_SIMULATOR
     cfg['mode'], cfg['mds'] = mode, f"tcp://{host}:{cfg['mds_port']}"
     for key in ('reference_config', 'material_file', 'bad_pixels_npy'):
         if cfg[key] is not None:
