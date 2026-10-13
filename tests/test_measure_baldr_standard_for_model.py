@@ -152,6 +152,7 @@ class MeasureBaldrTests(unittest.TestCase):
         with onp.load(output, allow_pickle=False) as saved:
             metadata = json.loads(str(saved["metadata_json"]))
             self.assertTrue(bool(saved["complete"]))
+            self.assertEqual(metadata["schema_version"], 2)
             self.assertTrue(metadata["camera_server_dark_subtracted"])
             self.assertEqual(metadata["camera_status"]["gain"], 5)
             self.assertEqual(saved["dark_frames"].shape, (3, 2, 2))
@@ -170,6 +171,23 @@ class MeasureBaldrTests(unittest.TestCase):
             self.assertEqual(saved["pupil_dither_positions"].shape, (9, 4))
             self.assertAlmostEqual(float(saved["fourier_delta_maps"][0].sum()), 0, places=6)
             self.assertAlmostEqual(float(saved["poke_delta_maps"][0].max()), 0.03 * 143 / 144)
+            for key, write_start in (
+                ("pupil_fourier", 0),
+                ("masked_fourier", 5),
+                ("masked_poke", 10),
+            ):
+                commands = saved[f"{key}_dm_channel2_commands"]
+                self.assertEqual(commands.shape, (saved[f"{key}_frames"].shape[0], 144))
+                onp.testing.assert_array_equal(
+                    commands,
+                    self.dm.shms[2].writes[write_start : write_start + len(commands)],
+                )
+            onp.testing.assert_allclose(
+                saved["masked_poke_dm_channel2_commands"][0],
+                saved["starting_dm_channel2"] - saved["poke_delta_maps"][0].astype(onp.float64),
+                rtol=0,
+                atol=1e-9,
+            )
 
     def test_default_frame_counts_and_ten_pokes_per_sign_are_saved(self):
         config = measure.AcquisitionConfig(
@@ -216,6 +234,27 @@ class MeasureBaldrTests(unittest.TestCase):
             self.assertEqual(saved["pupil_dither_frames"].shape[0], 3)
             self.assertEqual(saved["pupil_dither_offsets_deg"].shape[0], 3)
             self.assertEqual(saved["pupil_dither_positions"].shape[0], 3)
+
+    def test_probe_failure_saves_commands_only_for_captured_stacks(self):
+        with self.assertRaisesRegex(RuntimeError, "camera frame failure"):
+            measure.run_and_save(
+                3,
+                self.dm,
+                FakeCam(fail_on_call=14),
+                self.mds,
+                output_dir=self.output_dir,
+                config=self.config,
+            )
+        self.assert_restored()
+        with onp.load(next(self.output_dir.glob("*.npz")), allow_pickle=False) as saved:
+            self.assertFalse(bool(saved["complete"]))
+            self.assertEqual(saved["pupil_fourier_frames"].shape[0], 1)
+            self.assertEqual(saved["pupil_fourier_dm_channel2_commands"].shape, (1, 144))
+            onp.testing.assert_array_equal(
+                saved["pupil_fourier_dm_channel2_commands"][0],
+                self.dm.shms[2].writes[0],
+            )
+            self.assertEqual(saved["masked_poke_dm_channel2_commands"].shape, (0, 144))
 
     def test_dark_capture_failure_reopens_shutter(self):
         with self.assertRaisesRegex(RuntimeError, "camera frame failure"):

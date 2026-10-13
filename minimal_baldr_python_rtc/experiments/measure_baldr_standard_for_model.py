@@ -160,8 +160,10 @@ def take_frames(cam, count):
 
 def set_dm_delta(dm, starting_channel, delta):
     # Channel 0 holds the flat; only the RTC's experiment channel is written.
-    dm.shms[2].set_data(starting_channel + delta)
+    command = starting_channel + delta
+    dm.shms[2].set_data(command)
     dm.shm0.post_sems(1)
+    return command
 
 
 def record_stage(record, stage, mds, beam):
@@ -183,11 +185,12 @@ def acquire_probes(record, key, dm, cam, starting_channel, delta_maps, config):
             for repeat in range(config.probe_repeats):
                 for sign in (-1, 1):
                     record["dm_touched"] = True
-                    set_dm_delta(dm, starting_channel, sign * positive_delta)
+                    command = set_dm_delta(dm, starting_channel, sign * positive_delta)
                     time.sleep(config.dm_settle_s)
                     if config.discard_frames:
                         take_frames(cam, config.discard_frames)
                     record[f"{key}_frames"].append(take_frames(cam, config.probe_frames))
+                    record[f"{key}_dm_channel2_commands"].append(command.copy())
                     record[f"{key}_index"].append(mode_index)
                     record[f"{key}_repeat"].append(repeat)
                     record[f"{key}_sign"].append(sign)
@@ -366,7 +369,7 @@ def packed_frames(frames, image_shape, frames_per_sample):
 def save_record(path, record, beam, cam, config, failure, cleanup_errors):
     image_shape = tuple(cam.imsize)
     metadata = {
-        "schema_version": 1,
+        "schema_version": 2,
         "beam": beam,
         "created_utc": record["created_utc"],
         "config": asdict(config),
@@ -378,6 +381,7 @@ def save_record(path, record, beam, cam, config, failure, cleanup_errors):
         "motor_axis_order": MOTOR_NAMES,
         "probe_sign_order": (-1, 1),
         "poke_actuator_order": POKE_ACTUATORS,
+        "dm_command_layout": "Each *_dm_channel2_commands row is the full 144-actuator channel 2 command sent for the matching *_frames stack; no DM readback.",
         "starting_positions": record.get("starting_positions"),
         "stage_positions": record["stage_positions"],
         "final_positions": record.get("final_positions"),
@@ -422,6 +426,9 @@ def save_record(path, record, beam, cam, config, failure, cleanup_errors):
         arrays[f"{key}_frames"] = packed_frames(
             record[f"{key}_frames"], image_shape, config.probe_frames
         )
+        arrays[f"{key}_dm_channel2_commands"] = onp.asarray(
+            record[f"{key}_dm_channel2_commands"], dtype=onp.float64
+        ).reshape(-1, 144)
         for label, dtype in (("index", onp.int16), ("repeat", onp.int16), ("sign", onp.int8)):
             arrays[f"{key}_{label}"] = onp.asarray(record[f"{key}_{label}"], dtype=dtype)
         arrays[f"{key}_utc"] = onp.asarray(record[f"{key}_utc"], dtype=str)
@@ -455,7 +462,7 @@ def run_and_save(beam, dm, cam, mds, output_dir=OUTPUT_DIR, config=None, rtc_sta
         "pupil_dither_utc": [],
     }
     for key in ("pupil_fourier", "masked_fourier", "masked_poke"):
-        for label in ("frames", "index", "repeat", "sign", "utc"):
+        for label in ("frames", "dm_channel2_commands", "index", "repeat", "sign", "utc"):
             record[f"{key}_{label}"] = []
 
     failure = None
