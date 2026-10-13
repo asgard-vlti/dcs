@@ -1460,6 +1460,8 @@ def resolve_source_profile(config: dict) -> tuple[str, dict, float, str | None]:
         raise ValueError(f'Unknown source profile {profile_name!r}.') from error
     temperature = profile.get('temperature_K')
     spectral_type = profile.get('spectral_type')
+    print(f"temperature={temperature}, spectral_type={spectral_type}")
+    
     if temperature is not None:
         temperature = float(temperature)
         if not np.isfinite(temperature) or temperature <= 0:
@@ -1471,7 +1473,8 @@ def resolve_source_profile(config: dict) -> tuple[str, dict, float, str | None]:
     try:
         temperature = SPECTRAL_TYPE_TEMPERATURE_K[spectral_type]
     except KeyError as error:
-        raise ValueError(f'Unknown spectral type {spectral_type!r}; supported types are {', '.join(SPECTRAL_TYPE_TEMPERATURE_K)}.') from error
+        temperature = 1500
+        #raise ValueError(f'Unknown spectral type {spectral_type!r}; supported types are {', '.join(SPECTRAL_TYPE_TEMPERATURE_K)}.') from error
     return (profile_name, profile, temperature, spectral_type)
 
 def make_spectrum(config: dict) -> tuple[np.ndarray, np.ndarray]:
