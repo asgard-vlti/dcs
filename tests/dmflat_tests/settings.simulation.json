@@ -1,0 +1,9 @@
+{
+  "beam": 1,
+  "phasemask": "H3",
+  "gain_e_per_adu": 2.0,
+  "background_buffer_px": 3.0,
+  "command_min": 0.0,
+  "command_max": 1.0,
+  "objective": "halo"
+}
