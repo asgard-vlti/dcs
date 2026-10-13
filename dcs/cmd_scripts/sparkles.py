@@ -22,8 +22,9 @@ def make_sparkle_map(distance: float, angle: float, amplitude: float) -> onp.nda
     values = (distance, angle, amplitude)
     if not all(onp.isfinite(value) for value in values):
         raise ValueError("Distance, angle, and amplitude must be finite")
-    if not 0.1 <= distance <= 5.0:
-        raise ValueError("Distance must be 0.1–5.0 lambda/D")
+    max_distance = 6.5 if angle == 45.0 else 5.0
+    if not 0.1 <= distance <= max_distance:
+        raise ValueError(f"Distance must be 0.1–{max_distance:.1f} lambda/D")
     if not 0.0 <= angle <= 90.0:
         raise ValueError("Angle must be 0–90 degrees")
     if not 0.0 <= amplitude <= 0.2:

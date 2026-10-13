@@ -135,8 +135,9 @@ channel, replacing any `dm-zernike` or other pattern there. Switching beams
 clears the previous beam's channel; closing the GUI normally clears the selected
 channel. No other DM channel is changed. The requested angle is in DM grid
 coordinates; camera orientation requires per-beam optical calibration.
-Run only one sparkles GUI per beam. At exactly 5 `lambda/D`, the DM reaches its
-actuator sampling limit; use a smaller distance if the spots overlap or alias.
+Run only one sparkles GUI per beam. At 5 `lambda/D` along a cardinal DM axis,
+the pattern reaches the actuator sampling limit; use a smaller distance if the
+spots overlap or alias. The standalone GUI remains capped at 5 for all angles.
 
 Offline checks use fake shared-memory streams and an offscreen Qt window:
 
@@ -156,9 +157,9 @@ With the selected beam on its Baldr camera in pupil mode, run this helper on
 python -m minimal_baldr_python_rtc.experiments.cold_stop_sparkle_scan 1
 ```
 
-Select beam, sparkle angle, and amplitude, then click **Run**. The plot starts
-with sparkles off at 0 and measures mean whole-frame flux every 0.1 `lambda/D`
-through 5.0. Adjust the motors and click **Run** again to compare colored
-curves; **Clear Lines** removes the curves. The helper clears the selected
-beam's `disp03` channel when each scan ends. Do not run another `disp03`
-controller for that beam at the same time.
+Select beam and amplitude, then click **Run**. The sparkle angle is fixed at
+45 degrees. The plot starts with sparkles off at 0 and measures mean whole-frame
+flux every 0.1 `lambda/D` through 6.5. Adjust the motors and click **Run** again
+to compare colored curves; **Clear Lines** removes the curves. The helper
+clears the selected beam's `disp03` channel when each scan ends. Do not run
+another `disp03` controller for that beam at the same time.

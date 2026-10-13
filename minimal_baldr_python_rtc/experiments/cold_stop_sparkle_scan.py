@@ -4,7 +4,8 @@ Run on mimir in the asg environment with::
 
     python -m minimal_baldr_python_rtc.experiments.cold_stop_sparkle_scan 1
 
-The selected beam's disp03 channel is cleared at the start and end of each scan.
+The scan uses 45 degrees and reaches 6.5 lambda/D. The selected beam's disp03
+channel is cleared at the start and end of each scan.
 Do not run another sparkle or disp03 controller for that beam at the same time.
 """
 
@@ -19,7 +20,8 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from dcs.cmd_scripts.sparkles import SparklesController
 
 
-SEPARATIONS = (0.0,) + tuple(round(index / 10, 1) for index in range(1, 51))
+SCAN_ANGLE_DEG = 45.0
+SEPARATIONS = (0.0,) + tuple(round(index / 10, 1) for index in range(1, 66))
 SETTLE_S = 0.02
 DISCARD_FRAMES = 2
 AVERAGE_FRAMES = 16
@@ -81,7 +83,6 @@ class CameraReader:
 
 def acquire_scan(
     beam,
-    angle,
     amplitude,
     cancelled=None,
     controller_factory=SparklesController,
@@ -102,7 +103,7 @@ def acquire_scan(
             if cancelled.is_set():
                 raise ScanCancelled()
             controller.set_enabled(
-                separation != 0.0, separation or 0.1, angle, amplitude
+                separation != 0.0, separation or 0.1, SCAN_ANGLE_DEG, amplitude
             )
             sleep_fn(SETTLE_S)
             if cancelled.is_set():
@@ -135,10 +136,9 @@ class ScanWorker(QtCore.QObject):
     progress = QtCore.pyqtSignal(int, int)
     finished = QtCore.pyqtSignal()
 
-    def __init__(self, beam, angle, amplitude):
+    def __init__(self, beam, amplitude):
         super().__init__()
         self.beam = beam
-        self.angle = angle
         self.amplitude = amplitude
         self.cancelled = threading.Event()
 
@@ -147,7 +147,6 @@ class ScanWorker(QtCore.QObject):
         try:
             separations, fluxes = acquire_scan(
                 self.beam,
-                self.angle,
                 self.amplitude,
                 cancelled=self.cancelled,
                 on_progress=self.progress.emit,
@@ -180,11 +179,7 @@ class ScanWindow(QtWidgets.QWidget):
             self.beam_input.addItem(f"Beam {number}", number)
         self.beam_input.setCurrentIndex(beam - 1)
 
-        self.angle_input = QtWidgets.QDoubleSpinBox()
-        self.angle_input.setRange(0.0, 90.0)
-        self.angle_input.setDecimals(1)
-        self.angle_input.setSingleStep(0.1)
-        self.angle_input.setSuffix("°")
+        self.angle_label = QtWidgets.QLabel(f"{SCAN_ANGLE_DEG:g}° (fixed)")
 
         self.amplitude_input = QtWidgets.QDoubleSpinBox()
         self.amplitude_input.setRange(0.0, 0.2)
@@ -200,12 +195,12 @@ class ScanWindow(QtWidgets.QWidget):
         self.plot_widget.setLabel("bottom", "Sparkle separation", units="λ/D")
         self.plot_widget.setLabel("left", "Mean total flux", units="counts/frame")
         self.plot_widget.showGrid(x=True, y=True, alpha=0.25)
-        self.plot_widget.setXRange(0.0, 5.0, padding=0.02)
+        self.plot_widget.setXRange(0.0, 6.5, padding=0.02)
         self.legend = self.plot_widget.addLegend()
 
         controls = QtWidgets.QFormLayout()
         controls.addRow("Beam", self.beam_input)
-        controls.addRow("Angle from DM horizontal", self.angle_input)
+        controls.addRow("Angle from DM horizontal", self.angle_label)
         controls.addRow("Amplitude (DM units)", self.amplitude_input)
         buttons = QtWidgets.QHBoxLayout()
         buttons.addWidget(self.run_button)
@@ -223,7 +218,6 @@ class ScanWindow(QtWidgets.QWidget):
     def _set_running(self, running):
         for widget in (
             self.beam_input,
-            self.angle_input,
             self.amplitude_input,
             self.run_button,
             self.clear_button,
@@ -235,7 +229,6 @@ class ScanWindow(QtWidgets.QWidget):
             return
         parameters = (
             self.beam_input.currentData(),
-            self.angle_input.value(),
             self.amplitude_input.value(),
         )
         self._active_parameters = parameters
@@ -251,7 +244,7 @@ class ScanWindow(QtWidgets.QWidget):
         self._thread.finished.connect(self._scan_finished)
         self._thread.finished.connect(self._thread.deleteLater)
         self._set_running(True)
-        self.status.setText("Scanning: 0/51 separations")
+        self.status.setText(f"Scanning: 0/{len(SEPARATIONS)} separations")
         self._thread.start()
 
     def _show_progress(self, completed, total):
@@ -261,9 +254,9 @@ class ScanWindow(QtWidgets.QWidget):
     def _add_run(self, separations, fluxes):
         if self._closing:
             return
-        beam, angle, amplitude = self._active_parameters
+        beam, amplitude = self._active_parameters
         color = QtGui.QColor.fromHsvF((self._run_number * 0.618034) % 1.0, 0.75, 0.95)
-        name = f"Run {self._run_number + 1} (B{beam}, {angle:g}°, {amplitude:.3f})"
+        name = f"Run {self._run_number + 1} (B{beam}, {SCAN_ANGLE_DEG:g}°, {amplitude:.3f})"
         curve = self.plot_widget.plot(
             separations,
             fluxes,

@@ -16,6 +16,7 @@ class SparkleMapTest(unittest.TestCase):
             (2.375, 27.5, 0.08),
             (5.0, 0.0, 0.2),
             (5.0, 90.0, 0.2),
+            (6.5, 45.0, 0.2),
         ):
             with self.subTest(distance=distance, angle=angle):
                 pattern = sparkles.make_sparkle_map(distance, angle, amplitude)
@@ -88,6 +89,8 @@ class SparkleMapTest(unittest.TestCase):
         for values in (
             (0, 0, 0.1),
             (5.1, 0, 0.1),
+            (5.1, 44.9, 0.1),
+            (6.6, 45, 0.1),
             (2, -1, 0.1),
             (2, 91, 0.1),
             (2, 0, -0.01),
@@ -207,6 +210,7 @@ class SparklesWindowTest(unittest.TestCase):
         try:
             self.assertFalse(window.on_input.isChecked())
             self.assertEqual(window.distance_input.decimals(), 3)
+            self.assertEqual(window.distance_input.maximum(), 5.0)
             self.assertEqual(window.amplitude_input.decimals(), 3)
             window.distance_input.setValue(2.375)
             window.angle_input.setValue(37.5)

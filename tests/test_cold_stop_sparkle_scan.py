@@ -47,7 +47,6 @@ class ScanAcquisitionTest(unittest.TestCase):
         progress = []
         distances, fluxes = scan.acquire_scan(
             2,
-            30.0,
             0.02,
             controller_factory=lambda beam: FakeController(beam, events),
             camera_factory=lambda beam: FakeCamera(beam, events),
@@ -56,22 +55,25 @@ class ScanAcquisitionTest(unittest.TestCase):
         )
 
         onp.testing.assert_array_equal(distances, scan.SEPARATIONS)
-        self.assertEqual(len(distances), 51)
-        self.assertEqual(distances[-1], 5.0)
-        self.assertEqual(len(fluxes), 51)
+        self.assertEqual(len(distances), 66)
+        self.assertEqual(distances[-1], 6.5)
+        self.assertEqual(len(fluxes), 66)
         self.assertEqual(fluxes[0], 6 * onp.mean(onp.arange(3, 19)))
         self.assertEqual(fluxes[1], 6 * onp.mean(onp.arange(21, 37)))
-        self.assertEqual(progress[-1], (51, 51))
+        self.assertEqual(progress[-1], (66, 66))
         self.assertEqual(
             [event[:3] for event in events if event[0] == "set DM"][:2],
             [("set DM", False, 0.1), ("set DM", True, 0.1)],
         )
         self.assertEqual(
             [event[:3] for event in events if event[0] == "set DM"][-1],
-            ("set DM", True, 5.0),
+            ("set DM", True, 6.5),
+        )
+        self.assertEqual(
+            {event[3] for event in events if event[0] == "set DM"}, {45.0}
         )
         self.assertEqual(events[-2:], [("close camera",), ("close DM",)])
-        self.assertEqual(sum(event[0] == "frame" for event in events), 51 * 18)
+        self.assertEqual(sum(event[0] == "frame" for event in events), 66 * 18)
 
     def test_error_and_cancellation_close_both_streams(self):
         for cancelled, fail_at in ((threading.Event(), 4), (threading.Event(), None)):
@@ -82,7 +84,6 @@ class ScanAcquisitionTest(unittest.TestCase):
                 with self.assertRaises(scan.ScanCancelled if fail_at is None else TimeoutError):
                     scan.acquire_scan(
                         1,
-                        0.0,
                         0.02,
                         cancelled=cancelled,
                         controller_factory=lambda beam: FakeController(beam, events),
@@ -156,8 +157,12 @@ class ScanWindowTest(unittest.TestCase):
     def test_repeated_runs_have_different_colors_and_clear_lines(self):
         window = scan.ScanWindow(2)
         try:
+            self.assertEqual(window.angle_label.text(), "45° (fixed)")
+            self.assertFalse(hasattr(window, "angle_input"))
+            self.assertGreaterEqual(window.plot_widget.viewRange()[0][1], 6.5)
+
             def fake_scan(*args, **kwargs):
-                return onp.array((0.0, 5.0)), onp.array((100.0, 80.0))
+                return onp.array((0.0, 6.5)), onp.array((100.0, 80.0))
 
             with patch.object(scan, "acquire_scan", side_effect=fake_scan):
                 for expected_count in (1, 2):
