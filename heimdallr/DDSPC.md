@@ -6,8 +6,9 @@ wavelengths, predicts three differential piston modes, and sends clipped DM
 commands. Its QRD RLS model defaults to 30 history frames and three future
 frames.
 
-The packaged configuration explores for 5000 valid DDSPC frames after each mode
-entry or fit reset. A camera frame gap, lost fringe lock, disconnected phase
+The packaged configuration explores for 2500 valid DDSPC frames after each mode
+entry or fit reset, then freezes learning (`continue_learning = false`). A camera
+frame gap, lost fringe lock, disconnected phase
 measurements, an inactive beam, or a test pattern selects the existing Lacour
 command path and resets a model that is still learning. These interruptions
 restart exploration from frame zero. A frozen model retains its fit across a
