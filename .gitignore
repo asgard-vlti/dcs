@@ -67,7 +67,8 @@ build-heimdallr/
 # 
 calibration_frames/products/
 
-
+tests/dmflat_tests/runs
+baldr_jcr/diag*
 baldr/figs/
 baldr/latency_test_results/
 baldr/tests/
